@@ -1,5 +1,20 @@
 # AGENTS.md
 
+## Project identity
+
+`jaxstanv5` is a **minimal declarative Bayesian modeling library for JAX**.
+
+It exists to help users:
+- define models with `@model`, `Param`, `Data`, and `Observed`
+- express hierarchical models as first-class model declarations
+- compile models to executable log densities
+- handle constraints and Jacobian-aware transforms
+- run **NUTS only**
+- inspect essential diagnostics (`rhat`, `ess`, divergences)
+
+It does **not** exist to be a workflow platform, reporting system, plotting toolkit,
+multi-algorithm inference playground, session/artifact product, or viewer.
+
 ## Communication
 
 Be precise and brief. Do not pad responses. State assumptions, uncertainty, and tradeoffs explicitly.

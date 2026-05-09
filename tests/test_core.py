@@ -1,5 +1,11 @@
-from jaxstanv5 import add
+def test_package_imports() -> None:
+    import jaxstanv5
+    import jaxstanv5.compiler
+    import jaxstanv5.constraints
+    import jaxstanv5.diagnostics
+    import jaxstanv5.distributions
+    import jaxstanv5.inference
+    import jaxstanv5.model
 
-
-def test_add() -> None:
-    assert add(2, 3) == 5
+    # Sanity: __init__ should not leak random names
+    assert hasattr(jaxstanv5, "__all__")

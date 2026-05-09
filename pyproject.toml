@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "A Python project built with the Astral stack: uv, ruff, and ty."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "jax>=0.6.0",
+    "blackjax>=1.2.0",
+]
 
 [dependency-groups]
 dev = [

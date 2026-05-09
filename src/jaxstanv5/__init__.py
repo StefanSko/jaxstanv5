@@ -1,5 +1,3 @@
-"""jaxstanv5 package."""
+"""jaxstanv5 — a Bayesian inference framework built on JAX and BlackJAX."""
 
-from jaxstanv5.core import add
-
-__all__ = ["add"]
+__all__: list[str] = []
