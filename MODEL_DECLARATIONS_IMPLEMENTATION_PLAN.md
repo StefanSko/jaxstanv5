@@ -34,8 +34,10 @@ The tricky part is that during class-body execution, declarations do not know th
 
 Therefore, use a simple two-step approach:
 
-1. During class-body execution, declarations create expression references using internal numeric symbols.
-2. In the `@model` decorator, replace those internal symbols with final attribute names.
+1. During class-body execution, declarations create expression references using explicit `UnresolvedSymbol` values.
+2. In the `@model` decorator, replace those unresolved symbols with final attribute names.
+
+This is not a monad. It is a deferred symbolic expression graph with a clear terminal operation: `@model` resolves symbols into names.
 
 ---
 
@@ -116,13 +118,21 @@ Existing expression nodes already include:
 - `BinOp`
 - `IndexOp`
 
-Add only one small concept if needed:
+Add one explicit symbol type:
 
 ```python
-type Symbol = str | int
+@dataclass(frozen=True)
+class UnresolvedSymbol:
+    id: int
 ```
 
-Then allow:
+Then define:
+
+```python
+type Symbol = str | UnresolvedSymbol
+```
+
+And allow:
 
 ```python
 ParamRef.name: Symbol
@@ -131,17 +141,23 @@ DataRef.name: Symbol
 
 Why?
 
-- Before decoration: references use temporary integer symbols.
+- Before decoration: references use `UnresolvedSymbol(...)`.
 - After decoration: references use real string names like `"alpha"` and `"x"`.
 
 This makes the lifecycle explicit:
 
 ```text
-class body:  ParamRef(0), DataRef(1)
+class body:  ParamRef(UnresolvedSymbol(0)), DataRef(UnresolvedSymbol(1))
 @model:      ParamRef("alpha"), DataRef("x")
 ```
 
-Avoid making expression nodes know about model declarations. Keep expression nodes simple.
+Avoid bare integers for unresolved names. Bare `int` works technically, but `UnresolvedSymbol` communicates intent and prevents accidental confusion with ordinary numeric constants.
+
+Define `UnresolvedSymbol` in `model/expr.py`, because expression references need to carry it.
+
+Because `UnresolvedSymbol` is a frozen dataclass, it is hashable and can be used as a key in the decorator symbol table.
+
+Avoid making expression nodes know about model declarations. Keep expression nodes simple. The expression module should define the symbol type, but not `Param`, `Data`, or the decorator.
 
 ---
 
@@ -149,7 +165,19 @@ Avoid making expression nodes know about model declarations. Keep expression nod
 
 File: `src/jaxstanv5/model/core.py`
 
-Replace the old `Model` protocol with three declaration dataclasses:
+Replace the old `Model` protocol with three declaration dataclasses.
+
+Use a tiny generator in this file for declaration symbols:
+
+```python
+from itertools import count
+
+_SYMBOL_IDS = count()
+
+
+def next_symbol() -> UnresolvedSymbol:
+    return UnresolvedSymbol(next(_SYMBOL_IDS))
+```
 
 ```python
 @dataclass(frozen=True)
@@ -157,13 +185,13 @@ class Param:
     distribution: Distribution
     constraint: Constraint | None = None
     size: Data | DataRef | int | None = None
-    symbol: int = field(default_factory=next_symbol, init=False, repr=False)
+    symbol: UnresolvedSymbol = field(default_factory=next_symbol, init=False, repr=False)
 ```
 
 ```python
 @dataclass(frozen=True)
 class Data:
-    symbol: int = field(default_factory=next_symbol, init=False, repr=False)
+    symbol: UnresolvedSymbol = field(default_factory=next_symbol, init=False, repr=False)
 ```
 
 ```python
@@ -247,7 +275,7 @@ Use two passes over `cls.__dict__`.
 ```python
 params: dict[str, Param] = {}
 data_slots: list[str] = []
-symbols: dict[int, str] = {}
+symbols: dict[UnresolvedSymbol, str] = {}
 
 for name, value in cls.__dict__.items():
     if isinstance(value, Param):
@@ -283,12 +311,16 @@ Validation:
 
 ## Phase 4F: Normalize symbols to names
 
-The decorator must convert temporary integer symbols into real names.
+The decorator must convert `UnresolvedSymbol` values into real names.
 
 Example before normalization:
 
 ```python
-BinOp("+", ParamRef(0), BinOp("*", ParamRef(1), DataRef(2)))
+BinOp(
+    "+",
+    ParamRef(UnresolvedSymbol(0)),
+    BinOp("*", ParamRef(UnresolvedSymbol(1)), DataRef(UnresolvedSymbol(2))),
+)
 ```
 
 After normalization:
@@ -300,11 +332,11 @@ BinOp("+", ParamRef("alpha"), BinOp("*", ParamRef("beta"), DataRef("x")))
 Implement:
 
 ```python
-def normalize_expr(expr: ExprNode, symbols: dict[int, str]) -> ExprNode:
+def normalize_expr(expr: ExprNode, symbols: dict[UnresolvedSymbol, str]) -> ExprNode:
     match expr:
-        case ParamRef(name) if isinstance(name, int):
+        case ParamRef(name) if isinstance(name, UnresolvedSymbol):
             return ParamRef(symbols[name])
-        case DataRef(name) if isinstance(name, int):
+        case DataRef(name) if isinstance(name, UnresolvedSymbol):
             return DataRef(symbols[name])
         case ConstNode():
             return expr
@@ -323,7 +355,7 @@ For `Normal(mu, sigma)`, `mu` may be a `BinOp` and `sigma` may be a `Param` decl
 So implement:
 
 ```python
-def normalize_distribution(dist: Distribution, symbols: dict[int, str]) -> Distribution:
+def normalize_distribution(dist: Distribution, symbols: dict[UnresolvedSymbol, str]) -> Distribution:
     # For dataclass distributions only.
     # For each field:
     # - Param -> ParamRef(name)
@@ -361,7 +393,7 @@ size=DataRef("n_groups")
 Implement:
 
 ```python
-def normalize_param(param: Param, symbols: dict[int, str]) -> Param:
+def normalize_param(param: Param, symbols: dict[UnresolvedSymbol, str]) -> Param:
     return Param(
         distribution=normalize_distribution(param.distribution, symbols),
         constraint=param.constraint,
@@ -374,7 +406,7 @@ def normalize_param(param: Param, symbols: dict[int, str]) -> Param:
 - `None` -> `None`
 - `int` -> same int
 - `Data` -> `DataRef(real_name)`
-- `DataRef(int_symbol)` -> `DataRef(real_name)`
+- `DataRef(UnresolvedSymbol(...))` -> `DataRef(real_name)`
 
 ---
 
@@ -530,8 +562,8 @@ Keep these true:
 
 - `Param` and `Data` are declarations.
 - `ParamRef` and `DataRef` are symbolic references.
-- Class-body expressions use temporary symbols.
-- The `@model` decorator normalizes temporary symbols into real names.
+- Class-body expressions use `UnresolvedSymbol` values.
+- The `@model` decorator normalizes `UnresolvedSymbol` values into real names.
 - `Observed` is not a `Data` slot, but `bind(...)` still requires observed data.
 - `BoundModel` contains data and shapes only; no inference logic.
 - No BlackJAX in model code.
