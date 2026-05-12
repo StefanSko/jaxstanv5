@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+<meta name="theme-color" content="#0f172a" />
+<title>Why class-body naming is hard — Visual deep dive</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-soft: #1e293b;
+    --bg-card: #1a2438;
+    --fg: #e2e8f0;
+    --fg-dim: #94a3b8;
+    --accent: #38bdf8;
+    --accent-2: #a78bfa;
+    --good: #4ade80;
+    --bad: #f87171;
+    --warn: #fbbf24;
+    --code-bg: #0b1224;
+    --border: #334155;
+    --highlight: rgba(56,189,248,0.18);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.55;
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    padding: 24px 18px 18px;
+    background: linear-gradient(160deg, #1e293b 0%, #0f172a 80%);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 {
+    margin: 0 0 4px;
+    font-size: 1.25rem;
+    letter-spacing: -0.02em;
+  }
+  header p {
+    margin: 0;
+    color: var(--fg-dim);
+    font-size: 0.82rem;
+  }
+  nav {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 10px 18px;
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 76px;
+    z-index: 9;
+    -webkit-overflow-scrolling: touch;
+  }
+  nav a {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 0.76rem;
+    color: var(--fg-dim);
+    text-decoration: none;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  nav a:active { background: var(--accent); color: #fff; }
+  main { padding: 14px 12px 80px; max-width: 780px; margin: 0 auto; }
+  section {
+    margin: 18px 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 14px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  }
+  section h2 {
+    margin: 0 0 10px;
+    font-size: 1.05rem;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  section h2 .num {
+    background: var(--accent);
+    color: #0b1224;
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  section h3 {
+    margin: 12px 0 6px;
+    font-size: 0.9rem;
+    color: var(--accent-2);
+  }
+  p, li { font-size: 0.9rem; }
+  code, pre {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  code:not(pre code) {
+    background: var(--code-bg);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.83em;
+    word-break: break-word;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    overflow-x: auto;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    -webkit-overflow-scrolling: touch;
+  }
+  pre code { color: var(--fg); }
+  .kw { color: #c084fc; }
+  .str { color: #86efac; }
+  .num { color: #fbbf24; }
+  .cmt { color: #64748b; font-style: italic; }
+  .fn { color: #38bdf8; }
+  .cls { color: #f9a8d4; }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: rgba(56,189,248,0.08);
+    padding: 10px 12px;
+    margin: 10px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.86rem;
+  }
+  .callout.warn { border-color: var(--warn); background: rgba(251,191,36,0.08); }
+  .callout.bad  { border-color: var(--bad);  background: rgba(248,113,113,0.08); }
+  .callout.good { border-color: var(--good); background: rgba(74,222,128,0.08); }
+  ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  /* ---- Step-through demo ---- */
+  .demo {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    margin: 14px 0;
+  }
+  .demo-row { margin-bottom: 12px; }
+  .demo-label {
+    font-size: 0.7rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .demo-code {
+    background: #060c1a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 0.78rem;
+    line-height: 1.65;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .demo-code .line {
+    display: block;
+    padding: 0 6px;
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+  .demo-code .line.active {
+    background: var(--highlight);
+    border-left: 3px solid var(--accent);
+    padding-left: 3px;
+  }
+  .demo-code .line.done {
+    opacity: 0.55;
+  }
+  .panel-mem, .panel-ns {
+    background: #060c1a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 0.76rem;
+    min-height: 60px;
+  }
+  .obj-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin: 4px 0;
+    font-size: 0.74rem;
+  }
+  .obj-card .obj-title {
+    color: var(--accent-2);
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .obj-card .obj-attr { color: var(--fg-dim); }
+  .obj-card .obj-attr .val { color: var(--fg); }
+  .obj-card.new { animation: flash 0.6s ease; }
+  .ns-entry {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    margin: 3px 0;
+    font-size: 0.76rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ns-entry .key { color: var(--good); }
+  .ns-entry .arrow { color: var(--fg-dim); }
+  .ns-entry .val { color: var(--accent-2); }
+  .ns-entry.new { animation: flash 0.6s ease; }
+  @keyframes flash {
+    0% { background: rgba(56,189,248,0.4); }
+    100% { background: var(--bg-soft); }
+  }
+  .narration {
+    background: rgba(56,189,248,0.08);
+    border-left: 3px solid var(--accent);
+    padding: 10px 12px;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.85rem;
+    margin-top: 10px;
+    min-height: 60px;
+  }
+  .narration .step-tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    background: var(--accent);
+    color: #0b1224;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    background: var(--accent);
+    color: #0b1224;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .btn.secondary {
+    background: var(--bg-soft);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+  .step-indicator {
+    flex: 1;
+    text-align: right;
+    color: var(--fg-dim);
+    font-size: 0.78rem;
+    align-self: center;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin: 10px 0;
+  }
+  @media (min-width: 600px) {
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* Aliasing demo */
+  .aliasing-vis {
+    background: #060c1a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+    margin: 10px 0;
+  }
+  .alias-obj {
+    display: inline-block;
+    background: var(--bg-soft);
+    border: 2px solid var(--accent-2);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-family: monospace;
+    font-size: 0.78rem;
+    margin: 20px auto 0;
+  }
+  .alias-names {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 8px;
+  }
+  .alias-name {
+    background: var(--bg-soft);
+    border: 1px solid var(--good);
+    padding: 4px 10px;
+    border-radius: 6px;
+    color: var(--good);
+    font-family: monospace;
+    font-size: 0.8rem;
+  }
+  .alias-arrows {
+    color: var(--fg-dim);
+    font-size: 1.2rem;
+    line-height: 1;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--fg-dim);
+    font-size: 0.76rem;
+    padding: 26px 14px 50px;
+  }
+  .links {
+    text-align: center;
+    margin: 10px 0;
+  }
+  .links a {
+    color: var(--accent);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Why class-body naming is hard</h1>
+  <p>An interactive deep dive · companion to the main guide</p>
+</header>
+
+<nav>
+  <a href="#assign">1. Assignment</a>
+  <a href="#demo">2. Step-through</a>
+  <a href="#operators">3. Blind operators</a>
+  <a href="#alias">4. Aliasing</a>
+  <a href="#solution">5. UnresolvedSymbol</a>
+  <a href="#setname">6. __set_name__?</a>
+  <a href="#onepass">7. One-pass fragility</a>
+  <a href="#twopass">8. Two-pass clarity</a>
+</nav>
+
+<main>
+
+<div class="links">
+  <a href="./model_declarations_guide.html">← back to main guide</a>
+</div>
+
+<!-- ========================================================= -->
+<section id="assign">
+  <h2><span class="num">1</span>What <code>alpha = Param(...)</code> really does</h2>
+
+  <p>The Python statement</p>
+<pre><code>alpha = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0</span>, <span class="num">1</span>))</code></pre>
+
+  <p>is not one operation. It's <strong>two</strong>, evaluated in this order:</p>
+
+  <ol>
+    <li><strong>Evaluate the right-hand side.</strong> Python calls <code>Param(Normal(0, 1))</code>. A new Param object is constructed in memory. At this moment it's <em>anonymous</em> — it has no idea what it will be assigned to.</li>
+    <li><strong>Bind the name.</strong> The current namespace (a dict) gets a new entry: <code>{"alpha": &lt;that Param&gt;}</code>. The dict knows the name. The Param object still doesn't.</li>
+  </ol>
+
+  <div class="callout warn">
+    <strong>The naming asymmetry:</strong><br>
+    The namespace (the dict) knows the name. The object only knows itself. Names live in the container, not the contents.
+  </div>
+
+  <p>So inside <code>Param.__init__</code>, nothing in the language tells the object "you are going to be called <code>alpha</code>". The Param is constructed in a vacuum, then handed to the namespace.</p>
+</section>
+
+<!-- ========================================================= -->
+<section id="demo">
+  <h2><span class="num">2</span>Step through a class body</h2>
+
+  <p>Tap <strong>Next</strong> to advance line-by-line. Watch how the object pool and the namespace evolve independently.</p>
+
+  <div class="demo">
+    <div class="demo-row">
+      <div class="demo-label">Source — class body executing</div>
+      <div class="demo-code" id="demo-code"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="demo-row">
+        <div class="demo-label">Memory (created objects)</div>
+        <div class="panel-mem" id="panel-mem"></div>
+      </div>
+      <div class="demo-row">
+        <div class="demo-label">Class namespace (dict)</div>
+        <div class="panel-ns" id="panel-ns"></div>
+      </div>
+    </div>
+
+    <div class="narration" id="narration">
+      <div class="step-tag">Step 0</div>
+      Ready. Tap <strong>Next</strong> to begin.
+    </div>
+
+    <div class="controls">
+      <button class="btn" id="btn-next">Next ▶</button>
+      <button class="btn secondary" id="btn-reset">Reset</button>
+      <span class="step-indicator" id="step-ind">0 / 0</span>
+    </div>
+  </div>
+
+  <div class="callout">
+    Notice: every object in the <em>memory</em> column shows <code>.name</code> as <strong>UNKNOWN</strong>. Names only ever appear in the <em>namespace</em> column. That asymmetry is the whole problem.
+  </div>
+</section>
+
+<!-- ========================================================= -->
+<section id="operators">
+  <h2><span class="num">3</span>Operator overloads run blind</h2>
+
+  <p>When the line</p>
+<pre><code>mu = alpha + beta * x</code></pre>
+
+  <p>executes, Python's interpreter does:</p>
+
+  <ol>
+    <li>Look up <code>"alpha"</code> in the class namespace → get the Param object.</li>
+    <li>Look up <code>"beta"</code> → get its Param object.</li>
+    <li>Look up <code>"x"</code> → get its Data object.</li>
+    <li>Call <code>beta.__mul__(x)</code>. The interpreter passes the <em>objects</em>, not their names.</li>
+    <li>Call <code>alpha.__add__(&lt;mul result&gt;)</code>. Same: the objects, not names.</li>
+  </ol>
+
+  <p>Inside <code>__add__</code>, all the method has is <code>self</code> (the Param object) and <code>other</code> (some Data or BinOp object). It has no access to the strings <code>"alpha"</code>, <code>"beta"</code>, <code>"x"</code>.</p>
+
+  <div class="callout bad">
+    So when <code>alpha.__add__(...)</code> builds an expression node, it literally <em>cannot</em> write <code>ParamRef("alpha")</code>. It has to write something like <code>ParamRef(self)</code> — a reference to the Param object itself, not its (unknown) name.
+  </div>
+
+  <p>The expression tree therefore captures <em>object identities</em>, not names. Names get attached only later, when something with access to the namespace dict (the <code>@model</code> decorator) translates them.</p>
+</section>
+
+<!-- ========================================================= -->
+<section id="alias">
+  <h2><span class="num">4</span>Aliasing makes "the name" ambiguous</h2>
+
+  <p>Even if you tried to give the Param its own <code>.name</code>, Python lets you do this:</p>
+
+<pre><code>alpha = beta = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0</span>, <span class="num">1</span>))</code></pre>
+
+  <div class="aliasing-vis">
+    <div class="alias-names">
+      <div class="alias-name">"alpha"</div>
+      <div class="alias-name">"beta"</div>
+    </div>
+    <div class="alias-arrows">↘ &nbsp; ↙</div>
+    <div class="alias-obj">Param#1<br><span style="color:var(--fg-dim);font-size:0.7rem">.name = ???</span></div>
+  </div>
+
+  <p>One object, two names in the namespace. Which one is "the" name? There is no answer at the language level — the Param object simply doesn't carry that information.</p>
+
+  <div class="callout">
+    The <code>UnresolvedSymbol(id)</code> trick sidesteps this entirely: the object has an identity (the id), and the <em>decorator</em> later picks the canonical name from the namespace dict using a single rule (first match wins, or raise on aliasing — whichever the project chooses).
+  </div>
+</section>
+
+<!-- ========================================================= -->
+<section id="solution">
+  <h2><span class="num">5</span>What <code>UnresolvedSymbol</code> buys us</h2>
+
+  <p>So the situation at the end of the class body is:</p>
+
+  <ul>
+    <li>Every <code>Param</code> / <code>Data</code> object exists in memory but doesn't know its name.</li>
+    <li>The expression tree <code>mu</code> references those objects somehow.</li>
+    <li>The class namespace dict is the only thing that knows "this object is called alpha".</li>
+  </ul>
+
+  <p><code>UnresolvedSymbol</code> is the bridge. Each declaration grabs a fresh, unique id at construction:</p>
+
+<pre><code><span class="kw">@dataclass</span>(frozen=<span class="kw">True</span>)
+<span class="kw">class</span> <span class="cls">Param</span>:
+    distribution: Distribution
+    constraint: Constraint | <span class="kw">None</span> = <span class="kw">None</span>
+    size: ... = <span class="kw">None</span>
+    symbol: UnresolvedSymbol = field(default_factory=next_symbol, init=<span class="kw">False</span>, repr=<span class="kw">False</span>)</code></pre>
+
+  <p>So a <code>ParamRef(UnresolvedSymbol(7))</code> embedded in an expression is essentially saying:</p>
+
+  <div class="callout good">
+    "I refer to whichever declaration had the unique symbol id 7. Someone with access to the namespace will figure out my real name later."
+  </div>
+
+  <p>The id is meaningful only as an identity tag — it survives operator chaining, dataclass construction, hashing, dict lookups. It carries the object's identity across the gap between "expression built" and "names known".</p>
+</section>
+
+<!-- ========================================================= -->
+<section id="setname">
+  <h2><span class="num">6</span>Sidebar: doesn't <code>__set_name__</code> solve this?</h2>
+
+  <p>Python <em>does</em> have a hook for this. Descriptors that implement <code>__set_name__(owner, name)</code> have their name set automatically by the class machinery after the class body completes:</p>
+
+<pre><code><span class="kw">class</span> <span class="cls">Param</span>:
+    <span class="kw">def</span> <span class="fn">__set_name__</span>(self, owner, name):
+        self.name = name   <span class="cmt"># called AFTER class body</span></code></pre>
+
+  <p>So why isn't that enough? Because of <strong>when</strong> it runs:</p>
+
+  <ol>
+    <li>Class body starts.</li>
+    <li><code>alpha = Param(...)</code> — Param constructed, stored in namespace. Has no name yet.</li>
+    <li><code>mu = alpha + beta * x</code> — <strong>expression tree built right now</strong>, using the Param object as it currently is (nameless).</li>
+    <li>Class body finishes.</li>
+    <li>Python calls <code>__set_name__</code> on each descriptor. Param finally learns it's called <code>"alpha"</code>.</li>
+  </ol>
+
+  <div class="callout warn">
+    <strong>Too late.</strong> By the time <code>__set_name__</code> runs, <code>mu</code>'s expression tree was already constructed and frozen. Setting <code>.name</code> on the Param object now doesn't propagate into the expression node that captured it earlier — the node already exists with whatever it captured.
+  </div>
+
+  <p>You'd still need a pass after <code>__set_name__</code> that walks the expression trees and rewrites them using the now-known names. Which is… basically the <code>@model</code> decorator. So <code>__set_name__</code> doesn't avoid the work; it just shifts where the name-discovery happens.</p>
+
+  <p>The plan's approach (a unique id at construction + one explicit rewrite in <code>@model</code>) is simpler, doesn't depend on descriptor protocol, and keeps everything in one well-defined function.</p>
+</section>
+
+<!-- ========================================================= -->
+<section id="onepass">
+  <h2><span class="num">7</span>Why a single pass is tricky</h2>
+
+  <p>You might think: "Once <code>@model</code> runs, the namespace is fully built. Why not walk <code>cls.__dict__</code> once and do both jobs — register declarations AND rewrite expressions — as we go?"</p>
+
+<pre><code><span class="cmt"># Naive one-pass attempt</span>
+symbols = {}
+<span class="kw">for</span> name, value <span class="kw">in</span> cls.__dict__.items():
+    <span class="kw">if</span> <span class="fn">isinstance</span>(value, (Param, Data)):
+        symbols[value.symbol] = name
+    <span class="kw">elif</span> <span class="fn">is_expr_node</span>(value):
+        <span class="fn">normalize_expr</span>(value, symbols)
+    <span class="kw">elif</span> <span class="fn">isinstance</span>(value, Observed):
+        <span class="fn">normalize_observed</span>(value, symbols)</code></pre>
+
+  <p>This <em>happens to work</em> in simple cases, but the correctness rests on a quiet assumption: <strong>every reference in an expression points to a declaration that appears earlier in <code>cls.__dict__</code></strong>.</p>
+
+  <h3>Where that assumption gets shaky</h3>
+
+  <p><strong>Case A — Hierarchical Param distributions:</strong></p>
+
+<pre><code>alpha_pop   = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0</span>, <span class="num">1</span>))           <span class="cmt"># symbol 1</span>
+sigma_alpha = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0</span>, <span class="num">1</span>))           <span class="cmt"># symbol 2</span>
+alpha       = <span class="fn">Param</span>(<span class="fn">Normal</span>(alpha_pop, sigma_alpha),  <span class="cmt"># symbol 3</span>
+                    size=n_groups)
+y           = <span class="fn">Observed</span>(<span class="fn">Normal</span>(alpha, <span class="num">1.0</span>))</code></pre>
+
+  <p>The <code>alpha</code> Param's <em>distribution field</em> contains references to <code>alpha_pop</code>, <code>sigma_alpha</code>, and <code>n_groups</code>. To normalize that distribution, the symbol map must already contain entries for symbols 1, 2 and <code>n_groups</code>. With a single pass, the code's correctness silently depends on iteration order matching reference order.</p>
+
+  <p><strong>Case B — Future refactor risk:</strong></p>
+
+  <p>Dict iteration order is insertion order today, but the moment someone:</p>
+  <ul>
+    <li>introduces a metaclass that reorders attributes,</li>
+    <li>adds an inheritance hierarchy where parent declarations interleave,</li>
+    <li>or generates classes programmatically with a different attribute order,</li>
+  </ul>
+  <p>the one-pass approach starts silently producing <code>KeyError</code>s or, worse, references against a stale partial symbol table.</p>
+
+  <p><strong>Case C — Cognitive load:</strong></p>
+
+  <p>In a single pass you're interleaving two different intents — "discover declarations" and "rewrite expressions". A reader has to hold both in their head and convince themselves the order works. The bug surface is invisible: if it breaks, it breaks on a model that happens to have an unusual attribute order, and the failure is a <code>KeyError</code> on a symbol that hasn't been registered yet.</p>
+
+  <div class="callout bad">
+    The fragility isn't "this will break today". It's "this might break later, in a way that's hard to predict, because correctness depends on something the code never states out loud."
+  </div>
+</section>
+
+<!-- ========================================================= -->
+<section id="twopass">
+  <h2><span class="num">8</span>Two passes spell it out</h2>
+
+  <p>The two-pass decorator makes the dependency explicit. Pass 1 has one job: build the complete map.</p>
+
+<pre><code><span class="cmt"># Pass 1: discover</span>
+symbols = {}
+<span class="kw">for</span> name, value <span class="kw">in</span> cls.__dict__.items():
+    <span class="kw">if</span> <span class="fn">isinstance</span>(value, (Param, Data)):
+        symbols[value.symbol] = name</code></pre>
+
+  <p>After Pass 1, the invariant is loud and clear: every declaration's symbol is in the map. Pass 2 can now rewrite anything in any order:</p>
+
+<pre><code><span class="cmt"># Pass 2: rewrite</span>
+<span class="kw">for</span> name, value <span class="kw">in</span> cls.__dict__.items():
+    <span class="kw">if</span> <span class="fn">is_expr_node</span>(value):
+        expressions[name] = <span class="fn">normalize_expr</span>(value, symbols)
+    <span class="kw">elif</span> <span class="fn">isinstance</span>(value, Observed):
+        observed = <span class="fn">normalize_observed</span>(value, symbols)</code></pre>
+
+  <div class="grid-2">
+    <div class="callout good" style="margin:0">
+      <strong>Two-pass:</strong> correctness independent of iteration order. Easy to read. Easy to extend.
+    </div>
+    <div class="callout warn" style="margin:0">
+      <strong>One-pass:</strong> correctness rests on a quiet ordering assumption. Works today, brittle tomorrow.
+    </div>
+  </div>
+
+  <p>That's the trade — pay one extra dict iteration (cheap) for a guarantee that future changes don't introduce subtle ordering bugs.</p>
+
+  <div class="callout">
+    <strong>Mental shortcut.</strong> Whenever an algorithm has both "discovery" and "use", separating them into discrete passes almost always wins on readability and robustness, even when ordering would technically allow interleaving.
+  </div>
+</section>
+
+<div class="links">
+  <a href="./model_declarations_guide.html">← back to main guide</a>
+</div>
+
+</main>
+
+<footer>
+  Companion to <code>MODEL_DECLARATIONS_IMPLEMENTATION_PLAN.md</code> · jaxstanv5
+</footer>
+
+<script>
+// ---- Step-through demo state ----
+const sourceLines = [
+  "class LinearRegression:",
+  "    alpha = Param(Normal(0, 1))",
+  "    x = Data()",
+  "    mu = alpha + x",
+  "# class body done",
+  "# @model decorator runs",
+  "    # Pass 1: build symbol table",
+  "    # Pass 2: rewrite expressions",
+];
+
+const steps = [
+  {
+    line: 0,
+    mem: [],
+    ns: [],
+    note: "Python starts executing the class body. A fresh empty namespace dict is created. Nothing exists in memory yet."
+  },
+  {
+    line: 1,
+    mem: [
+      { title: "Param#1", attrs: [
+        ["distribution", "Normal(0, 1)"],
+        ["symbol", "UnresolvedSymbol(0)"],
+        [".name", "UNKNOWN"]
+      ]}
+    ],
+    ns: [{ k: '"alpha"', v: "→ Param#1" }],
+    note: "RHS evaluates first: Param(Normal(0, 1)) constructs a new object. It gets symbol id 0. Then the namespace dict gets the entry \"alpha\" → Param#1. The dict knows the name. The Param object does NOT."
+  },
+  {
+    line: 2,
+    mem: [
+      { title: "Param#1", attrs: [
+        ["distribution", "Normal(0, 1)"],
+        ["symbol", "UnresolvedSymbol(0)"],
+        [".name", "UNKNOWN"]
+      ]},
+      { title: "Data#2", attrs: [
+        ["symbol", "UnresolvedSymbol(1)"],
+        [".name", "UNKNOWN"]
+      ], isNew: true}
+    ],
+    ns: [
+      { k: '"alpha"', v: "→ Param#1" },
+      { k: '"x"',     v: "→ Data#2", isNew: true }
+    ],
+    note: "Same dance: Data() constructs an object with symbol id 1, then the namespace gets \"x\" → Data#2. Two objects exist in memory, neither knows its own name."
+  },
+  {
+    line: 3,
+    mem: [
+      { title: "Param#1", attrs: [
+        ["symbol", "UnresolvedSymbol(0)"],
+        [".name", "UNKNOWN"]
+      ]},
+      { title: "Data#2", attrs: [
+        ["symbol", "UnresolvedSymbol(1)"],
+        [".name", "UNKNOWN"]
+      ]},
+      { title: "BinOp#3", attrs: [
+        ["op", '"+"'],
+        ["left",  "ParamRef(UnresolvedSymbol(0))"],
+        ["right", "DataRef(UnresolvedSymbol(1))"]
+      ], isNew: true}
+    ],
+    ns: [
+      { k: '"alpha"', v: "→ Param#1" },
+      { k: '"x"',     v: "→ Data#2" },
+      { k: '"mu"',    v: "→ BinOp#3", isNew: true }
+    ],
+    note: "Python looks up \"alpha\" and \"x\" in the namespace and calls alpha.__add__(x). Neither method has access to the strings \"alpha\" or \"x\" — only to the objects themselves. So the BinOp embeds the symbol ids (0 and 1), not names. Note how the expression carries UnresolvedSymbols."
+  },
+  {
+    line: 4,
+    mem: "same",
+    ns: "same",
+    note: "Class body has finished executing. The class object is being assembled. At this point, every Param/Data still has .name = UNKNOWN, and the expression tree references them only by symbol id."
+  },
+  {
+    line: 5,
+    mem: "same",
+    ns: "same",
+    note: "Now @model takes over. It has full access to cls.__dict__ (the same namespace we built up). For the first time, both the object identities (via .symbol) AND their attribute names are available together — but in two separate columns."
+  },
+  {
+    line: 6,
+    mem: "same",
+    ns: "same",
+    note: "Pass 1 walks cls.__dict__. For each Param/Data it sees, it records: \"symbol id 0 means alpha\", \"symbol id 1 means x\". The symbol table is now: { UnresolvedSymbol(0): \"alpha\", UnresolvedSymbol(1): \"x\" }."
+  },
+  {
+    line: 7,
+    mem: [
+      { title: "Param#1", attrs: [
+        ["symbol", "UnresolvedSymbol(0)"],
+        [".name", "UNKNOWN"]
+      ]},
+      { title: "Data#2", attrs: [
+        ["symbol", "UnresolvedSymbol(1)"],
+        [".name", "UNKNOWN"]
+      ]},
+      { title: "BinOp#3 (rewritten)", attrs: [
+        ["op", '"+"'],
+        ["left",  'ParamRef("alpha")'],
+        ["right", 'DataRef("x")']
+      ], isNew: true}
+    ],
+    ns: [
+      { k: '"alpha"', v: "→ Param#1" },
+      { k: '"x"',     v: "→ Data#2" },
+      { k: '"mu"',    v: "→ BinOp#3 (rewritten)" }
+    ],
+    note: "Pass 2 walks cls.__dict__ again, finds the expression mu, and uses the symbol table to rewrite every UnresolvedSymbol into a real string name. The expression tree is now self-describing: ParamRef(\"alpha\") + DataRef(\"x\"). Job done."
+  },
+];
+
+let current = 0;
+const codeEl = document.getElementById("demo-code");
+const memEl  = document.getElementById("panel-mem");
+const nsEl   = document.getElementById("panel-ns");
+const narrEl = document.getElementById("narration");
+const indEl  = document.getElementById("step-ind");
+const nextBtn = document.getElementById("btn-next");
+const resetBtn = document.getElementById("btn-reset");
+
+function renderCode(activeLine, doneUpTo) {
+  codeEl.innerHTML = sourceLines.map((src, i) => {
+    let cls = "line";
+    if (i === activeLine) cls += " active";
+    else if (i < doneUpTo) cls += " done";
+    return `<span class="${cls}">${escapeHtml(src) || "&nbsp;"}</span>`;
+  }).join("");
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function renderMem(items) {
+  if (!items.length) { memEl.innerHTML = '<div style="color:var(--fg-dim);font-size:0.74rem">(empty)</div>'; return; }
+  memEl.innerHTML = items.map(o => {
+    const attrs = o.attrs.map(([k,v]) =>
+      `<div class="obj-attr">${escapeHtml(k)}: <span class="val">${escapeHtml(v)}</span></div>`
+    ).join("");
+    return `<div class="obj-card ${o.isNew ? "new" : ""}"><div class="obj-title">${escapeHtml(o.title)}</div>${attrs}</div>`;
+  }).join("");
+}
+
+function renderNs(items) {
+  if (!items.length) { nsEl.innerHTML = '<div style="color:var(--fg-dim);font-size:0.74rem">{}</div>'; return; }
+  nsEl.innerHTML = items.map(e =>
+    `<div class="ns-entry ${e.isNew ? "new" : ""}"><span class="key">${escapeHtml(e.k)}</span><span class="arrow">${escapeHtml(e.v)}</span></div>`
+  ).join("");
+}
+
+let lastMem = [];
+let lastNs = [];
+
+function applyStep(i) {
+  if (i < 0 || i >= steps.length) return;
+  const s = steps[i];
+  renderCode(s.line, s.line);
+  const mem = (s.mem === "same") ? lastMem : s.mem;
+  const ns  = (s.ns  === "same") ? lastNs  : s.ns;
+  renderMem(mem);
+  renderNs(ns);
+  lastMem = mem.map(o => ({ ...o, isNew: false }));
+  lastNs  = ns.map(e  => ({ ...e, isNew: false }));
+  narrEl.innerHTML = `<div class="step-tag">Step ${i + 1} / ${steps.length}</div>${s.note}`;
+  indEl.textContent = `${i + 1} / ${steps.length}`;
+  nextBtn.disabled = (i >= steps.length - 1);
+  nextBtn.textContent = (i >= steps.length - 1) ? "Done ✓" : "Next ▶";
+}
+
+function reset() {
+  current = 0;
+  lastMem = [];
+  lastNs = [];
+  renderCode(-1, 0);
+  renderMem([]);
+  renderNs([]);
+  narrEl.innerHTML = `<div class="step-tag">Step 0</div>Ready. Tap <strong>Next</strong> to begin.`;
+  indEl.textContent = `0 / ${steps.length}`;
+  nextBtn.disabled = false;
+  nextBtn.textContent = "Next ▶";
+}
+
+nextBtn.addEventListener("click", () => {
+  if (current < steps.length) {
+    applyStep(current);
+    current += 1;
+  }
+});
+resetBtn.addEventListener("click", reset);
+reset();
+</script>
+
+</body>
+</html>
