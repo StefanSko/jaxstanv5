@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+<meta name="theme-color" content="#0f172a" />
+<title>Measurement Error Models with @model — Visual Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-soft: #1e293b;
+    --bg-card: #1a2438;
+    --fg: #e2e8f0;
+    --fg-dim: #94a3b8;
+    --accent: #38bdf8;
+    --accent-2: #a78bfa;
+    --good: #4ade80;
+    --bad: #f87171;
+    --warn: #fbbf24;
+    --code-bg: #0b1224;
+    --border: #334155;
+    --param: #38bdf8;
+    --data:  #94a3b8;
+    --obs:   #4ade80;
+    --det:   #a78bfa;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.55;
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    padding: 24px 18px 18px;
+    background: linear-gradient(160deg, #1e293b 0%, #0f172a 80%);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 {
+    margin: 0 0 4px;
+    font-size: 1.2rem;
+    letter-spacing: -0.02em;
+  }
+  header p {
+    margin: 0;
+    color: var(--fg-dim);
+    font-size: 0.8rem;
+  }
+  nav {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 10px 18px;
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 76px;
+    z-index: 9;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  nav a {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 0.76rem;
+    color: var(--fg-dim);
+    text-decoration: none;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  main { padding: 14px 12px 60px; max-width: 780px; margin: 0 auto; }
+  section {
+    margin: 18px 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 14px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    scroll-margin-top: 130px;
+  }
+  section h2 {
+    margin: 0 0 10px;
+    font-size: 1.05rem;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  section h2 .num {
+    background: var(--accent);
+    color: #0b1224;
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  section h3 {
+    margin: 12px 0 6px;
+    font-size: 0.9rem;
+    color: var(--accent-2);
+  }
+  p, li { font-size: 0.9rem; }
+  code, pre { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+  code:not(pre code) {
+    background: var(--code-bg);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.82em;
+    word-break: break-word;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    overflow-x: auto;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    -webkit-overflow-scrolling: touch;
+  }
+  pre code { color: var(--fg); }
+  .kw { color: #c084fc; }
+  .str { color: #86efac; }
+  .num { color: #fbbf24; }
+  .cmt { color: #64748b; font-style: italic; }
+  .fn { color: #38bdf8; }
+  .cls { color: #f9a8d4; }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: rgba(56,189,248,0.08);
+    padding: 10px 12px;
+    margin: 10px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.86rem;
+  }
+  .callout.warn { border-color: var(--warn); background: rgba(251,191,36,0.08); }
+  .callout.bad  { border-color: var(--bad);  background: rgba(248,113,113,0.08); }
+  .callout.good { border-color: var(--good); background: rgba(74,222,128,0.08); }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin: 10px 0;
+  }
+  @media (min-width: 600px) {
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+  }
+  .card-mini {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .card-mini h4 {
+    margin: 0 0 4px;
+    font-size: 0.85rem;
+    color: var(--accent-2);
+  }
+  .card-mini p { margin: 0; font-size: 0.82rem; color: var(--fg-dim); }
+  ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  /* Math */
+  .math {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 0.82rem;
+    overflow-x: auto;
+    line-height: 1.75;
+    -webkit-overflow-scrolling: touch;
+  }
+  .math .lhs { color: var(--accent-2); }
+  .math .rhs { color: var(--fg); }
+  .math .pri { color: #fbbf24; }
+  .math .obs { color: var(--good); }
+  .math .par { color: var(--accent); }
+
+  /* DAG */
+  .dag-wrap {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    margin: 10px 0;
+    overflow-x: auto;
+  }
+  .dag-wrap svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 8px 0 12px;
+    font-size: 0.78rem;
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend .swatch {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--fg-dim);
+    font-size: 0.76rem;
+    padding: 30px 14px 50px;
+  }
+  .verdict {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0;
+    font-size: 0.9rem;
+  }
+  .verdict.yes { border-color: var(--good); background: rgba(74,222,128,0.06); }
+  .verdict.no  { border-color: var(--bad);  background: rgba(248,113,113,0.06); }
+  .verdict .tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    margin-right: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .verdict.yes .tag { background: var(--good); color: #052e16; }
+  .verdict.no .tag  { background: var(--bad);  color: #450a0a; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Measurement Error Models with <code style="background:transparent;color:#38bdf8">@model</code></h1>
+  <p>Can the DSL express observation-noise / latent-truth models? · jaxstanv5</p>
+</header>
+
+<nav>
+  <a href="#intro">Intro</a>
+  <a href="#m151-math">m15.1 math</a>
+  <a href="#m151-dag">m15.1 DAG</a>
+  <a href="#m151-dsl">m15.1 in DSL</a>
+  <a href="#m152-math">m15.2 math</a>
+  <a href="#m152-dag">m15.2 DAG</a>
+  <a href="#wall">The wall</a>
+  <a href="#extension">Extension</a>
+  <a href="#m152-dsl">m15.2 in DSL</a>
+  <a href="#bind">bind + logp</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<main>
+
+<!-- =========================================================== -->
+<section id="intro">
+  <h2><span class="num">1</span>Why measurement error models look different</h2>
+
+  <p>In an ordinary regression, the observed outcome <code>y</code> is a noisy function of parameters and predictor data:</p>
+
+  <div class="math">
+    y <span class="lhs">~</span> <span class="rhs">Normal(α + β·x, σ)</span>
+  </div>
+
+  <p>In a <strong>measurement error</strong> model, one of the things you observe is itself a noisy version of a <em>latent</em> true value — and that latent true value is the thing the rest of the model actually depends on. Schematically:</p>
+
+  <div class="math">
+    <span class="obs">y_obs</span> <span class="lhs">~</span> <span class="rhs">Normal(<span class="par">y_true</span>, y_sd)</span>     <span class="cmt"># observation model</span>
+    <br>
+    <span class="par">y_true</span> <span class="lhs">~</span> <span class="rhs">Normal(α + β·x, σ)</span>     <span class="cmt"># latent process model</span>
+  </div>
+
+  <p>The observed node (<code>y_obs</code>) is a <em>descendant</em> of a parameter (<code>y_true</code>) — exactly the question you asked.</p>
+
+  <div class="callout">
+    Two distinct likelihoods get added to the log posterior: one for "the measurement was noisy" and one for "the latent truth followed this process". The DSL has to give us a way to express <strong>both</strong>.
+  </div>
+</section>
+
+<!-- =========================================================== -->
+<section id="m151-math">
+  <h2><span class="num">2</span>McElreath model 15.1 — divorce with outcome error</h2>
+
+  <p>Straight from the R script (single measurement error, on the outcome only):</p>
+
+<pre><code>m15.1 &lt;- ulam(
+  alist(
+    D_obs ~ dnorm( D_true , D_sd ),
+    vector[N]:D_true ~ dnorm( mu , sigma ),
+    mu &lt;- a + bA*A + bM*M,
+    a     ~ dnorm(<span class="num">0</span>, <span class="num">0.2</span>),
+    bA    ~ dnorm(<span class="num">0</span>, <span class="num">0.5</span>),
+    bM    ~ dnorm(<span class="num">0</span>, <span class="num">0.5</span>),
+    sigma ~ dexp(<span class="num">1</span>)
+  ),
+  data=dlist, chains=4, cores=4)</code></pre>
+
+  <p>In math notation:</p>
+
+  <div class="math">
+    <span class="obs">D_obs<sub>i</sub></span> <span class="lhs">~</span> <span class="rhs">Normal(<span class="par">D_true<sub>i</sub></span>, D_sd<sub>i</sub>)</span><br>
+    <span class="par">D_true<sub>i</sub></span> <span class="lhs">~</span> <span class="rhs">Normal(μ<sub>i</sub>, σ)</span><br>
+    μ<sub>i</sub> <span class="lhs">=</span> <span class="rhs">a + b<sub>A</sub>·A<sub>i</sub> + b<sub>M</sub>·M<sub>i</sub></span><br>
+    <span class="par">a</span> <span class="lhs">~</span> <span class="pri">Normal(0, 0.2)</span><br>
+    <span class="par">b<sub>A</sub></span> <span class="lhs">~</span> <span class="pri">Normal(0, 0.5)</span><br>
+    <span class="par">b<sub>M</sub></span> <span class="lhs">~</span> <span class="pri">Normal(0, 0.5)</span><br>
+    <span class="par">σ</span> <span class="lhs">~</span> <span class="pri">Exponential(1)</span>
+  </div>
+
+  <p>Key actors:</p>
+
+  <div class="grid-2">
+    <div class="card-mini"><h4>Parameters</h4><p><code>a, bA, bM, σ</code> (scalars) and <code>D_true</code> (vector of length N)</p></div>
+    <div class="card-mini"><h4>Data</h4><p><code>A, M, D_sd, N</code> — all known up front</p></div>
+    <div class="card-mini"><h4>Observed</h4><p><code>D_obs</code> — the noisy divorce-rate measurement</p></div>
+    <div class="card-mini"><h4>Deterministic</h4><p><code>μ</code> — pure expression of params + data</p></div>
+  </div>
+</section>
+
+<!-- =========================================================== -->
+<section id="m151-dag">
+  <h2><span class="num">3</span>m15.1 as a DAG</h2>
+
+  <div class="legend">
+    <span><span class="swatch" style="background:rgba(56,189,248,0.18);border-color:var(--param)"></span>Parameter</span>
+    <span><span class="swatch" style="background:rgba(148,163,184,0.18);border-color:var(--data)"></span>Data</span>
+    <span><span class="swatch" style="background:rgba(167,139,250,0.18);border-color:var(--det)"></span>Deterministic</span>
+    <span><span class="swatch" style="background:rgba(74,222,128,0.18);border-color:var(--obs)"></span>Observed</span>
+  </div>
+
+  <div class="dag-wrap">
+    <svg viewBox="0 0 460 320">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+        </marker>
+      </defs>
+      <!-- top row: priors for a, bA, bM, sigma -->
+      <g font-family="SF Mono, monospace" font-size="13" text-anchor="middle">
+        <!-- a -->
+        <circle cx="50"  cy="50" r="22" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="50"  y="55" fill="#38bdf8">a</text>
+        <!-- bA -->
+        <circle cx="130" cy="50" r="22" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="130" y="55" fill="#38bdf8">bA</text>
+        <!-- bM -->
+        <circle cx="210" cy="50" r="22" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="210" y="55" fill="#38bdf8">bM</text>
+        <!-- sigma -->
+        <circle cx="370" cy="50" r="22" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="370" y="55" fill="#38bdf8">σ</text>
+
+        <!-- second row: A, M data -->
+        <circle cx="290" cy="130" r="22" fill="rgba(148,163,184,0.18)" stroke="#94a3b8" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="290" y="135" fill="#94a3b8">A</text>
+        <circle cx="350" cy="130" r="22" fill="rgba(148,163,184,0.18)" stroke="#94a3b8" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="350" y="135" fill="#94a3b8">M</text>
+
+        <!-- mu deterministic -->
+        <rect x="100" y="135" width="80" height="44" rx="6" fill="rgba(167,139,250,0.18)" stroke="#a78bfa" stroke-width="2"/>
+        <text x="140" y="162" fill="#a78bfa">μ</text>
+
+        <!-- D_true -->
+        <circle cx="200" cy="220" r="26" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="200" y="225" fill="#38bdf8">D_true</text>
+
+        <!-- D_sd data -->
+        <circle cx="350" cy="220" r="22" fill="rgba(148,163,184,0.18)" stroke="#94a3b8" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="350" y="225" fill="#94a3b8">D_sd</text>
+
+        <!-- D_obs observed -->
+        <circle cx="270" cy="290" r="26" fill="rgba(74,222,128,0.18)" stroke="#4ade80" stroke-width="2.5"/>
+        <text x="270" y="295" fill="#4ade80">D_obs</text>
+      </g>
+
+      <!-- arrows -->
+      <g stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arrow)" opacity="0.7">
+        <line x1="55"  y1="70"  x2="120" y2="140"/>   <!-- a -> mu -->
+        <line x1="128" y1="72"  x2="138" y2="135"/>   <!-- bA -> mu -->
+        <line x1="200" y1="70"  x2="160" y2="135"/>   <!-- bM -> mu -->
+        <line x1="280" y1="135" x2="180" y2="157"/>   <!-- A -> mu -->
+        <line x1="335" y1="138" x2="180" y2="160"/>   <!-- M -> mu -->
+        <line x1="160" y1="180" x2="190" y2="200"/>   <!-- mu -> D_true -->
+        <line x1="360" y1="72"  x2="215" y2="200"/>   <!-- sigma -> D_true -->
+        <line x1="220" y1="240" x2="255" y2="270"/>   <!-- D_true -> D_obs -->
+        <line x1="345" y1="240" x2="290" y2="275"/>   <!-- D_sd -> D_obs -->
+      </g>
+    </svg>
+  </div>
+
+  <p>Read the arrows as "is a parent of". The crucial edge is <code>D_true → D_obs</code>: the green observed node has a parameter as its <em>parent</em>. That parent <code>D_true</code> in turn has its own distribution driven by other parameters.</p>
+</section>
+
+<!-- =========================================================== -->
+<section id="m151-dsl">
+  <h2><span class="num">4</span>Does the current DSL handle this?</h2>
+
+  <p>Let's try writing model 15.1 in the planned <code>@model</code> DSL. The key trick: <code>D_true</code> is a Param whose distribution depends on other params — exactly the hierarchical pattern already shown in the implementation plan.</p>
+
+<pre><code><span class="kw">@model</span>
+<span class="kw">class</span> <span class="cls">DivorceMeasErr</span>:
+    <span class="cmt"># data</span>
+    N    = <span class="fn">Data</span>()
+    A    = <span class="fn">Data</span>()
+    M    = <span class="fn">Data</span>()
+    D_sd = <span class="fn">Data</span>()
+
+    <span class="cmt"># scalar params (priors as in m15.1)</span>
+    a     = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0.0</span>, <span class="num">0.2</span>))
+    bA    = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0.0</span>, <span class="num">0.5</span>))
+    bM    = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0.0</span>, <span class="num">0.5</span>))
+    sigma = <span class="fn">Param</span>(<span class="fn">Exponential</span>(<span class="num">1.0</span>), constraint=<span class="fn">Positive</span>())
+
+    <span class="cmt"># latent linear predictor (a deterministic expression)</span>
+    mu = a + bA * A + bM * M
+
+    <span class="cmt"># latent true outcome — a hierarchical Param (Normal centered on mu)</span>
+    D_true = <span class="fn">Param</span>(<span class="fn">Normal</span>(mu, sigma), size=N)
+
+    <span class="cmt"># the single observed quantity</span>
+    D_obs = <span class="fn">Observed</span>(<span class="fn">Normal</span>(D_true, D_sd))</code></pre>
+
+  <div class="verdict yes">
+    <span class="tag">Yes</span>
+    <strong>Model 15.1 fits the current DSL as-is.</strong>
+    It needs only one Observed (<code>D_obs</code>). The latent <code>D_true</code> is a hierarchical Param. The expression <code>mu</code> and the conditional distribution <code>Normal(mu, sigma)</code> are exactly what the plan already supports.
+  </div>
+
+  <h3>What the metadata would look like</h3>
+
+  <div class="grid-2">
+    <div class="card-mini">
+      <h4>params</h4>
+      <p><code>a, bA, bM, sigma, D_true</code></p>
+    </div>
+    <div class="card-mini">
+      <h4>data_slots</h4>
+      <p><code>N, A, M, D_sd</code></p>
+    </div>
+    <div class="card-mini">
+      <h4>expressions</h4>
+      <p><code>mu</code> → <code>BinOp(+, …)</code></p>
+    </div>
+    <div class="card-mini">
+      <h4>observed_name</h4>
+      <p><code>"D_obs"</code></p>
+    </div>
+  </div>
+
+  <p>And after <code>bind(N=50, A=..., M=..., D_sd=..., D_obs=...)</code>:</p>
+
+<pre><code>bound.param_shapes == {
+    <span class="str">"a"</span>: (), <span class="str">"bA"</span>: (), <span class="str">"bM"</span>: (),
+    <span class="str">"sigma"</span>: (), <span class="str">"D_true"</span>: (<span class="num">50</span>,)
+}
+bound.n_params == <span class="num">54</span>   <span class="cmt"># 4 scalars + 50 latent truths</span></code></pre>
+</section>
+
+<!-- =========================================================== -->
+<section id="m152-math">
+  <h2><span class="num">5</span>McElreath model 15.2 — error on both sides</h2>
+
+  <p>Now both divorce <em>and</em> marriage are measured with error:</p>
+
+<pre><code>m15.2 &lt;- ulam(
+  alist(
+    D_obs ~ dnorm( D_true , D_sd ),
+    vector[N]:D_true ~ dnorm( mu , sigma ),
+    mu &lt;- a + bA*A + bM*M_true[i],
+    a     ~ dnorm(<span class="num">0</span>, <span class="num">0.2</span>),
+    bA    ~ dnorm(<span class="num">0</span>, <span class="num">0.5</span>),
+    bM    ~ dnorm(<span class="num">0</span>, <span class="num">0.5</span>),
+    sigma ~ dexp(<span class="num">1</span>),
+
+    M_obs ~ dnorm( M_true , M_sd ),
+    vector[N]:M_true ~ dnorm( nu , tau ),
+    nu  &lt;- aM + bAM*A,
+    aM  ~ dnorm(<span class="num">0</span>, <span class="num">0.2</span>),
+    bAM ~ dnorm(<span class="num">0</span>, <span class="num">0.5</span>),
+    tau ~ dexp(<span class="num">1</span>)
+  ), data=dlist2, chains=4, cores=4)</code></pre>
+
+  <p>Now there are <strong>two</strong> observation models:</p>
+
+  <div class="math">
+    <span class="obs">D_obs<sub>i</sub></span> <span class="lhs">~</span> <span class="rhs">Normal(<span class="par">D_true<sub>i</sub></span>, D_sd<sub>i</sub>)</span><br>
+    <span class="obs">M_obs<sub>i</sub></span> <span class="lhs">~</span> <span class="rhs">Normal(<span class="par">M_true<sub>i</sub></span>, M_sd<sub>i</sub>)</span>
+  </div>
+
+  <p>And two latent process models, with the latent <code>M_true</code> entering the linear predictor for <code>D_true</code>.</p>
+</section>
+
+<!-- =========================================================== -->
+<section id="m152-dag">
+  <h2><span class="num">6</span>m15.2 as a DAG</h2>
+
+  <div class="dag-wrap">
+    <svg viewBox="0 0 480 380">
+      <defs>
+        <marker id="arrow2" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+        </marker>
+      </defs>
+      <g font-family="SF Mono, monospace" font-size="12" text-anchor="middle">
+        <!-- A data feeds both sub-models -->
+        <circle cx="240" cy="35" r="20" fill="rgba(148,163,184,0.18)" stroke="#94a3b8" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="240" y="40" fill="#94a3b8">A</text>
+
+        <!-- Marriage sub-model (left) -->
+        <circle cx="50"  cy="80"  r="20" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="50"  y="85" fill="#38bdf8">aM</text>
+        <circle cx="120" cy="80"  r="20" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="120" y="85" fill="#38bdf8">bAM</text>
+        <circle cx="40"  cy="155" r="20" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="40"  y="160" fill="#38bdf8">τ</text>
+
+        <rect x="80" y="130" width="60" height="40" rx="6" fill="rgba(167,139,250,0.18)" stroke="#a78bfa" stroke-width="2"/>
+        <text x="110" y="155" fill="#a78bfa">ν</text>
+
+        <circle cx="110" cy="220" r="24" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="110" y="225" fill="#38bdf8">M_true</text>
+
+        <circle cx="30"  cy="290" r="20" fill="rgba(148,163,184,0.18)" stroke="#94a3b8" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="30"  y="295" fill="#94a3b8">M_sd</text>
+
+        <circle cx="110" cy="320" r="24" fill="rgba(74,222,128,0.18)" stroke="#4ade80" stroke-width="2.5"/>
+        <text x="110" y="325" fill="#4ade80">M_obs</text>
+
+        <!-- Divorce sub-model (right) -->
+        <circle cx="290" cy="80"  r="20" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="290" y="85" fill="#38bdf8">a</text>
+        <circle cx="360" cy="80"  r="20" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="360" y="85" fill="#38bdf8">bA</text>
+        <circle cx="430" cy="80"  r="20" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="430" y="85" fill="#38bdf8">bM</text>
+        <circle cx="445" cy="155" r="20" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="445" y="160" fill="#38bdf8">σ</text>
+
+        <rect x="320" y="130" width="60" height="40" rx="6" fill="rgba(167,139,250,0.18)" stroke="#a78bfa" stroke-width="2"/>
+        <text x="350" y="155" fill="#a78bfa">μ</text>
+
+        <circle cx="350" cy="220" r="24" fill="rgba(56,189,248,0.18)" stroke="#38bdf8" stroke-width="2"/>
+        <text x="350" y="225" fill="#38bdf8">D_true</text>
+
+        <circle cx="440" cy="290" r="20" fill="rgba(148,163,184,0.18)" stroke="#94a3b8" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="440" y="295" fill="#94a3b8">D_sd</text>
+
+        <circle cx="360" cy="320" r="24" fill="rgba(74,222,128,0.18)" stroke="#4ade80" stroke-width="2.5"/>
+        <text x="360" y="325" fill="#4ade80">D_obs</text>
+      </g>
+
+      <g stroke="#94a3b8" stroke-width="1.3" fill="none" marker-end="url(#arrow2)" opacity="0.7">
+        <!-- A -> nu, mu -->
+        <line x1="232" y1="50" x2="125" y2="135"/>
+        <line x1="248" y1="50" x2="345" y2="135"/>
+        <!-- left sub-model edges -->
+        <line x1="55"  y1="95"  x2="100" y2="135"/>   <!-- aM -> nu -->
+        <line x1="120" y1="100" x2="115" y2="135"/>   <!-- bAM -> nu -->
+        <line x1="105" y1="170" x2="108" y2="200"/>   <!-- nu -> M_true -->
+        <line x1="50"  y1="170" x2="92"  y2="205"/>   <!-- tau -> M_true -->
+        <line x1="103" y1="244" x2="105" y2="300"/>   <!-- M_true -> M_obs -->
+        <line x1="42"  y1="305" x2="85"  y2="318"/>   <!-- M_sd -> M_obs -->
+
+        <!-- M_true -> mu (cross link) -->
+        <line x1="135" y1="223" x2="320" y2="155" stroke="#a78bfa" stroke-width="1.6" stroke-dasharray="4 3"/>
+
+        <!-- right sub-model edges -->
+        <line x1="295" y1="95"  x2="338" y2="135"/>   <!-- a -> mu -->
+        <line x1="358" y1="100" x2="352" y2="135"/>   <!-- bA -> mu -->
+        <line x1="425" y1="95"  x2="370" y2="135"/>   <!-- bM -> mu -->
+        <line x1="345" y1="170" x2="348" y2="200"/>   <!-- mu -> D_true -->
+        <line x1="430" y1="170" x2="370" y2="205"/>   <!-- sigma -> D_true -->
+        <line x1="352" y1="244" x2="358" y2="300"/>   <!-- D_true -> D_obs -->
+        <line x1="430" y1="305" x2="385" y2="318"/>   <!-- D_sd -> D_obs -->
+      </g>
+    </svg>
+  </div>
+
+  <p>Two green observed nodes — <code>M_obs</code> and <code>D_obs</code> — both descend from latent parameters. The cross-link <code>M_true → μ</code> (dashed purple) is the whole point: the regression uses the <em>latent</em> marriage rate, not the noisy measurement.</p>
+</section>
+
+<!-- =========================================================== -->
+<section id="wall">
+  <h2><span class="num">7</span>The wall: one Observed isn't enough</h2>
+
+  <p>The plan states this design invariant:</p>
+
+  <blockquote style="border-left:3px solid var(--bad);padding:6px 12px;color:var(--fg-dim);background:rgba(248,113,113,0.06);border-radius:0 8px 8px 0">
+    Validation: exactly one <code>Observed</code>; no missing observed variable; no duplicate observed declaration.
+  </blockquote>
+
+  <p>That works for ordinary regression, and it works for m15.1 (single measurement error). But m15.2 has two distinct observation likelihoods that both need to contribute to the joint log-density:</p>
+
+  <div class="math">
+    log p = Σ<sub>i</sub> log <span class="obs">N(D_obs<sub>i</sub> | D_true<sub>i</sub>, D_sd<sub>i</sub>)</span>
+          + Σ<sub>i</sub> log <span class="obs">N(M_obs<sub>i</sub> | M_true<sub>i</sub>, M_sd<sub>i</sub>)</span>
+          + (priors on params)
+  </div>
+
+  <div class="verdict no">
+    <span class="tag">No</span>
+    <strong>Model 15.2 cannot be expressed with the current DSL.</strong>
+    The "exactly one Observed" rule blocks the second observation likelihood. We can't smuggle <code>M_obs</code> in as a Data slot either, because Data carries no distribution — it would contribute nothing to the log posterior.
+  </div>
+</section>
+
+<!-- =========================================================== -->
+<section id="extension">
+  <h2><span class="num">8</span>A minimal extension: many <code>Observed</code></h2>
+
+  <p>The cleanest fix: <strong>relax the "exactly one Observed" rule to "one or more"</strong>. Most of the plan stays the same; <code>ModelMeta</code> just stores a dict instead of a single name.</p>
+
+  <h3>Before</h3>
+<pre><code><span class="kw">@dataclass</span>(frozen=<span class="kw">True</span>)
+<span class="kw">class</span> <span class="cls">ModelMeta</span>:
+    params: <span class="cls">dict</span>[<span class="cls">str</span>, Param]
+    data_slots: <span class="cls">list</span>[<span class="cls">str</span>]
+    observed_name: <span class="cls">str</span>
+    observed: Observed
+    expressions: <span class="cls">dict</span>[<span class="cls">str</span>, ExprNode]</code></pre>
+
+  <h3>After</h3>
+<pre><code><span class="kw">@dataclass</span>(frozen=<span class="kw">True</span>)
+<span class="kw">class</span> <span class="cls">ModelMeta</span>:
+    params: <span class="cls">dict</span>[<span class="cls">str</span>, Param]
+    data_slots: <span class="cls">list</span>[<span class="cls">str</span>]
+    observed: <span class="cls">dict</span>[<span class="cls">str</span>, Observed]      <span class="cmt"># &gt;=1 entry</span>
+    expressions: <span class="cls">dict</span>[<span class="cls">str</span>, ExprNode]</code></pre>
+
+  <p>Validation changes are tiny:</p>
+
+  <ul>
+    <li><code>len(observed) &gt;= 1</code> — at least one observation likelihood.</li>
+    <li>No duplicate names (already enforced by class attribute uniqueness).</li>
+    <li>No overlap between an <code>Observed</code> name and a <code>Data</code> slot or <code>Param</code> name.</li>
+  </ul>
+
+  <p>And the decorator's Pass 2 collects them into the dict instead of asserting one:</p>
+
+<pre><code><span class="kw">for</span> name, value <span class="kw">in</span> cls.__dict__.items():
+    <span class="kw">if</span> <span class="fn">isinstance</span>(value, Observed):
+        observed[name] = <span class="fn">normalize_observed</span>(value, symbols)
+    <span class="kw">elif</span> <span class="fn">is_expr_node</span>(value):
+        expressions[name] = <span class="fn">normalize_expr</span>(value, symbols)</code></pre>
+
+  <div class="callout good">
+    Nothing about <code>Param</code>, <code>Data</code>, <code>UnresolvedSymbol</code>, the two-pass decorator, or expression normalization needs to change. The extension is local.
+  </div>
+</section>
+
+<!-- =========================================================== -->
+<section id="m152-dsl">
+  <h2><span class="num">9</span>m15.2 in the extended DSL</h2>
+
+  <p>With the multi-<code>Observed</code> relaxation, m15.2 becomes a direct translation of the R code:</p>
+
+<pre><code><span class="kw">@model</span>
+<span class="kw">class</span> <span class="cls">DivorceMarriageError</span>:
+    <span class="cmt"># --- data ---</span>
+    N    = <span class="fn">Data</span>()
+    A    = <span class="fn">Data</span>()
+    D_sd = <span class="fn">Data</span>()
+    M_sd = <span class="fn">Data</span>()
+
+    <span class="cmt"># --- marriage sub-model ---</span>
+    aM    = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0.0</span>, <span class="num">0.2</span>))
+    bAM   = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0.0</span>, <span class="num">0.5</span>))
+    tau   = <span class="fn">Param</span>(<span class="fn">Exponential</span>(<span class="num">1.0</span>), constraint=<span class="fn">Positive</span>())
+    nu    = aM + bAM * A
+    M_true = <span class="fn">Param</span>(<span class="fn">Normal</span>(nu, tau), size=N)
+
+    <span class="cmt"># --- divorce sub-model ---</span>
+    a     = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0.0</span>, <span class="num">0.2</span>))
+    bA    = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0.0</span>, <span class="num">0.5</span>))
+    bM    = <span class="fn">Param</span>(<span class="fn">Normal</span>(<span class="num">0.0</span>, <span class="num">0.5</span>))
+    sigma = <span class="fn">Param</span>(<span class="fn">Exponential</span>(<span class="num">1.0</span>), constraint=<span class="fn">Positive</span>())
+    mu    = a + bA * A + bM * M_true       <span class="cmt"># uses LATENT M_true</span>
+    D_true = <span class="fn">Param</span>(<span class="fn">Normal</span>(mu, sigma), size=N)
+
+    <span class="cmt"># --- two observation likelihoods ---</span>
+    M_obs = <span class="fn">Observed</span>(<span class="fn">Normal</span>(M_true, M_sd))
+    D_obs = <span class="fn">Observed</span>(<span class="fn">Normal</span>(D_true, D_sd))</code></pre>
+
+  <p>The expression nodes <code>nu</code> and <code>mu</code> reference Params <em>and</em> Params-that-are-themselves-vectors (<code>M_true</code>). Everything else — symbol resolution, hierarchical sizing, the recursive normalization for <code>BinOp</code> / <code>ParamRef</code> / <code>DataRef</code> — already works.</p>
+
+  <div class="callout">
+    <strong>Author ordering note.</strong> Python's class body executes top-to-bottom, so <code>M_true</code> must be defined before <code>mu</code> references it. That's a natural ordering anyway (latent process → linear predictor → outcome).
+  </div>
+</section>
+
+<!-- =========================================================== -->
+<section id="bind">
+  <h2><span class="num">10</span>What changes in <code>bind</code> and the log-density</h2>
+
+  <h3>bind()</h3>
+
+  <p>Today, <code>expected = set(meta.data_slots + [meta.observed_name])</code>. With many Observed, the union just widens:</p>
+
+<pre><code>expected = <span class="fn">set</span>(meta.data_slots) | <span class="fn">set</span>(meta.observed.keys())</code></pre>
+
+  <p>For m15.2 that would be <code>{N, A, D_sd, M_sd, D_obs, M_obs}</code>. <code>bind</code> still requires the full set, rejects extras, and converts each value to a JAX array — same logic, slightly wider expectation set.</p>
+
+  <h3>Log-density (downstream of model code)</h3>
+
+  <p>The plan keeps inference logic outside <code>model/</code>, but here's the conceptual picture for the compiler that consumes <code>BoundModel</code>:</p>
+
+  <div class="math">
+    log p(θ | data) =
+    &nbsp;&nbsp;Σ<sub>p ∈ params</sub> log <span class="par">π(θ<sub>p</sub> | parents(p))</span>
+    <br>
+    &nbsp;&nbsp;+ Σ<sub>o ∈ observed</sub> log <span class="obs">L(data[o] | θ, data)</span>
+  </div>
+
+  <p>With one <code>Observed</code>, the second sum has one term. With many, it has many. The compiler just walks <code>meta.observed</code> and adds each contribution to the log-density. No new machinery — just a loop where there used to be a single term.</p>
+
+  <div class="callout">
+    Latent params like <code>D_true</code> and <code>M_true</code> contribute via the <em>prior</em> sum (their conditional priors <code>Normal(mu, sigma)</code>, <code>Normal(nu, tau)</code>). Observed nodes contribute via the <em>likelihood</em> sum. The DAG decides which sum each node belongs to.
+  </div>
+</section>
+
+<!-- =========================================================== -->
+<section id="summary">
+  <h2><span class="num">11</span>Summary</h2>
+
+  <div class="grid-2">
+    <div class="verdict yes" style="margin:0">
+      <span class="tag">As-is</span>
+      <strong>m15.1 — single measurement error</strong> works in the current DSL. The latent <code>D_true</code> is a hierarchical Param whose distribution is centered on an expression of other Params/Data. One <code>Observed</code> suffices.
+    </div>
+    <div class="verdict no" style="margin:0">
+      <span class="tag">Needs ext.</span>
+      <strong>m15.2 — dual measurement error</strong> needs two observation likelihoods. The "exactly one Observed" invariant must be relaxed to "one or more". All other plan invariants stand.
+    </div>
+  </div>
+
+  <h3>The diff in plain words</h3>
+
+  <ul>
+    <li><strong>DSL surface:</strong> exactly the same — users still write <code>name = Observed(distribution)</code>. They just may write more than one.</li>
+    <li><strong><code>ModelMeta</code>:</strong> <code>observed: Observed</code> + <code>observed_name: str</code> → <code>observed: dict[str, Observed]</code>.</li>
+    <li><strong>Decorator:</strong> Pass 2 collects all <code>Observed</code> into a dict instead of asserting uniqueness.</li>
+    <li><strong>Validation:</strong> require <code>len(observed) &gt;= 1</code> instead of exactly one.</li>
+    <li><strong><code>bind</code>:</strong> expected data names = data_slots ∪ observed names.</li>
+    <li><strong>Downstream compiler:</strong> sum log-likelihood contributions across all observed nodes instead of one.</li>
+  </ul>
+
+  <div class="callout good">
+    Importantly, the cleanest test for the extension is m15.1 first (still single-Observed, exercises latent hierarchical Params + observed-as-descendant-of-param), then m15.2 to validate the multi-Observed surface. That mirrors McElreath's own pedagogical order.
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Companion to <code>MODEL_DECLARATIONS_IMPLEMENTATION_PLAN.md</code> · jaxstanv5
+</footer>
+
+</body>
+</html>
