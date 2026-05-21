@@ -1,3 +1,5 @@
-"""jaxstanv5 — a Bayesian inference framework built on JAX and BlackJAX."""
+"""jaxstanv5 — minimal declarative Bayesian modeling for JAX."""
 
-__all__: list[str] = []
+from jaxstanv5.model import Data, Observed, Param, model
+
+__all__ = ["Data", "Observed", "Param", "model"]

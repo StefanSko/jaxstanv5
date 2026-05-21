@@ -7,14 +7,14 @@ from itertools import count
 
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model.expr import (
-    BinOp,
-    DataRef,
-    ExprNode,
-    IndexOp,
-    ParamRef,
+from jaxstanv5.model._pending import (
+    PendingBinOp,
+    PendingDataRef,
+    PendingExprNode,
+    PendingIndexOp,
+    PendingParamRef,
     UnresolvedSymbol,
-    to_expr,
+    to_pending_expr,
 )
 
 _SYMBOL_IDS = count()
@@ -31,39 +31,39 @@ class Param:
 
     distribution: Distribution
     constraint: Constraint | None = None
-    size: Data | DataRef | int | None = None
+    size: Data | PendingDataRef | int | None = None
     symbol: UnresolvedSymbol = field(default_factory=next_symbol, init=False, repr=False)
 
-    def ref(self) -> ParamRef:
-        """Return a symbolic reference to this unresolved parameter."""
-        return ParamRef(self.symbol)
+    def ref(self) -> PendingParamRef:
+        """Return a pending reference to this unresolved parameter."""
+        return PendingParamRef(self.symbol)
 
-    def __add__(self, other: object) -> BinOp:
-        return BinOp("+", self.ref(), to_declaration_expr(other))
+    def __add__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("+", self.ref(), to_pending_expr(other))
 
-    def __radd__(self, other: object) -> BinOp:
-        return BinOp("+", to_declaration_expr(other), self.ref())
+    def __radd__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("+", to_pending_expr(other), self.ref())
 
-    def __sub__(self, other: object) -> BinOp:
-        return BinOp("-", self.ref(), to_declaration_expr(other))
+    def __sub__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("-", self.ref(), to_pending_expr(other))
 
-    def __rsub__(self, other: object) -> BinOp:
-        return BinOp("-", to_declaration_expr(other), self.ref())
+    def __rsub__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("-", to_pending_expr(other), self.ref())
 
-    def __mul__(self, other: object) -> BinOp:
-        return BinOp("*", self.ref(), to_declaration_expr(other))
+    def __mul__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("*", self.ref(), to_pending_expr(other))
 
-    def __rmul__(self, other: object) -> BinOp:
-        return BinOp("*", to_declaration_expr(other), self.ref())
+    def __rmul__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("*", to_pending_expr(other), self.ref())
 
-    def __truediv__(self, other: object) -> BinOp:
-        return BinOp("/", self.ref(), to_declaration_expr(other))
+    def __truediv__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("/", self.ref(), to_pending_expr(other))
 
-    def __rtruediv__(self, other: object) -> BinOp:
-        return BinOp("/", to_declaration_expr(other), self.ref())
+    def __rtruediv__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("/", to_pending_expr(other), self.ref())
 
-    def __getitem__(self, index: object) -> IndexOp:
-        return IndexOp(self.ref(), to_declaration_expr(index))
+    def __getitem__(self, index: object) -> PendingIndexOp:
+        return PendingIndexOp(self.ref(), to_pending_expr(index))
 
 
 @dataclass(frozen=True)
@@ -72,36 +72,36 @@ class Data:
 
     symbol: UnresolvedSymbol = field(default_factory=next_symbol, init=False, repr=False)
 
-    def ref(self) -> DataRef:
-        """Return a symbolic reference to this unresolved data slot."""
-        return DataRef(self.symbol)
+    def ref(self) -> PendingDataRef:
+        """Return a pending reference to this unresolved data slot."""
+        return PendingDataRef(self.symbol)
 
-    def __add__(self, other: object) -> BinOp:
-        return BinOp("+", self.ref(), to_declaration_expr(other))
+    def __add__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("+", self.ref(), to_pending_expr(other))
 
-    def __radd__(self, other: object) -> BinOp:
-        return BinOp("+", to_declaration_expr(other), self.ref())
+    def __radd__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("+", to_pending_expr(other), self.ref())
 
-    def __sub__(self, other: object) -> BinOp:
-        return BinOp("-", self.ref(), to_declaration_expr(other))
+    def __sub__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("-", self.ref(), to_pending_expr(other))
 
-    def __rsub__(self, other: object) -> BinOp:
-        return BinOp("-", to_declaration_expr(other), self.ref())
+    def __rsub__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("-", to_pending_expr(other), self.ref())
 
-    def __mul__(self, other: object) -> BinOp:
-        return BinOp("*", self.ref(), to_declaration_expr(other))
+    def __mul__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("*", self.ref(), to_pending_expr(other))
 
-    def __rmul__(self, other: object) -> BinOp:
-        return BinOp("*", to_declaration_expr(other), self.ref())
+    def __rmul__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("*", to_pending_expr(other), self.ref())
 
-    def __truediv__(self, other: object) -> BinOp:
-        return BinOp("/", self.ref(), to_declaration_expr(other))
+    def __truediv__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("/", self.ref(), to_pending_expr(other))
 
-    def __rtruediv__(self, other: object) -> BinOp:
-        return BinOp("/", to_declaration_expr(other), self.ref())
+    def __rtruediv__(self, other: object) -> PendingBinOp:
+        return PendingBinOp("/", to_pending_expr(other), self.ref())
 
-    def __getitem__(self, index: object) -> IndexOp:
-        return IndexOp(self.ref(), to_declaration_expr(index))
+    def __getitem__(self, index: object) -> PendingIndexOp:
+        return PendingIndexOp(self.ref(), to_pending_expr(index))
 
 
 @dataclass(frozen=True)
@@ -111,8 +111,6 @@ class Observed:
     distribution: Distribution
 
 
-def to_declaration_expr(value: object) -> ExprNode:
-    """Convert declaration operands to expression nodes."""
-    if isinstance(value, Param | Data):
-        return value.ref()
-    return to_expr(value)
+def to_declaration_expr(value: object) -> PendingExprNode:
+    """Convert declaration operands to pending expression nodes."""
+    return to_pending_expr(value)

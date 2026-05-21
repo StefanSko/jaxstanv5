@@ -5,15 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-
-@dataclass(frozen=True)
-class UnresolvedSymbol:
-    """Declaration symbol before a model decorator assigns its final name."""
-
-    id: int
-
-
-type Symbol = str | UnresolvedSymbol
 type ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp
 type BinaryOperator = str
 
@@ -34,9 +25,9 @@ class Expression(Protocol):
 
 @dataclass(frozen=True)
 class ParamRef:
-    """Reference to a model parameter by name or unresolved declaration symbol."""
+    """Reference to a model parameter by name."""
 
-    name: Symbol
+    name: str
 
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, to_expr(other))
@@ -68,9 +59,9 @@ class ParamRef:
 
 @dataclass(frozen=True)
 class DataRef:
-    """Reference to bound model data by name or unresolved declaration symbol."""
+    """Reference to bound model data by name."""
 
-    name: Symbol
+    name: str
 
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, to_expr(other))
