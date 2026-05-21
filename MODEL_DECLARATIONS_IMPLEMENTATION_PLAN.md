@@ -1,57 +1,9 @@
 # Detailed Plan: Model Declarations and `@model`
 
-This plan replaces the previous implementation attempt. The main goal is to keep the design easier to follow while still supporting the desired DSL:
+This document tracks the model-declaration implementation after the design change
+that made the class-body phase explicit.
 
-```python
-@model
-class LinearRegression:
-    alpha = Param(Normal(0, 1))
-    beta = Param(Normal(0, 1))
-    sigma = Param(Normal(0, 1), constraint=Positive())
-    x = Data()
-    mu = alpha + beta * x
-    y = Observed(Normal(mu, sigma))
-```
-
-And hierarchical parameters:
-
-```python
-n_groups = Data()
-alpha = Param(Normal(alpha_pop, sigma_alpha), size=n_groups)
-```
-
-## Core challenge
-
-Inside a Python class body, this code executes immediately:
-
-```python
-mu = alpha + beta * x
-```
-
-So `Param(...)` and `Data()` must be objects that can participate in arithmetic and produce symbolic expression nodes.
-
-The tricky part is that during class-body execution, declarations do not know their final attribute names yet. For example, `alpha = Param(...)` only becomes named `"alpha"` after the class body has finished.
-
-Therefore, use a simple two-step approach:
-
-1. During class-body execution, declarations create expression references using explicit `UnresolvedSymbol` values.
-2. In the `@model` decorator, replace those unresolved symbols with final attribute names.
-
-This is not a monad. It is a deferred symbolic expression graph with a clear terminal operation: `@model` resolves symbols into names.
-
----
-
-## Phase 4A: Write red tests first
-
-Create `tests/test_model_declarations.py`.
-
-Test three things only:
-
-1. The decorator collects declarations.
-2. `bind(...)` attaches concrete data and resolves scalar parameter shapes.
-3. `bind(...)` resolves data-dependent hierarchical parameter sizes.
-
-Suggested test model:
+The supported DSL remains:
 
 ```python
 @model
@@ -64,25 +16,7 @@ class LinearRegression:
     y = Observed(Normal(mu, sigma))
 ```
 
-Expected metadata:
-
-```python
-meta = LinearRegression._model_meta
-assert list(meta.params) == ["alpha", "beta", "sigma"]
-assert meta.data_slots == ["x"]
-assert meta.observed_name == "y"
-assert set(meta.expressions) == {"mu"}
-```
-
-Expected bind result:
-
-```python
-bound = LinearRegression.bind(x=jnp.asarray([1.0]), y=jnp.asarray([2.0]))
-assert bound.param_shapes == {"alpha": (), "beta": (), "sigma": ()}
-assert bound.n_params == 3
-```
-
-Hierarchical model:
+And hierarchical parameters:
 
 ```python
 @model
@@ -94,354 +28,287 @@ class HierarchicalRegression:
     y = Observed(Normal(alpha, 1.0))
 ```
 
-Expected:
-
-```python
-bound = HierarchicalRegression.bind(n_groups=3, y=jnp.asarray([0.0, 1.0, 2.0]))
-assert bound.param_shapes["alpha_pop"] == ()
-assert bound.param_shapes["sigma_alpha"] == ()
-assert bound.param_shapes["alpha"] == (3,)
-assert bound.n_params == 5
-```
-
-Run the test and confirm it fails on missing `Data`, `Param`, `Observed`, or `model`.
-
 ---
 
-## Phase 4B: Keep the expression system as the stable foundation
+## Current architecture
 
-Existing expression nodes already include:
-
-- `ParamRef`
-- `DataRef`
-- `ConstNode`
-- `BinOp`
-- `IndexOp`
-
-Add one explicit symbol type:
-
-```python
-@dataclass(frozen=True)
-class UnresolvedSymbol:
-    id: int
-```
-
-Then define:
-
-```python
-type Symbol = str | UnresolvedSymbol
-```
-
-And allow:
-
-```python
-ParamRef.name: Symbol
-DataRef.name: Symbol
-```
-
-Why?
-
-- Before decoration: references use `UnresolvedSymbol(...)`.
-- After decoration: references use real string names like `"alpha"` and `"x"`.
-
-This makes the lifecycle explicit:
+The implementation now has an explicit phase pipeline:
 
 ```text
-class body:  ParamRef(UnresolvedSymbol(0)), DataRef(UnresolvedSymbol(1))
-@model:      ParamRef("alpha"), DataRef("x")
+Python class body
+  -> pending expression IR / PendingModel
+  -> resolved ModelMeta
+  -> BoundModel
 ```
 
-Avoid bare integers for unresolved names. Bare `int` works technically, but `UnresolvedSymbol` communicates intent and prevents accidental confusion with ordinary numeric constants.
+Concrete files:
 
-Define `UnresolvedSymbol` in `model/expr.py`, because expression references need to carry it.
+```text
+src/jaxstanv5/model/_pending.py   # internal class-body / unresolved IR
+src/jaxstanv5/model/expr.py       # final/resolved expression IR only
+src/jaxstanv5/model/core.py       # Param, Data, Observed declarations
+src/jaxstanv5/model/decorator.py  # collect -> resolve -> attach
+src/jaxstanv5/model/bound.py      # BoundModel
+```
 
-Because `UnresolvedSymbol` is a frozen dataclass, it is hashable and can be used as a key in the decorator symbol table.
+Important design change from the original plan:
 
-Avoid making expression nodes know about model declarations. Keep expression nodes simple. The expression module should define the symbol type, but not `Param`, `Data`, or the decorator.
+- `UnresolvedSymbol` is **not** in `expr.py` anymore.
+- `expr.py` is final/resolved only: `ParamRef.name: str`, `DataRef.name: str`.
+- Class-body expressions use internal pending nodes from `_pending.py`.
+- The decorator is the only transition from pending symbols to final names.
+
+This avoids a mixed intermediate representation such as
+`BinOp(ParamRef(UnresolvedSymbol(...)), ...)`.
 
 ---
 
-## Phase 4C: Implement declaration classes
+## Phase model and invariants
+
+### 1. Class-body declaration phase
+
+During class body execution, declarations do not know their final attribute names.
+
+```python
+alpha = Param(...)
+x = Data()
+mu = alpha + x
+```
+
+At this point:
+
+- `alpha` is a `Param` declaration.
+- `x` is a `Data` declaration.
+- `mu` is a pending expression tree.
+- declarations carry `UnresolvedSymbol` values from `_pending.py`.
+
+Invariant:
+
+```text
+class-body arithmetic must produce PendingExprNode values only
+```
+
+No final `expr.py` nodes should appear in pending expression trees.
+
+### 2. Internal pending IR
+
+File: `src/jaxstanv5/model/_pending.py`
+
+Types:
+
+```python
+UnresolvedSymbol
+PendingParamRef
+PendingDataRef
+PendingConst
+PendingBinOp
+PendingIndexOp
+PendingRef = PendingParamRef | PendingDataRef
+PendingExprNode = PendingRef | PendingConst | PendingBinOp | PendingIndexOp
+```
+
+`_pending.py` is package-private. It exists only to make the declaration phase
+explicit in the type system.
+
+Pending refs use unresolved symbols:
+
+```python
+PendingParamRef(UnresolvedSymbol(0))
+PendingDataRef(UnresolvedSymbol(1))
+```
+
+### 3. Final expression IR
+
+File: `src/jaxstanv5/model/expr.py`
+
+Types:
+
+```python
+ParamRef      # name: str
+DataRef       # name: str
+ConstNode
+BinOp
+IndexOp
+ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp
+```
+
+Invariant:
+
+```text
+final ExprNode trees never contain UnresolvedSymbol or pending nodes
+```
+
+Example final tree:
+
+```python
+BinOp("+", ParamRef("alpha"), DataRef("x"))
+```
+
+---
+
+## Declaration classes
 
 File: `src/jaxstanv5/model/core.py`
 
-Replace the old `Model` protocol with three declaration dataclasses.
-
-Use a tiny generator in this file for declaration symbols:
+Declaration types:
 
 ```python
-from itertools import count
-
-_SYMBOL_IDS = count()
-
-
-def next_symbol() -> UnresolvedSymbol:
-    return UnresolvedSymbol(next(_SYMBOL_IDS))
-```
-
-```python
-@dataclass(frozen=True)
-class Param:
-    distribution: Distribution
-    constraint: Constraint | None = None
-    size: Data | DataRef | int | None = None
-    symbol: UnresolvedSymbol = field(default_factory=next_symbol, init=False, repr=False)
-```
-
-```python
-@dataclass(frozen=True)
-class Data:
-    symbol: UnresolvedSymbol = field(default_factory=next_symbol, init=False, repr=False)
-```
-
-```python
-@dataclass(frozen=True)
-class Observed:
-    distribution: Distribution
-```
-
-Important:
-
-- `Param` and `Data` are declarations.
-- `ParamRef` and `DataRef` are expression nodes.
-- Do not merge these concepts.
-
-Each declaration should expose:
-
-```python
-def ref(self) -> ParamRef | DataRef:
-    ...
-```
-
-Then delegate operators to that ref:
-
-```python
-def __add__(self, other: object) -> BinOp:
-    return self.ref() + other
-```
-
-Implement for:
-
-- `+`
-- `-`
-- `*`
-- `/`
-- reverse versions
-- `[]`
-
-This is the only reason declarations need operator methods.
-
----
-
-## Phase 4D: Implement metadata types
-
-File: `src/jaxstanv5/model/decorator.py`
-
-Create:
-
-```python
-@dataclass(frozen=True)
-class ModelMeta:
-    params: dict[str, Param]
-    data_slots: list[str]
-    observed_name: str
-    observed: Observed
-    expressions: dict[str, ExprNode]
+Param
+Data
+Observed
 ```
 
 Rules:
 
-- `data_slots` should include only explicit `Data()` declarations.
-- `observed_name` is separate.
-- `bind(...)` should require both `data_slots` and `observed_name`.
+- `Param` and `Data` are declarations, not expression nodes.
+- `Observed` is an observed-variable declaration, not a `Data` slot.
+- `Param.ref()` returns `PendingParamRef`.
+- `Data.ref()` returns `PendingDataRef`.
+- declaration operators (`+`, `-`, `*`, `/`, reverse versions, `[]`) build pending nodes.
 
-This keeps metadata easier to understand:
-
-```text
-x = Data()       -> data_slots = ["x"]
-y = Observed()   -> observed_name = "y"
-```
-
----
-
-## Phase 4E: Implement the decorator in two passes
-
-File: `src/jaxstanv5/model/decorator.py`
-
-Use two passes over `cls.__dict__`.
-
-### Pass 1: collect declarations and build symbol table
+Example:
 
 ```python
-params: dict[str, Param] = {}
-data_slots: list[str] = []
-symbols: dict[UnresolvedSymbol, str] = {}
-
-for name, value in cls.__dict__.items():
-    if isinstance(value, Param):
-        params[name] = value
-        symbols[value.symbol] = name
-    elif isinstance(value, Data):
-        data_slots.append(name)
-        symbols[value.symbol] = name
+alpha + beta * x
 ```
 
-### Pass 2: collect observed declaration and expressions
+must build:
 
 ```python
-observed_name: str | None = None
-observed: Observed | None = None
-expressions: dict[str, ExprNode] = {}
-
-for name, value in cls.__dict__.items():
-    if isinstance(value, Observed):
-        observed_name = name
-        observed = normalize_observed(value, symbols)
-    elif is_expr_node(value):
-        expressions[name] = normalize_expr(value, symbols)
-```
-
-Validation:
-
-- exactly one `Observed`
-- no missing observed variable
-- no duplicate observed declaration
-
----
-
-## Phase 4F: Normalize symbols to names
-
-The decorator must convert `UnresolvedSymbol` values into real names.
-
-Example before normalization:
-
-```python
-BinOp(
+PendingBinOp(
     "+",
-    ParamRef(UnresolvedSymbol(0)),
-    BinOp("*", ParamRef(UnresolvedSymbol(1)), DataRef(UnresolvedSymbol(2))),
+    PendingParamRef(alpha.symbol),
+    PendingBinOp("*", PendingParamRef(beta.symbol), PendingDataRef(x.symbol)),
 )
 ```
 
-After normalization:
+---
+
+## Decorator pipeline
+
+File: `src/jaxstanv5/model/decorator.py`
+
+The decorator should remain a small pipeline:
 
 ```python
-BinOp("+", ParamRef("alpha"), BinOp("*", ParamRef("beta"), DataRef("x")))
+def model(cls: type[object]) -> type[object]:
+    pending = collect_pending_model(cls)
+    meta = resolve_pending_model(pending)
+    attach metadata and bind
+    return cls
 ```
 
-Implement:
+### `PendingModel`
+
+Collected before symbol resolution:
 
 ```python
-def normalize_expr(expr: ExprNode, symbols: dict[UnresolvedSymbol, str]) -> ExprNode:
-    match expr:
-        case ParamRef(name) if isinstance(name, UnresolvedSymbol):
-            return ParamRef(symbols[name])
-        case DataRef(name) if isinstance(name, UnresolvedSymbol):
-            return DataRef(symbols[name])
-        case ConstNode():
-            return expr
-        case BinOp(op, left, right):
-            return BinOp(op, normalize_expr(left, symbols), normalize_expr(right, symbols))
-        case IndexOp(base, index):
-            return IndexOp(normalize_expr(base, symbols), normalize_expr(index, symbols))
+@dataclass(frozen=True)
+class PendingModel:
+    params: dict[str, PendingParam]
+    data_slots: list[str]
+    observed_name: str
+    observed: PendingObserved
+    expressions: dict[str, PendingExprNode]
+    symbols: dict[UnresolvedSymbol, str]
 ```
 
-If avoiding `match`, use explicit `isinstance` branches.
+Pending metadata invariants:
 
-Also normalize distribution fields.
+- `symbols` maps every declaration symbol to the final class attribute name.
+- `data_slots` includes only explicit `Data()` declarations.
+- `observed_name` is separate from `data_slots`.
+- pending expressions contain only `_pending.py` nodes.
+- pending metadata should not embed raw `Param`, `Data`, or `Observed` declarations.
 
-For `Normal(mu, sigma)`, `mu` may be a `BinOp` and `sigma` may be a `Param` declaration.
+### `collect_pending_model(cls)`
 
-So implement:
+Responsibilities:
+
+1. Walk `cls.__dict__` and collect declaration symbols.
+2. Collect pending parameters and explicit data slots.
+3. Normalize parameter distributions to pending references where needed.
+4. Normalize parameter sizes:
+   - `None -> None`
+   - `int -> int`
+   - `Data -> PendingDataRef`
+   - `PendingDataRef -> PendingDataRef`
+5. Collect exactly one `Observed` declaration.
+6. Collect class-body pending expression attributes.
+
+Distribution normalization examples:
 
 ```python
-def normalize_distribution(dist: Distribution, symbols: dict[UnresolvedSymbol, str]) -> Distribution:
-    # For dataclass distributions only.
-    # For each field:
-    # - Param -> ParamRef(name)
-    # - Data -> DataRef(name)
-    # - ExprNode -> normalize_expr(...)
-    # - scalar -> unchanged
+Normal(alpha_pop, sigma_alpha)
 ```
 
-For this project, distributions are dataclasses, so rebuilding with `type(dist)(**normalized_fields)` is acceptable.
+becomes pending metadata equivalent to:
+
+```python
+Normal(PendingParamRef(alpha_pop.symbol), PendingParamRef(sigma_alpha.symbol))
+```
+
+```python
+Observed(Normal(mu, sigma))
+```
+
+where `mu` is a pending expression and `sigma` is a `Param`, becomes:
+
+```python
+Observed(Normal(<pending mu tree>, PendingParamRef(sigma.symbol)))
+```
+
+### `ModelMeta`
+
+Resolved final metadata:
+
+```python
+@dataclass(frozen=True)
+class ModelMeta:
+    params: dict[str, ResolvedParam]
+    data_slots: list[str]
+    observed_name: str
+    observed: ResolvedObserved
+    expressions: dict[str, ExprNode]
+```
+
+Final metadata invariants:
+
+- final expressions contain only `expr.py` nodes.
+- `ParamRef.name` and `DataRef.name` are strings.
+- no pending nodes remain.
+- no unresolved symbols remain.
+- no raw `Param`, `Data`, or `Observed` declarations remain.
+
+### `resolve_pending_model(pending)`
+
+Responsibilities:
+
+1. Resolve `PendingParamRef(symbol)` to `ParamRef(name)`.
+2. Resolve `PendingDataRef(symbol)` to `DataRef(name)`.
+3. Resolve `PendingConst` to `ConstNode`.
+4. Resolve `PendingBinOp` and `PendingIndexOp` recursively.
+5. Resolve pending distribution fields.
+6. Resolve parameter sizes:
+   - `None -> None`
+   - `int -> int`
+   - `PendingDataRef(symbol) -> DataRef(name)`
+
+Example:
+
+```python
+PendingBinOp("+", PendingParamRef(sym_alpha), PendingDataRef(sym_x))
+```
+
+becomes:
+
+```python
+BinOp("+", ParamRef("alpha"), DataRef("x"))
+```
 
 ---
 
-## Phase 4G: Normalize parameter declarations
-
-Each collected `Param` must be normalized too, because hierarchical priors may contain references:
-
-```python
-alpha = Param(Normal(alpha_pop, sigma_alpha), size=n_groups)
-```
-
-Before normalization:
-
-```python
-Normal(loc=Param(...), scale=Param(...))
-size=Data(...)
-```
-
-After normalization:
-
-```python
-Normal(loc=ParamRef("alpha_pop"), scale=ParamRef("sigma_alpha"))
-size=DataRef("n_groups")
-```
-
-Implement:
-
-```python
-def normalize_param(param: Param, symbols: dict[UnresolvedSymbol, str]) -> Param:
-    return Param(
-        distribution=normalize_distribution(param.distribution, symbols),
-        constraint=param.constraint,
-        size=normalize_size(param.size, symbols),
-    )
-```
-
-`normalize_size` rules:
-
-- `None` -> `None`
-- `int` -> same int
-- `Data` -> `DataRef(real_name)`
-- `DataRef(UnresolvedSymbol(...))` -> `DataRef(real_name)`
-
----
-
-## Phase 4H: Attach metadata and `bind`
-
-After normalization:
-
-```python
-meta = ModelMeta(...)
-cls._model_meta = meta
-cls.bind = classmethod(make_bind(meta))
-return cls
-```
-
-Static type checkers may not know decorated classes gain attributes. That is acceptable for runtime, but tests may need `getattr(...)` or a narrow cast later if `ty` complains.
-
-If `ruff` complains about `setattr`, either:
-
-```python
-cls._model_meta = meta
-cls.bind = classmethod(make_bind(meta))
-```
-
-or use:
-
-```python
-setattr(cls, "_model_meta", meta)  # noqa: B010
-setattr(cls, "bind", classmethod(make_bind(meta)))  # noqa: B010
-```
-
-Prefer direct assignment if `ty` allows it; otherwise use `setattr` with local noqa.
-
----
-
-## Phase 4I: Implement `BoundModel`
+## Binding
 
 File: `src/jaxstanv5/model/bound.py`
 
@@ -454,42 +321,27 @@ class BoundModel:
     n_params: int
 ```
 
-This is the explicit state transition:
+`bind(...)` is attached by `@model` and performs the explicit transition:
 
 ```text
-Declared model class -> BoundModel
+resolved model class -> BoundModel
 ```
 
-Do not put compiler or sampler logic here.
-
----
-
-## Phase 4J: Implement `bind(...)`
-
-`bind(...)` should:
+Responsibilities:
 
 1. Require all explicit data slots.
-2. Require the observed data by `observed_name`.
+2. Require observed data by `observed_name`.
 3. Reject extra data.
-4. Convert all data to JAX arrays.
+4. Convert values to JAX arrays.
 5. Resolve parameter shapes.
-6. Return `BoundModel`.
+6. Compute total constrained parameter count.
 
-Expected data names:
-
-```python
-expected = set(meta.data_slots + [meta.observed_name])
-```
-
-Shape resolution:
+Shape rules:
 
 ```python
-if param.size is None:
-    shape = ()
-elif isinstance(param.size, int):
-    shape = (param.size,)
-elif isinstance(param.size, DataRef):
-    shape = (int(bound_data[param.size.name]),)
+None       -> ()
+int        -> (size,)
+DataRef(n) -> (int(bound_data[n]),)
 ```
 
 Parameter count:
@@ -497,18 +349,14 @@ Parameter count:
 ```python
 ()      -> 1
 (3,)    -> 3
-(2, 4)  -> 8
+(2, 4)  -> 8  # future; current slice needs scalar and 1D sizes only
 ```
-
-For now, only scalar and one-dimensional data-dependent sizes are needed.
 
 ---
 
-## Phase 4K: Public exports
+## Public exports
 
 File: `src/jaxstanv5/model/__init__.py`
-
-Export:
 
 ```python
 from jaxstanv5.model.bound import BoundModel
@@ -520,31 +368,38 @@ __all__ = ["BoundModel", "Data", "ModelMeta", "Observed", "Param", "model"]
 
 File: `src/jaxstanv5/__init__.py`
 
-Export only top-level DSL names:
-
 ```python
 from jaxstanv5.model import Data, Observed, Param, model
 
 __all__ = ["Data", "Observed", "Param", "model"]
 ```
 
+Do not export `_pending.py` from public package surfaces.
+
 ---
 
-## Phase 4L: Validation commands
+## Current status
 
-Run only the focused tests first:
+Implemented:
+
+- red model declaration tests
+- internal pending IR in `_pending.py`
+- final expression IR in `expr.py`
+- declaration classes in `core.py`
+- explicit `collect_pending_model -> resolve_pending_model -> model` pipeline
+- distribution and size normalization for hierarchical declarations
+- `BoundModel`
+- `bind(...)`
+- public DSL exports
+
+Focused validation passed:
 
 ```bash
-uv run pytest tests/test_model_declarations.py -q
-```
-
-Then run the model slice:
-
-```bash
-uv run ruff format .
-uv run ruff check .
-uv run ty check src/jaxstanv5/model src/jaxstanv5/__init__.py
+uv run ruff check src/jaxstanv5 tests/test_model_declaration_core.py tests/test_model_declaration_phases.py
+uv run ty check src/jaxstanv5 tests/test_model_declaration_core.py tests/test_model_declaration_phases.py
 uv run pytest \
+  tests/test_model_declaration_core.py \
+  tests/test_model_declaration_phases.py \
   tests/test_model_declarations.py \
   tests/test_model_expr.py \
   tests/test_constraints_positive.py \
@@ -552,7 +407,27 @@ uv run pytest \
   -q
 ```
 
-Do not expect full-project `ty` yet while the vertical-slice integration test still references APIs from later phases.
+Full-project pytest is not expected to pass yet because later vertical-slice APIs
+such as diagnostics exports are still unimplemented.
+
+---
+
+## Known follow-ups
+
+These are not blockers for the current model-declaration slice, but should be
+revisited before compiler work expands:
+
+1. Add direct tests for missing observed declaration and duplicate observed
+   declarations.
+2. Add direct tests for `bind(...)` missing data, missing observed data, and extra
+   data rejection.
+3. Decide whether scalar distribution fields should remain raw scalars or be
+   normalized to expression constants. Current implementation normalizes scalar
+   distribution fields through pending/final constant nodes; this is uniform for
+   compiler evaluation, but direct `Distribution.log_prob(...)` on unresolved
+   metadata is not expected to work.
+4. Tighten the type of attached `bind(...)` if it becomes useful for static
+   checks. Runtime behavior is currently the priority.
 
 ---
 
@@ -561,12 +436,14 @@ Do not expect full-project `ty` yet while the vertical-slice integration test st
 Keep these true:
 
 - `Param` and `Data` are declarations.
-- `ParamRef` and `DataRef` are symbolic references.
-- Class-body expressions use `UnresolvedSymbol` values.
-- The `@model` decorator normalizes `UnresolvedSymbol` values into real names.
+- `_pending.py` is internal and owns `UnresolvedSymbol`.
+- class-body expressions produce pending nodes only.
+- `expr.py` is resolved/final only.
+- `ParamRef.name` and `DataRef.name` are strings.
+- `@model` is the only transition from unresolved symbols to names.
 - `Observed` is not a `Data` slot, but `bind(...)` still requires observed data.
 - `BoundModel` contains data and shapes only; no inference logic.
-- No BlackJAX in model code.
-- No compiler logic in model code.
-- Prefer immutable dataclasses.
-- Do not use `Any`.
+- no BlackJAX in model code.
+- no compiler logic in model code.
+- prefer immutable dataclasses.
+- do not use `Any`.
