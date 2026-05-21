@@ -7,7 +7,15 @@ from itertools import count
 
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model.expr import BinOp, DataRef, IndexOp, ParamRef, UnresolvedSymbol
+from jaxstanv5.model.expr import (
+    BinOp,
+    DataRef,
+    ExprNode,
+    IndexOp,
+    ParamRef,
+    UnresolvedSymbol,
+    to_expr,
+)
 
 _SYMBOL_IDS = count()
 
@@ -31,31 +39,31 @@ class Param:
         return ParamRef(self.symbol)
 
     def __add__(self, other: object) -> BinOp:
-        return self.ref() + other
+        return BinOp("+", self.ref(), to_declaration_expr(other))
 
     def __radd__(self, other: object) -> BinOp:
-        return self.ref().__radd__(other)
+        return BinOp("+", to_declaration_expr(other), self.ref())
 
     def __sub__(self, other: object) -> BinOp:
-        return self.ref() - other
+        return BinOp("-", self.ref(), to_declaration_expr(other))
 
     def __rsub__(self, other: object) -> BinOp:
-        return self.ref().__rsub__(other)
+        return BinOp("-", to_declaration_expr(other), self.ref())
 
     def __mul__(self, other: object) -> BinOp:
-        return self.ref() * other
+        return BinOp("*", self.ref(), to_declaration_expr(other))
 
     def __rmul__(self, other: object) -> BinOp:
-        return self.ref().__rmul__(other)
+        return BinOp("*", to_declaration_expr(other), self.ref())
 
     def __truediv__(self, other: object) -> BinOp:
-        return self.ref() / other
+        return BinOp("/", self.ref(), to_declaration_expr(other))
 
     def __rtruediv__(self, other: object) -> BinOp:
-        return self.ref().__rtruediv__(other)
+        return BinOp("/", to_declaration_expr(other), self.ref())
 
     def __getitem__(self, index: object) -> IndexOp:
-        return self.ref()[index]
+        return IndexOp(self.ref(), to_declaration_expr(index))
 
 
 @dataclass(frozen=True)
@@ -69,31 +77,31 @@ class Data:
         return DataRef(self.symbol)
 
     def __add__(self, other: object) -> BinOp:
-        return self.ref() + other
+        return BinOp("+", self.ref(), to_declaration_expr(other))
 
     def __radd__(self, other: object) -> BinOp:
-        return self.ref().__radd__(other)
+        return BinOp("+", to_declaration_expr(other), self.ref())
 
     def __sub__(self, other: object) -> BinOp:
-        return self.ref() - other
+        return BinOp("-", self.ref(), to_declaration_expr(other))
 
     def __rsub__(self, other: object) -> BinOp:
-        return self.ref().__rsub__(other)
+        return BinOp("-", to_declaration_expr(other), self.ref())
 
     def __mul__(self, other: object) -> BinOp:
-        return self.ref() * other
+        return BinOp("*", self.ref(), to_declaration_expr(other))
 
     def __rmul__(self, other: object) -> BinOp:
-        return self.ref().__rmul__(other)
+        return BinOp("*", to_declaration_expr(other), self.ref())
 
     def __truediv__(self, other: object) -> BinOp:
-        return self.ref() / other
+        return BinOp("/", self.ref(), to_declaration_expr(other))
 
     def __rtruediv__(self, other: object) -> BinOp:
-        return self.ref().__rtruediv__(other)
+        return BinOp("/", to_declaration_expr(other), self.ref())
 
     def __getitem__(self, index: object) -> IndexOp:
-        return self.ref()[index]
+        return IndexOp(self.ref(), to_declaration_expr(index))
 
 
 @dataclass(frozen=True)
@@ -101,3 +109,10 @@ class Observed:
     """Observed variable declaration."""
 
     distribution: Distribution
+
+
+def to_declaration_expr(value: object) -> ExprNode:
+    """Convert declaration operands to expression nodes."""
+    if isinstance(value, Param | Data):
+        return value.ref()
+    return to_expr(value)
