@@ -1,4 +1,8 @@
-"""Tests for explicit model declaration phase transitions."""
+"""Phase 3: explicit model declaration phase transitions.
+
+This test module follows the pipeline:
+class body -> PendingModel -> ModelMeta -> decorated model metadata.
+"""
 
 from __future__ import annotations
 

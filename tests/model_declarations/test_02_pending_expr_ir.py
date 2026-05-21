@@ -1,4 +1,8 @@
-"""Tests for the class-body pending expression phase."""
+"""Phase 2: class-body arithmetic builds internal pending IR.
+
+This documents the boundary that prevents class-body expressions from producing
+mixed pending/final expression trees.
+"""
 
 from __future__ import annotations
 

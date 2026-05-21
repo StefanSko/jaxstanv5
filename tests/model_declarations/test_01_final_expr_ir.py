@@ -1,4 +1,8 @@
-"""Tests for symbolic model expression nodes."""
+"""Phase 1: final/resolved expression IR primitives.
+
+These nodes are used after ``@model`` resolves pending declaration symbols to
+string names.
+"""
 
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef
 

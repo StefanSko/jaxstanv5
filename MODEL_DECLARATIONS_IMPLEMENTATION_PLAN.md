@@ -395,13 +395,10 @@ Implemented:
 Focused validation passed:
 
 ```bash
-uv run ruff check src/jaxstanv5 tests/test_model_declaration_core.py tests/test_model_declaration_phases.py
-uv run ty check src/jaxstanv5 tests/test_model_declaration_core.py tests/test_model_declaration_phases.py
+uv run ruff check src/jaxstanv5 tests/model_declarations
+uv run ty check src/jaxstanv5 tests/model_declarations
 uv run pytest \
-  tests/test_model_declaration_core.py \
-  tests/test_model_declaration_phases.py \
-  tests/test_model_declarations.py \
-  tests/test_model_expr.py \
+  tests/model_declarations \
   tests/test_constraints_positive.py \
   tests/test_distributions_normal.py \
   -q
