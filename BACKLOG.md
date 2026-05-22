@@ -6,10 +6,10 @@ Small, concrete improvement ideas that are not required for the current model-de
 
 - Introduce explicit symbolic distribution parameter types once compiler work starts.
   Current tests need casts because runtime distributions are typed for numeric/JAX
-  parameters, while model declarations pass symbolic pending/final expressions.
+  parameters, while model declarations pass symbolic deferred/final expressions.
 - Consider phase-specific distribution metadata if plain distribution dataclasses
   become awkward:
-  - pending distribution parameters
+  - declaration-time distribution parameters
   - resolved distribution parameters
   - executable numeric distribution parameters
 

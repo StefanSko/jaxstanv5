@@ -1,8 +1,9 @@
 """Final metadata structure for real ``@model`` declarations.
 
 This slice intentionally uses decorated model classes instead of inspecting the
-private pending phase. Unit tests cover pending/resolution helpers directly; this
-module checks that a realistic declaration reaches the expected final metadata.
+private deferred syntax capture. Unit tests cover declaration resolution helpers
+directly; this module checks that a realistic declaration reaches the expected
+final metadata.
 """
 
 from __future__ import annotations

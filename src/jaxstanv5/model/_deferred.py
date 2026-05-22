@@ -1,30 +1,32 @@
-"""Core model declaration types."""
+"""Internal deferred syntax captured during ``@model`` class-body execution.
+
+These tokens are not semantic expression IR. They only remember what Python
+operators evaluated before declaration names are available. The decorator turns
+these tokens into final ``expr.py`` nodes in one explicit resolution step.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from itertools import count
+from dataclasses import dataclass
 
-from jaxstanv5.constraints.core import Constraint
-from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model._deferred import DeclarationSymbol, DeferredBinOp, DeferredIndexOp
-
-_SYMBOL_IDS = count()
-
-
-def next_symbol() -> DeclarationSymbol:
-    """Return a fresh declaration symbol."""
-    return DeclarationSymbol(next(_SYMBOL_IDS))
+type DeferredExpr = DeferredBinOp | DeferredIndexOp
+type DeferredBinaryOperator = str
 
 
 @dataclass(frozen=True)
-class Param:
-    """Parameter declaration used inside ``@model`` class bodies."""
+class DeclarationSymbol:
+    """Stable declaration identity before class attribute names are known."""
 
-    distribution: Distribution
-    constraint: Constraint | None = None
-    size: Data | int | None = None
-    symbol: DeclarationSymbol = field(default_factory=next_symbol, init=False, repr=False)
+    id: int
+
+
+@dataclass(frozen=True)
+class DeferredBinOp:
+    """Deferred binary operation from class-body syntax."""
+
+    op: DeferredBinaryOperator
+    left: object
+    right: object
 
     def __add__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("+", self, other)
@@ -55,10 +57,11 @@ class Param:
 
 
 @dataclass(frozen=True)
-class Data:
-    """Data declaration used inside ``@model`` class bodies."""
+class DeferredIndexOp:
+    """Deferred indexing operation from class-body syntax."""
 
-    symbol: DeclarationSymbol = field(default_factory=next_symbol, init=False, repr=False)
+    base: object
+    index: object
 
     def __add__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("+", self, other)
@@ -88,8 +91,6 @@ class Data:
         return DeferredIndexOp(self, index)
 
 
-@dataclass(frozen=True)
-class Observed:
-    """Observed variable declaration."""
-
-    distribution: Distribution
+def is_deferred_expr(value: object) -> bool:
+    """Return whether ``value`` is captured class-body syntax."""
+    return isinstance(value, DeferredBinOp | DeferredIndexOp)

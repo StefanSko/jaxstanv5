@@ -1,7 +1,7 @@
 # Detailed Plan: Model Declarations and `@model`
 
-This document tracks the model-declaration implementation after the design change
-that made the class-body phase explicit.
+This document tracks the model-declaration implementation after the design
+simplification that removed the internal pending IR.
 
 The supported DSL remains:
 
@@ -32,11 +32,10 @@ class HierarchicalRegression:
 
 ## Current architecture
 
-The implementation now has an explicit phase pipeline:
+The implementation has a two-step declaration path:
 
 ```text
-Python class body
-  -> pending expression IR / PendingModel
+Python class body syntax
   -> resolved ModelMeta
   -> BoundModel
 ```
@@ -44,26 +43,27 @@ Python class body
 Concrete files:
 
 ```text
-src/jaxstanv5/model/_pending.py   # internal class-body / unresolved IR
+src/jaxstanv5/model/_deferred.py  # private class-body syntax tokens
 src/jaxstanv5/model/expr.py       # final/resolved expression IR only
 src/jaxstanv5/model/core.py       # Param, Data, Observed declarations
-src/jaxstanv5/model/decorator.py  # collect -> resolve -> attach
+src/jaxstanv5/model/decorator.py  # resolve declaration -> attach metadata/bind
 src/jaxstanv5/model/bound.py      # BoundModel
 ```
 
-Important design change from the original plan:
+Important invariants:
 
-- `UnresolvedSymbol` is **not** in `expr.py` anymore.
 - `expr.py` is final/resolved only: `ParamRef.name: str`, `DataRef.name: str`.
-- Class-body expressions use internal pending nodes from `_pending.py`.
-- The decorator is the only transition from pending symbols to final names.
+- `core.py` never constructs final `expr.py` nodes.
+- Class-body operators create private deferred syntax tokens, not semantic IR.
+- `resolve_model_declaration(...)` is the only transition from declaration
+  symbols to final named refs.
 
 This avoids a mixed intermediate representation such as
-`BinOp(ParamRef(UnresolvedSymbol(...)), ...)`.
+`BinOp(ParamRef(DeclarationSymbol(...)), ...)`.
 
 ---
 
-## Phase model and invariants
+## Phase model
 
 ### 1. Class-body declaration phase
 
@@ -79,42 +79,45 @@ At this point:
 
 - `alpha` is a `Param` declaration.
 - `x` is a `Data` declaration.
-- `mu` is a pending expression tree.
-- declarations carry `UnresolvedSymbol` values from `_pending.py`.
+- `mu` is a private deferred syntax token.
+- declarations carry private `DeclarationSymbol` identities.
 
 Invariant:
 
 ```text
-class-body arithmetic must produce PendingExprNode values only
+class-body arithmetic captures syntax only; it must not produce ExprNode values
 ```
 
-No final `expr.py` nodes should appear in pending expression trees.
+### 2. Private deferred syntax capture
 
-### 2. Internal pending IR
-
-File: `src/jaxstanv5/model/_pending.py`
+File: `src/jaxstanv5/model/_deferred.py`
 
 Types:
 
 ```python
-UnresolvedSymbol
-PendingParamRef
-PendingDataRef
-PendingConst
-PendingBinOp
-PendingIndexOp
-PendingRef = PendingParamRef | PendingDataRef
-PendingExprNode = PendingRef | PendingConst | PendingBinOp | PendingIndexOp
+DeclarationSymbol
+DeferredBinOp
+DeferredIndexOp
+DeferredExpr = DeferredBinOp | DeferredIndexOp
 ```
 
-`_pending.py` is package-private. It exists only to make the declaration phase
-explicit in the type system.
+Deferred tokens are not semantic model IR. They are only the raw Python syntax
+that was evaluated before class attribute names were available.
 
-Pending refs use unresolved symbols:
+Example:
 
 ```python
-PendingParamRef(UnresolvedSymbol(0))
-PendingDataRef(UnresolvedSymbol(1))
+alpha + beta * x
+```
+
+captures:
+
+```python
+DeferredBinOp(
+    "+",
+    alpha,
+    DeferredBinOp("*", beta, x),
+)
 ```
 
 ### 3. Final expression IR
@@ -135,7 +138,7 @@ ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp
 Invariant:
 
 ```text
-final ExprNode trees never contain UnresolvedSymbol or pending nodes
+final ExprNode trees never contain DeclarationSymbol, Param, Data, or deferred tokens
 ```
 
 Example final tree:
@@ -162,100 +165,63 @@ Rules:
 
 - `Param` and `Data` are declarations, not expression nodes.
 - `Observed` is an observed-variable declaration, not a `Data` slot.
-- `Param.ref()` returns `PendingParamRef`.
-- `Data.ref()` returns `PendingDataRef`.
-- declaration operators (`+`, `-`, `*`, `/`, reverse versions, `[]`) build pending nodes.
-
-Example:
-
-```python
-alpha + beta * x
-```
-
-must build:
-
-```python
-PendingBinOp(
-    "+",
-    PendingParamRef(alpha.symbol),
-    PendingBinOp("*", PendingParamRef(beta.symbol), PendingDataRef(x.symbol)),
-)
-```
+- declaration operators (`+`, `-`, `*`, `/`, reverse versions, `[]`) capture
+  private deferred syntax tokens.
+- unsupported expression operands are rejected during declaration resolution,
+  not during Python operator evaluation.
 
 ---
 
-## Decorator pipeline
+## Decorator resolution
 
 File: `src/jaxstanv5/model/decorator.py`
 
-The decorator should remain a small pipeline:
+The decorator should remain a small explicit transition:
 
 ```python
 def model(cls: type[object]) -> type[object]:
-    pending = collect_pending_model(cls)
-    meta = resolve_pending_model(pending)
+    meta = resolve_model_declaration(cls)
     attach metadata and bind
     return cls
 ```
 
-### `PendingModel`
-
-Collected before symbol resolution:
-
-```python
-@dataclass(frozen=True)
-class PendingModel:
-    params: dict[str, PendingParam]
-    data_slots: list[str]
-    observed_name: str
-    observed: PendingObserved
-    expressions: dict[str, PendingExprNode]
-    symbols: dict[UnresolvedSymbol, str]
-```
-
-Pending metadata invariants:
-
-- `symbols` maps every declaration symbol to the final class attribute name.
-- `data_slots` includes only explicit `Data()` declarations.
-- `observed_name` is separate from `data_slots`.
-- pending expressions contain only `_pending.py` nodes.
-- pending metadata should not embed raw `Param`, `Data`, or `Observed` declarations.
-
-### `collect_pending_model(cls)`
+### `resolve_model_declaration(cls)`
 
 Responsibilities:
 
 1. Walk `cls.__dict__` and collect declaration symbols.
-2. Collect pending parameters and explicit data slots.
-3. Normalize parameter distributions to pending references where needed.
-4. Normalize parameter sizes:
+2. Reject aliases such as `beta = alpha` where two names share one declaration.
+3. Collect parameters and explicit data slots.
+4. Resolve parameter distributions directly to final expression nodes where
+   symbolic fields appear.
+5. Resolve parameter sizes:
    - `None -> None`
    - `int -> int`
-   - `Data -> PendingDataRef`
-   - `PendingDataRef -> PendingDataRef`
-5. Collect exactly one `Observed` declaration.
-6. Collect class-body pending expression attributes.
+   - `Data -> DataRef(name)`
+6. Collect exactly one `Observed` declaration.
+7. Resolve deferred class-body expression attributes to final `ExprNode` trees.
+8. Return final `ModelMeta`.
 
-Distribution normalization examples:
+Distribution resolution examples:
 
 ```python
 Normal(alpha_pop, sigma_alpha)
 ```
 
-becomes pending metadata equivalent to:
+becomes final metadata equivalent to:
 
 ```python
-Normal(PendingParamRef(alpha_pop.symbol), PendingParamRef(sigma_alpha.symbol))
+Normal(ParamRef("alpha_pop"), ParamRef("sigma_alpha"))
 ```
 
 ```python
 Observed(Normal(mu, sigma))
 ```
 
-where `mu` is a pending expression and `sigma` is a `Param`, becomes:
+where `mu` is deferred syntax and `sigma` is a `Param`, becomes:
 
 ```python
-Observed(Normal(<pending mu tree>, PendingParamRef(sigma.symbol)))
+Observed(Normal(<final mu tree>, ParamRef("sigma")))
 ```
 
 ### `ModelMeta`
@@ -276,35 +242,9 @@ Final metadata invariants:
 
 - final expressions contain only `expr.py` nodes.
 - `ParamRef.name` and `DataRef.name` are strings.
-- no pending nodes remain.
-- no unresolved symbols remain.
+- no declaration symbols remain.
 - no raw `Param`, `Data`, or `Observed` declarations remain.
-
-### `resolve_pending_model(pending)`
-
-Responsibilities:
-
-1. Resolve `PendingParamRef(symbol)` to `ParamRef(name)`.
-2. Resolve `PendingDataRef(symbol)` to `DataRef(name)`.
-3. Resolve `PendingConst` to `ConstNode`.
-4. Resolve `PendingBinOp` and `PendingIndexOp` recursively.
-5. Resolve pending distribution fields.
-6. Resolve parameter sizes:
-   - `None -> None`
-   - `int -> int`
-   - `PendingDataRef(symbol) -> DataRef(name)`
-
-Example:
-
-```python
-PendingBinOp("+", PendingParamRef(sym_alpha), PendingDataRef(sym_x))
-```
-
-becomes:
-
-```python
-BinOp("+", ParamRef("alpha"), DataRef("x"))
-```
+- no deferred tokens remain.
 
 ---
 
@@ -374,7 +314,7 @@ from jaxstanv5.model import Data, Observed, Param, model
 __all__ = ["Data", "Observed", "Param", "model"]
 ```
 
-Do not export `_pending.py` from public package surfaces.
+Do not export `_deferred.py` from public package surfaces.
 
 ---
 
@@ -382,17 +322,19 @@ Do not export `_pending.py` from public package surfaces.
 
 Implemented:
 
-- red model declaration tests
-- internal pending IR in `_pending.py`
+- private deferred syntax capture in `_deferred.py`
 - final expression IR in `expr.py`
 - declaration classes in `core.py`
-- explicit `collect_pending_model -> resolve_pending_model -> model` pipeline
-- distribution and size normalization for hierarchical declarations
+- explicit `resolve_model_declaration -> model` pipeline
+- distribution and size resolution for hierarchical declarations
 - `BoundModel`
 - `bind(...)`
 - public DSL exports
+- unit coverage for deferred syntax capture, declaration resolution, validation,
+  and binding edge cases
+- slice coverage for public `@model` declarations and bind behavior
 
-Focused validation passed:
+Focused validation should pass with:
 
 ```bash
 uv run ruff check src/jaxstanv5 tests/unit tests/slices/model_declarations
@@ -413,17 +355,16 @@ such as diagnostics exports are still unimplemented.
 These are not blockers for the current model-declaration slice, but should be
 revisited before compiler work expands:
 
-1. Add direct tests for missing observed declaration and duplicate observed
-   declarations.
-2. Add direct tests for `bind(...)` missing data, missing observed data, and extra
-   data rejection.
-3. Decide whether scalar distribution fields should remain raw scalars or be
+1. Decide whether scalar distribution fields should remain raw scalars or be
    normalized to expression constants. Current implementation normalizes scalar
-   distribution fields through pending/final constant nodes; this is uniform for
-   compiler evaluation, but direct `Distribution.log_prob(...)` on unresolved
-   metadata is not expected to work.
-4. Tighten the type of attached `bind(...)` if it becomes useful for static
+   distribution fields to final constant nodes; this is uniform for compiler
+   evaluation, but direct `Distribution.log_prob(...)` on unresolved metadata is
+   not expected to work.
+2. Tighten the type of attached `bind(...)` if it becomes useful for static
    checks. Runtime behavior is currently the priority.
+3. Introduce explicit symbolic distribution parameter types or model-side
+   distribution metadata if casts around `DistributionParameter` become too
+   noisy during compiler work.
 
 ---
 
@@ -432,11 +373,12 @@ revisited before compiler work expands:
 Keep these true:
 
 - `Param` and `Data` are declarations.
-- `_pending.py` is internal and owns `UnresolvedSymbol`.
-- class-body expressions produce pending nodes only.
+- `_deferred.py` is private and owns class-body syntax capture.
+- `core.py` does not import or build final expression IR.
 - `expr.py` is resolved/final only.
 - `ParamRef.name` and `DataRef.name` are strings.
-- `@model` is the only transition from unresolved symbols to names.
+- `@model`/`resolve_model_declaration` is the only transition from declaration
+  symbols to names.
 - `Observed` is not a `Data` slot, but `bind(...)` still requires observed data.
 - `BoundModel` contains data and shapes only; no inference logic.
 - no BlackJAX in model code.

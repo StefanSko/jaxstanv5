@@ -1,7 +1,7 @@
 """Unit tests for final/resolved expression IR primitives.
 
-These nodes are used after ``@model`` resolves pending declaration symbols to
-string names.
+These nodes are used after ``@model`` resolves declaration symbols to string
+names.
 """
 
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef

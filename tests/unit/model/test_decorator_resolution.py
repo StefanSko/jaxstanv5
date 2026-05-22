@@ -1,27 +1,19 @@
-"""Unit tests for pending-to-final model declaration resolution helpers."""
+"""Unit tests for model declaration resolution helpers."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol, cast
 
 import pytest
 
 from jaxstanv5.distributions.core import DistributionParameter
 from jaxstanv5.distributions.normal import Normal
-from jaxstanv5.model._pending import (
-    PendingBinOp,
-    PendingConst,
-    PendingDataRef,
-    PendingIndexOp,
-    PendingParamRef,
-    UnresolvedSymbol,
-)
 from jaxstanv5.model.core import Data, Param
 from jaxstanv5.model.decorator import (
-    normalize_distribution_to_pending,
-    resolve_distribution,
-    resolve_expr,
-    resolve_size,
+    resolve_declaration_distribution,
+    resolve_declaration_expr,
+    resolve_declaration_size,
 )
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef
 
@@ -40,18 +32,20 @@ def normal_fields(value: object) -> NormalFields:
     return cast(NormalFields, value)
 
 
-def test_resolve_expr_resolves_each_pending_node_type_recursively() -> None:
-    param_symbol = UnresolvedSymbol(1)
-    data_symbol = UnresolvedSymbol(2)
-    symbols = {param_symbol: "alpha", data_symbol: "group_idx"}
+@dataclass(frozen=True)
+class UnknownExpr:
+    value: object
 
-    pending = PendingBinOp(
-        "+",
-        PendingIndexOp(PendingParamRef(param_symbol), PendingDataRef(data_symbol)),
-        PendingConst(1.5),
+
+def test_resolve_declaration_expr_builds_final_tree_recursively() -> None:
+    alpha = Param(Normal(0.0, 1.0))
+    group_idx = Data()
+    expr = alpha[group_idx] + 1.5
+
+    resolved = resolve_declaration_expr(
+        expr,
+        {alpha.symbol: "alpha", group_idx.symbol: "group_idx"},
     )
-
-    resolved = resolve_expr(pending, symbols)
 
     assert resolved == BinOp(
         "+",
@@ -60,41 +54,51 @@ def test_resolve_expr_resolves_each_pending_node_type_recursively() -> None:
     )
 
 
-def test_resolve_expr_rejects_unknown_unresolved_symbols() -> None:
-    with pytest.raises(ValueError, match="Unknown unresolved symbol"):
-        resolve_expr(PendingParamRef(UnresolvedSymbol(999)), {})
+def test_resolve_declaration_expr_rejects_unknown_declaration_symbols() -> None:
+    alpha = Param(Normal(0.0, 1.0))
+
+    with pytest.raises(ValueError, match="Unknown declaration symbol"):
+        resolve_declaration_expr(alpha, {})
 
 
-def test_resolve_size_resolves_pending_data_refs_and_preserves_static_sizes() -> None:
-    data_symbol = UnresolvedSymbol(1)
-    symbols = {data_symbol: "n_groups"}
-
-    assert resolve_size(None, symbols) is None
-    assert resolve_size(3, symbols) == 3
-    assert resolve_size(PendingDataRef(data_symbol), symbols) == DataRef("n_groups")
+def test_resolve_declaration_expr_rejects_unknown_expression_values() -> None:
+    with pytest.raises(TypeError, match="declaration expression"):
+        resolve_declaration_expr(UnknownExpr("bad"), {})
 
 
-def test_resolve_size_rejects_unknown_unresolved_symbols() -> None:
-    with pytest.raises(ValueError, match="Unknown unresolved symbol"):
-        resolve_size(PendingDataRef(UnresolvedSymbol(999)), {})
+def test_resolve_declaration_size_resolves_data_refs_and_preserves_static_sizes() -> None:
+    n_groups = Data()
+    symbols = {n_groups.symbol: "n_groups"}
+
+    assert resolve_declaration_size(None, symbols) is None
+    assert resolve_declaration_size(3, symbols) == 3
+    assert resolve_declaration_size(n_groups, symbols) == DataRef("n_groups")
 
 
-def test_distribution_normalization_and_resolution_handle_symbolic_fields() -> None:
+def test_resolve_declaration_size_rejects_unknown_declaration_symbols() -> None:
+    n_groups = Data()
+
+    with pytest.raises(ValueError, match="Unknown declaration symbol"):
+        resolve_declaration_size(n_groups, {})
+
+
+def test_distribution_resolution_handles_symbolic_fields() -> None:
     alpha = Param(Normal(0.0, 1.0))
     x = Data()
-    pending_dist = normal_fields(
-        normalize_distribution_to_pending(Normal(dist_param(alpha + x), 2.0))
-    )
-
-    assert isinstance(pending_dist.loc, PendingBinOp)
-    assert isinstance(pending_dist.scale, PendingConst)
-
     resolved_dist = normal_fields(
-        resolve_distribution(
-            cast(Normal, pending_dist),
+        resolve_declaration_distribution(
+            Normal(dist_param(alpha + x), 2.0),
             {alpha.symbol: "alpha", x.symbol: "x"},
         )
     )
 
     assert resolved_dist.loc == BinOp("+", ParamRef("alpha"), DataRef("x"))
     assert resolved_dist.scale == ConstNode(2.0)
+
+
+def test_distribution_resolution_rejects_final_expr_fields() -> None:
+    with pytest.raises(TypeError, match="Final expression nodes"):
+        resolve_declaration_distribution(
+            Normal(dist_param(ParamRef("alpha")), 1.0),
+            {},
+        )

@@ -1,4 +1,4 @@
-"""Model declaration phase transitions."""
+"""Model declaration resolution and binding."""
 
 from __future__ import annotations
 
@@ -11,59 +11,26 @@ import jax.numpy as jnp
 
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model._pending import (
-    PendingBinOp,
-    PendingConst,
-    PendingDataRef,
-    PendingExprNode,
-    PendingIndexOp,
-    PendingParamRef,
-    UnresolvedSymbol,
-    is_pending_expr,
-    to_pending_expr,
+from jaxstanv5.model._deferred import (
+    DeclarationSymbol,
+    DeferredBinOp,
+    DeferredIndexOp,
+    is_deferred_expr,
 )
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef
 
 type ModelClass = type[object]
+type SymbolTable = dict[DeclarationSymbol, str]
 
 
-class FieldNormalizer(Protocol):
+class FieldResolver(Protocol):
     def __call__(self, value: object) -> object: ...
 
 
 @dataclass(frozen=True)
-class PendingParam:
-    """Parameter metadata during the pending declaration phase."""
-
-    distribution: Distribution
-    constraint: Constraint | None
-    size: PendingDataRef | int | None
-    symbol: UnresolvedSymbol
-
-
-@dataclass(frozen=True)
-class PendingObserved:
-    """Observed metadata during the pending declaration phase."""
-
-    distribution: Distribution
-
-
-@dataclass(frozen=True)
-class PendingModel:
-    """Collected model metadata before symbols are resolved to names."""
-
-    params: dict[str, PendingParam]
-    data_slots: list[str]
-    observed_name: str
-    observed: PendingObserved
-    expressions: dict[str, PendingExprNode]
-    symbols: dict[UnresolvedSymbol, str]
-
-
-@dataclass(frozen=True)
 class ResolvedParam:
-    """Parameter metadata after symbols are resolved to names."""
+    """Parameter metadata after declaration symbols are resolved to names."""
 
     distribution: Distribution
     constraint: Constraint | None
@@ -72,7 +39,7 @@ class ResolvedParam:
 
 @dataclass(frozen=True)
 class ResolvedObserved:
-    """Observed metadata after symbols are resolved to names."""
+    """Observed metadata after declaration symbols are resolved to names."""
 
     distribution: Distribution
 
@@ -88,11 +55,52 @@ class ModelMeta:
     expressions: dict[str, ExprNode]
 
 
-def collect_pending_model(cls: ModelClass) -> PendingModel:
-    """Collect class-body declarations into a pending model."""
-    params: dict[str, PendingParam] = {}
+def resolve_model_declaration(cls: ModelClass) -> ModelMeta:
+    """Resolve a declaration class into final model metadata."""
+    symbols = collect_declaration_symbols(cls)
+    params: dict[str, ResolvedParam] = {}
     data_slots: list[str] = []
-    symbols: dict[UnresolvedSymbol, str] = {}
+
+    for name, value in cls.__dict__.items():
+        if isinstance(value, Param):
+            params[name] = ResolvedParam(
+                distribution=resolve_declaration_distribution(value.distribution, symbols),
+                constraint=value.constraint,
+                size=resolve_declaration_size(value.size, symbols),
+            )
+        elif isinstance(value, Data):
+            data_slots.append(name)
+
+    observed_name: str | None = None
+    observed: ResolvedObserved | None = None
+    expressions: dict[str, ExprNode] = {}
+
+    for name, value in cls.__dict__.items():
+        if isinstance(value, Observed):
+            if observed_name is not None:
+                raise ValueError("Model declarations must contain exactly one Observed")
+            observed_name = name
+            observed = ResolvedObserved(
+                resolve_declaration_distribution(value.distribution, symbols)
+            )
+        elif is_deferred_expr(value):
+            expressions[name] = resolve_declaration_expr(value, symbols)
+
+    if observed_name is None or observed is None:
+        raise ValueError("Model declarations must contain exactly one Observed")
+
+    return ModelMeta(
+        params=params,
+        data_slots=data_slots,
+        observed_name=observed_name,
+        observed=observed,
+        expressions=expressions,
+    )
+
+
+def collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
+    """Collect declaration symbols and reject declaration aliases."""
+    symbols: SymbolTable = {}
 
     for name, value in cls.__dict__.items():
         if isinstance(value, Param | Data):
@@ -104,69 +112,12 @@ def collect_pending_model(cls: ModelClass) -> PendingModel:
                 )
             symbols[value.symbol] = name
 
-    for name, value in cls.__dict__.items():
-        if isinstance(value, Param):
-            params[name] = PendingParam(
-                distribution=normalize_distribution_to_pending(value.distribution),
-                constraint=value.constraint,
-                size=normalize_size_to_pending(value.size),
-                symbol=value.symbol,
-            )
-        elif isinstance(value, Data):
-            data_slots.append(name)
-
-    observed_name: str | None = None
-    observed: PendingObserved | None = None
-    expressions: dict[str, PendingExprNode] = {}
-
-    for name, value in cls.__dict__.items():
-        if isinstance(value, Observed):
-            if observed_name is not None:
-                raise ValueError("Model declarations must contain exactly one Observed")
-            observed_name = name
-            observed = PendingObserved(normalize_distribution_to_pending(value.distribution))
-        elif is_pending_expr(value):
-            expressions[name] = to_pending_expr(value)
-
-    if observed_name is None or observed is None:
-        raise ValueError("Model declarations must contain exactly one Observed")
-
-    return PendingModel(
-        params=params,
-        data_slots=data_slots,
-        observed_name=observed_name,
-        observed=observed,
-        expressions=expressions,
-        symbols=symbols,
-    )
-
-
-def resolve_pending_model(pending: PendingModel) -> ModelMeta:
-    """Resolve a pending model into final model metadata."""
-    return ModelMeta(
-        params={
-            name: ResolvedParam(
-                distribution=resolve_distribution(param.distribution, pending.symbols),
-                constraint=param.constraint,
-                size=resolve_size(param.size, pending.symbols),
-            )
-            for name, param in pending.params.items()
-        },
-        data_slots=pending.data_slots,
-        observed_name=pending.observed_name,
-        observed=ResolvedObserved(
-            resolve_distribution(pending.observed.distribution, pending.symbols)
-        ),
-        expressions={
-            name: resolve_expr(expr, pending.symbols) for name, expr in pending.expressions.items()
-        },
-    )
+    return symbols
 
 
 def model(cls: ModelClass) -> ModelClass:
     """Attach final model metadata to a declaration class."""
-    pending = collect_pending_model(cls)
-    meta = resolve_pending_model(pending)
+    meta = resolve_model_declaration(cls)
     setattr(cls, "_model_meta", meta)  # noqa: B010
     setattr(cls, "bind", classmethod(make_bind(meta)))  # noqa: B010
     return cls
@@ -237,93 +188,84 @@ def validate_parameter_size(size: int, label: str) -> int:
     return size
 
 
-def normalize_size_to_pending(size: object) -> PendingDataRef | int | None:
+def resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | int | None:
+    """Resolve a declaration-size value into final size metadata."""
     if size is None:
         return None
     if isinstance(size, int):
         return validate_parameter_size(size, "Parameter size")
     if isinstance(size, Data):
-        return size.ref()
-    if isinstance(size, PendingDataRef):
-        return size
-    raise TypeError(f"Cannot convert {type(size).__name__} to a pending size")
+        return DataRef(resolve_symbol(size.symbol, symbols))
+    raise TypeError(f"Cannot resolve {type(size).__name__} as a declaration size")
 
 
-def normalize_distribution_to_pending(distribution: Distribution) -> Distribution:
-    return rebuild_distribution(distribution, normalize_distribution_field_to_pending)
-
-
-def normalize_distribution_field_to_pending(value: object) -> object:
-    if isinstance(value, Param | Data) or is_pending_expr(value) or isinstance(value, int | float):
-        return to_pending_expr(value)
-    if is_dataclass(value) and not isinstance(value, type):
-        return normalize_distribution_to_pending(cast(Distribution, value))
-    return value
-
-
-def resolve_size(
-    size: PendingDataRef | int | None,
-    symbols: dict[UnresolvedSymbol, str],
-) -> DataRef | int | None:
-    if size is None or isinstance(size, int):
-        return size
-    return DataRef(resolve_symbol(size.name, symbols))
-
-
-def resolve_distribution(
+def resolve_declaration_distribution(
     distribution: Distribution,
-    symbols: dict[UnresolvedSymbol, str],
+    symbols: SymbolTable,
 ) -> Distribution:
+    """Resolve symbolic distribution fields into final expression nodes."""
     return rebuild_distribution(
-        distribution, lambda value: resolve_distribution_field(value, symbols)
+        distribution, lambda value: resolve_declaration_distribution_field(value, symbols)
     )
 
 
-def resolve_distribution_field(
-    value: object,
-    symbols: dict[UnresolvedSymbol, str],
-) -> object:
-    if is_pending_expr(value):
-        return resolve_expr(to_pending_expr(value), symbols)
+def resolve_declaration_distribution_field(value: object, symbols: SymbolTable) -> object:
+    if is_declaration_expr(value):
+        return resolve_declaration_expr(value, symbols)
+    if is_final_expr_node(value):
+        raise TypeError("Final expression nodes are not valid in model declarations")
     if is_dataclass(value) and not isinstance(value, type):
-        return resolve_distribution(cast(Distribution, value), symbols)
+        return resolve_declaration_distribution(cast(Distribution, value), symbols)
     return value
 
 
-def resolve_expr(
-    expr: PendingExprNode,
-    symbols: dict[UnresolvedSymbol, str],
-) -> ExprNode:
-    if isinstance(expr, PendingParamRef):
-        return ParamRef(resolve_symbol(expr.name, symbols))
-    if isinstance(expr, PendingDataRef):
-        return DataRef(resolve_symbol(expr.name, symbols))
-    if isinstance(expr, PendingConst):
-        return ConstNode(expr.value)
-    if isinstance(expr, PendingBinOp):
-        return BinOp(expr.op, resolve_expr(expr.left, symbols), resolve_expr(expr.right, symbols))
-    if isinstance(expr, PendingIndexOp):
-        return IndexOp(resolve_expr(expr.base, symbols), resolve_expr(expr.index, symbols))
+def resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
+    """Resolve class-body declaration syntax into final expression IR."""
+    if isinstance(value, Param):
+        return ParamRef(resolve_symbol(value.symbol, symbols))
+    if isinstance(value, Data):
+        return DataRef(resolve_symbol(value.symbol, symbols))
+    if isinstance(value, int | float):
+        return ConstNode(value)
+    if isinstance(value, DeferredBinOp):
+        return BinOp(
+            value.op,
+            resolve_declaration_expr(value.left, symbols),
+            resolve_declaration_expr(value.right, symbols),
+        )
+    if isinstance(value, DeferredIndexOp):
+        return IndexOp(
+            resolve_declaration_expr(value.base, symbols),
+            resolve_declaration_expr(value.index, symbols),
+        )
+    raise TypeError(f"Cannot resolve {type(value).__name__} as a declaration expression")
 
 
-def resolve_symbol(
-    symbol: UnresolvedSymbol,
-    symbols: dict[UnresolvedSymbol, str],
-) -> str:
+def is_declaration_expr(value: object) -> bool:
+    """Return whether ``value`` can resolve to final expression IR."""
+    return isinstance(value, Param | Data | DeferredBinOp | DeferredIndexOp | int | float)
+
+
+def is_final_expr_node(value: object) -> bool:
+    """Return whether ``value`` is already resolved final expression IR."""
+    return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp)
+
+
+def resolve_symbol(symbol: DeclarationSymbol, symbols: SymbolTable) -> str:
     name = symbols.get(symbol)
     if name is None:
-        raise ValueError(f"Unknown unresolved symbol: {symbol}")
+        raise ValueError(f"Unknown declaration symbol: {symbol}")
     return name
 
 
 def rebuild_distribution(
     distribution: Distribution,
-    normalize_field: FieldNormalizer,
+    resolve_field: FieldResolver,
 ) -> Distribution:
     if not is_dataclass(distribution) or isinstance(distribution, type):
         return distribution
-    normalized = {
-        field.name: normalize_field(getattr(distribution, field.name))
+    resolved = {
+        field.name: resolve_field(getattr(distribution, field.name))
         for field in fields(distribution)
     }
-    return type(distribution)(**normalized)
+    return type(distribution)(**resolved)
