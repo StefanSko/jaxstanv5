@@ -96,6 +96,12 @@ def collect_pending_model(cls: ModelClass) -> PendingModel:
 
     for name, value in cls.__dict__.items():
         if isinstance(value, Param | Data):
+            existing_name = symbols.get(value.symbol)
+            if existing_name is not None:
+                raise ValueError(
+                    "Declaration aliases are not supported: "
+                    f"{existing_name!r} and {name!r} share one symbol"
+                )
             symbols[value.symbol] = name
 
     for name, value in cls.__dict__.items():
@@ -199,20 +205,43 @@ def resolve_param_shape(
     if size is None:
         return ()
     if isinstance(size, int):
-        return (size,)
-    return (int(data[size.name]),)
+        return (validate_parameter_size(size, "Parameter size"),)
+
+    size_value = data[size.name]
+    if size_value.ndim != 0:
+        raise ValueError(f"Data-dependent parameter size {size.name!r} must be scalar")
+    if not jnp.issubdtype(size_value.dtype, jnp.integer):
+        raise TypeError(f"Data-dependent parameter size {size.name!r} must be integer")
+    return (
+        validate_parameter_size(
+            int(size_value),
+            f"Data-dependent parameter size {size.name!r}",
+        ),
+    )
 
 
 def param_count(shape: tuple[int, ...]) -> int:
     count = 1
     for dim in shape:
+        if dim < 0:
+            raise ValueError("Parameter shape dimensions must be non-negative")
         count *= dim
     return count
 
 
+def validate_parameter_size(size: int, label: str) -> int:
+    if isinstance(size, bool):
+        raise TypeError(f"{label} must be an integer, not bool")
+    if size < 0:
+        raise ValueError(f"{label} must be non-negative")
+    return size
+
+
 def normalize_size_to_pending(size: object) -> PendingDataRef | int | None:
-    if size is None or isinstance(size, int):
-        return size
+    if size is None:
+        return None
+    if isinstance(size, int):
+        return validate_parameter_size(size, "Parameter size")
     if isinstance(size, Data):
         return size.ref()
     if isinstance(size, PendingDataRef):
@@ -238,7 +267,7 @@ def resolve_size(
 ) -> DataRef | int | None:
     if size is None or isinstance(size, int):
         return size
-    return DataRef(symbols[size.name])
+    return DataRef(resolve_symbol(size.name, symbols))
 
 
 def resolve_distribution(
@@ -266,15 +295,25 @@ def resolve_expr(
     symbols: dict[UnresolvedSymbol, str],
 ) -> ExprNode:
     if isinstance(expr, PendingParamRef):
-        return ParamRef(symbols[expr.name])
+        return ParamRef(resolve_symbol(expr.name, symbols))
     if isinstance(expr, PendingDataRef):
-        return DataRef(symbols[expr.name])
+        return DataRef(resolve_symbol(expr.name, symbols))
     if isinstance(expr, PendingConst):
         return ConstNode(expr.value)
     if isinstance(expr, PendingBinOp):
         return BinOp(expr.op, resolve_expr(expr.left, symbols), resolve_expr(expr.right, symbols))
     if isinstance(expr, PendingIndexOp):
         return IndexOp(resolve_expr(expr.base, symbols), resolve_expr(expr.index, symbols))
+
+
+def resolve_symbol(
+    symbol: UnresolvedSymbol,
+    symbols: dict[UnresolvedSymbol, str],
+) -> str:
+    name = symbols.get(symbol)
+    if name is None:
+        raise ValueError(f"Unknown unresolved symbol: {symbol}")
+    return name
 
 
 def rebuild_distribution(
