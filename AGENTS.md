@@ -58,12 +58,14 @@ document that tradeoff.
 
 ## Development process
 
-Use red-green TDD:
-1. Add or update a failing test.
-2. Implement the smallest change to make it pass.
-3. Refactor only after the test is green.
+Use staged red-green TDD for user-visible additions:
+1. Add or update a red integration test for the intended public workflow.
+2. Add a red slice test for the first architectural path that should work.
+3. Drive the slice with red/green unit tests for each primitive.
+4. Make the slice green, then make the integration path green or document why it remains intentionally red.
+5. Refactor only after the relevant tests are green.
 
-Prefer vertical integration and iterative development. When asked to build application/product functionality, work toward an end-to-end finished path first, then improve breadth and polish.
+Prefer vertical integration and iterative development. Work toward one end-to-end path first, then improve breadth and polish.
 
 ## Validation
 
