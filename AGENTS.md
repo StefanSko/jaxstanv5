@@ -46,6 +46,16 @@ Avoid:
 - speculative abstractions
 - broad convenience APIs
 
+### Phase boundaries
+
+When a design has distinct phases, make those phases explicit in code. Use
+separate types and named transition functions instead of clever mixed
+representations or hidden conversions.
+
+Avoid shortcuts that make the code look simpler by increasing coupling or hiding
+state transitions. Only collapse phases for a clear performance reason, and
+document that tradeoff.
+
 ## Development process
 
 Use red-green TDD:
