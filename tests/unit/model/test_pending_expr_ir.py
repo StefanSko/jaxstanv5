@@ -1,4 +1,4 @@
-"""Phase 2: class-body arithmetic builds internal pending IR.
+"""Unit tests for class-body arithmetic and internal pending IR.
 
 This documents the boundary that prevents class-body expressions from producing
 mixed pending/final expression trees.

@@ -1,4 +1,4 @@
-"""Phase 1: final/resolved expression IR primitives.
+"""Unit tests for final/resolved expression IR primitives.
 
 These nodes are used after ``@model`` resolves pending declaration symbols to
 string names.
