@@ -67,6 +67,8 @@ Use staged red-green TDD for user-visible additions:
 
 Prefer vertical integration and iterative development. Work toward one end-to-end path first, then improve breadth and polish.
 
+Test public behavior through public APIs; do not interrogate objects in ways that leak private internals into higher-level tests.
+
 ## Validation
 
 Before reporting completion, run the relevant checks, normally:
