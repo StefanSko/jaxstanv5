@@ -12,6 +12,7 @@ import jax.numpy as jnp
 
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.model.bound import BoundModel
+from jaxstanv5.model.decorator import ModelMeta
 
 
 class _WindowAdaptationRun(Protocol):
@@ -80,6 +81,21 @@ def unflatten_samples(
     return result
 
 
+def constrain_sample_values(
+    samples: dict[str, jax.Array],
+    meta: ModelMeta,
+) -> dict[str, jax.Array]:
+    """Map sampled unconstrained parameter values back to constrained values."""
+    result: dict[str, jax.Array] = {}
+    for name, values in samples.items():
+        constraint = meta.params[name].constraint
+        if constraint is None:
+            result[name] = values
+        else:
+            result[name] = jnp.asarray(constraint.inverse_transform(values))
+    return result
+
+
 @dataclass(frozen=True, init=False)
 class CompiledSampler:
     """Reusable NUTS sampler for one bound model shape.
@@ -132,7 +148,9 @@ class CompiledSampler:
             tuned_params["inverse_mass_matrix"],
         )
 
-        return SamplerResult(samples=unflatten_samples(positions, self._bound.param_shapes))
+        unconstrained = unflatten_samples(positions, self._bound.param_shapes)
+        constrained = constrain_sample_values(unconstrained, self._bound.meta)
+        return SamplerResult(samples=constrained)
 
 
 def compile_sampler(bound: BoundModel) -> CompiledSampler:

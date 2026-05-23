@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 
+from jaxstanv5.constraints import Positive
 from jaxstanv5.distributions import Normal
-from jaxstanv5.inference.core import SamplerResult, compile_sampler, unflatten_samples
+from jaxstanv5.inference.core import (
+    SamplerResult,
+    compile_sampler,
+    constrain_sample_values,
+    unflatten_samples,
+)
 from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import ModelMeta, ResolvedObserved
+from jaxstanv5.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
 from jaxstanv5.model.expr import ConstNode
 
 
@@ -58,6 +64,21 @@ def test_unflatten_zero_sized_parameter_does_not_advance_offset() -> None:
     assert result["empty"].shape == (1, 2, 0)
     assert jnp.allclose(result["first"][0], jnp.array([10.0, 30.0]))
     assert jnp.allclose(result["second"][0], jnp.array([20.0, 40.0]))
+
+
+def test_constrain_sample_values_applies_parameter_constraints() -> None:
+    meta = ModelMeta(
+        params={"sigma": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), Positive(), None)},
+        data_slots=[],
+        observed_name="y",
+        observed=ResolvedObserved(Normal(ConstNode(0.0), ConstNode(1.0))),
+        expressions={},
+    )
+    samples = {"sigma": jnp.array([[0.0, jnp.log(2.0)]])}
+
+    constrained = constrain_sample_values(samples, meta)
+
+    assert jnp.allclose(constrained["sigma"], jnp.array([[1.0, 2.0]]))
 
 
 def test_sampler_result_dataclass() -> None:
