@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from jaxstanv5.distributions.core import SymbolicDistributionParameter
+
 type ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp
 type BinaryOperator = str
 
@@ -24,7 +26,7 @@ class Expression(Protocol):
 
 
 @dataclass(frozen=True)
-class ParamRef:
+class ParamRef(SymbolicDistributionParameter):
     """Reference to a model parameter by name."""
 
     name: str
@@ -58,7 +60,7 @@ class ParamRef:
 
 
 @dataclass(frozen=True)
-class DataRef:
+class DataRef(SymbolicDistributionParameter):
     """Reference to bound model data by name."""
 
     name: str
@@ -92,7 +94,7 @@ class DataRef:
 
 
 @dataclass(frozen=True)
-class ConstNode:
+class ConstNode(SymbolicDistributionParameter):
     """Literal scalar constant in a symbolic expression."""
 
     value: int | float
@@ -126,7 +128,7 @@ class ConstNode:
 
 
 @dataclass(frozen=True)
-class BinOp:
+class BinOp(SymbolicDistributionParameter):
     """Binary operation between two expression nodes."""
 
     op: BinaryOperator
@@ -162,7 +164,7 @@ class BinOp:
 
 
 @dataclass(frozen=True)
-class IndexOp:
+class IndexOp(SymbolicDistributionParameter):
     """Indexing operation over a base expression."""
 
     base: ExprNode

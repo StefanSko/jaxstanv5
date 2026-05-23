@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from jaxstanv5.distributions.core import SymbolicDistributionParameter
+
 type DeferredExpr = DeferredBinOp | DeferredIndexOp
 type DeferredBinaryOperator = str
 
@@ -21,7 +23,7 @@ class DeclarationSymbol:
 
 
 @dataclass(frozen=True)
-class DeferredBinOp:
+class DeferredBinOp(SymbolicDistributionParameter):
     """Deferred binary operation from class-body syntax."""
 
     op: DeferredBinaryOperator
@@ -57,7 +59,7 @@ class DeferredBinOp:
 
 
 @dataclass(frozen=True)
-class DeferredIndexOp:
+class DeferredIndexOp(SymbolicDistributionParameter):
     """Deferred indexing operation from class-body syntax."""
 
     base: object

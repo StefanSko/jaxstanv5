@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from itertools import count
 
 from jaxstanv5.constraints.core import Constraint
-from jaxstanv5.distributions.core import Distribution
+from jaxstanv5.distributions.core import Distribution, SymbolicDistributionParameter
 from jaxstanv5.model._deferred import DeclarationSymbol, DeferredBinOp, DeferredIndexOp
 
 _SYMBOL_IDS = count()
@@ -18,7 +18,7 @@ def next_symbol() -> DeclarationSymbol:
 
 
 @dataclass(frozen=True)
-class Param:
+class Param(SymbolicDistributionParameter):
     """Parameter declaration used inside ``@model`` class bodies."""
 
     distribution: Distribution
@@ -55,7 +55,7 @@ class Param:
 
 
 @dataclass(frozen=True)
-class Data:
+class Data(SymbolicDistributionParameter):
     """Data declaration used inside ``@model`` class bodies."""
 
     symbol: DeclarationSymbol = field(default_factory=next_symbol, init=False, repr=False)

@@ -4,6 +4,8 @@ This test documents the intended public API. It is expected to fail (red)
 until the implementation is wired up.
 """
 
+from typing import Protocol, cast
+
 import jax.numpy as jnp
 import jax.random
 
@@ -12,6 +14,21 @@ from jaxstanv5.constraints import Positive
 from jaxstanv5.diagnostics import ess, rhat
 from jaxstanv5.distributions import Normal
 from jaxstanv5.inference import sample
+from jaxstanv5.model.bound import BoundModel
+
+
+class BindableModel(Protocol):
+    """Model class after the runtime ``@model`` decorator attaches ``bind``."""
+
+    def bind(self, **values: object) -> BoundModel:
+        """Bind concrete model data."""
+        ...
+
+
+def bind_model(model_cls: object, **values: object) -> BoundModel:
+    """Call runtime-attached ``bind`` through one explicit typed boundary."""
+    return cast(BindableModel, model_cls).bind(**values)
+
 
 # ---------------------------------------------------------------------------
 # Models
@@ -73,7 +90,7 @@ def test_linear_regression_vertical_slice() -> None:
 
     # Bind data
     key, subkey = jax.random.split(key)
-    bound = LinearRegression.bind(x=x_data, y=y_data)
+    bound = bind_model(LinearRegression, x=x_data, y=y_data)
 
     # Sample
     result = sample(bound, seed=42, num_warmup=200, num_samples=500)
@@ -117,8 +134,12 @@ def test_hierarchical_regression_vertical_slice() -> None:
     y_data = mu_true + sigma_true * jax.random.normal(subkey, (n,))
 
     # Bind
-    bound = HierarchicalLinearRegression.bind(
-        n_groups=n_groups_val, x=x_data, group_idx=group_idx_val, y=y_data
+    bound = bind_model(
+        HierarchicalLinearRegression,
+        n_groups=n_groups_val,
+        x=x_data,
+        group_idx=group_idx_val,
+        y=y_data,
     )
 
     # Sample

@@ -41,15 +41,13 @@ def unflatten_samples(
         size = 1
         for d in shape:
             size *= d
-        if size == 0:
-            param = jnp.empty((flat.shape[0], 0))
-        elif shape == ():
+        if shape == ():
             param = flat[:, offset]
         else:
             param = flat[:, offset : offset + size].reshape(flat.shape[0], *shape)
         # Add chain dimension: (N,) → (1, N), (N, *shape) → (1, N, *shape)
         result[name] = jnp.expand_dims(param, axis=0)
-        offset += max(size, 1)
+        offset += size
     return result
 
 

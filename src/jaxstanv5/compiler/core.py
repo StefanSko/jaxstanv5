@@ -49,10 +49,10 @@ def _is_expr_node(value: object) -> bool:
     return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp)
 
 
-def evaluate_distribution(
-    distribution: Distribution,
+def evaluate_distribution[DistributionT: Distribution](
+    distribution: DistributionT,
     values: dict[str, jax.Array],
-) -> Distribution:
+) -> DistributionT:
     """Evaluate expression fields in a distribution to concrete JAX arrays."""
     if not is_dataclass(distribution) or isinstance(distribution, type):
         return distribution
@@ -67,7 +67,7 @@ def evaluate_distribution(
         else:
             resolved[f.name] = val
 
-    return type(distribution)(**resolved)
+    return cast(DistributionT, type(distribution)(**resolved))
 
 
 def split_params(
@@ -81,13 +81,11 @@ def split_params(
         size = 1
         for d in shape:
             size *= d
-        if size == 0:
-            result[name] = jnp.array([])
-        elif shape == ():
+        if shape == ():
             result[name] = flat[offset]
         else:
             result[name] = flat[offset : offset + size].reshape(shape)
-        offset += max(size, 1)
+        offset += size
     return result
 
 

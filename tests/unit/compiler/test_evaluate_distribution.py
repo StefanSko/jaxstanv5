@@ -6,6 +6,7 @@ import jax.numpy as jnp
 
 from jaxstanv5.compiler.core import evaluate_distribution
 from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions.core import concrete_parameter
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ParamRef
 
 
@@ -15,8 +16,8 @@ def test_scalar_fields_pass_through() -> None:
     result = evaluate_distribution(dist, {})
 
     assert isinstance(result, Normal)
-    assert jnp.allclose(result.loc, jnp.array(0.0))
-    assert jnp.allclose(result.scale, jnp.array(1.0))
+    assert jnp.allclose(concrete_parameter(result.loc), jnp.array(0.0))
+    assert jnp.allclose(concrete_parameter(result.scale), jnp.array(1.0))
 
 
 def test_const_node_fields() -> None:
@@ -24,8 +25,8 @@ def test_const_node_fields() -> None:
     dist = Normal(loc=ConstNode(3.0), scale=ConstNode(2.0))
     result = evaluate_distribution(dist, {})
 
-    assert jnp.allclose(result.loc, jnp.array(3.0))
-    assert jnp.allclose(result.scale, jnp.array(2.0))
+    assert jnp.allclose(concrete_parameter(result.loc), jnp.array(3.0))
+    assert jnp.allclose(concrete_parameter(result.scale), jnp.array(2.0))
 
 
 def test_param_ref_fields() -> None:
@@ -33,8 +34,8 @@ def test_param_ref_fields() -> None:
     dist = Normal(loc=ParamRef("mu"), scale=ConstNode(1.0))
     result = evaluate_distribution(dist, {"mu": jnp.array(2.5)})
 
-    assert jnp.allclose(result.loc, jnp.array(2.5))
-    assert jnp.allclose(result.scale, jnp.array(1.0))
+    assert jnp.allclose(concrete_parameter(result.loc), jnp.array(2.5))
+    assert jnp.allclose(concrete_parameter(result.scale), jnp.array(1.0))
 
 
 def test_data_ref_fields() -> None:
@@ -42,8 +43,8 @@ def test_data_ref_fields() -> None:
     dist = Normal(loc=DataRef("x"), scale=ParamRef("sigma"))
     result = evaluate_distribution(dist, {"x": jnp.array([1.0, 2.0]), "sigma": jnp.array(0.5)})
 
-    assert jnp.allclose(result.loc, jnp.array([1.0, 2.0]))
-    assert jnp.allclose(result.scale, jnp.array(0.5))
+    assert jnp.allclose(concrete_parameter(result.loc), jnp.array([1.0, 2.0]))
+    assert jnp.allclose(concrete_parameter(result.scale), jnp.array(0.5))
 
 
 def test_binop_fields() -> None:
@@ -59,8 +60,8 @@ def test_binop_fields() -> None:
     result = evaluate_distribution(dist, values)
 
     expected_loc = 2.0 + 0.5 * jnp.array([1.0, 2.0])
-    assert jnp.allclose(result.loc, expected_loc)
-    assert jnp.allclose(result.scale, jnp.array(1.0))
+    assert jnp.allclose(concrete_parameter(result.loc), expected_loc)
+    assert jnp.allclose(concrete_parameter(result.scale), jnp.array(1.0))
 
 
 def test_log_prob_works_on_evaluated_distribution() -> None:
