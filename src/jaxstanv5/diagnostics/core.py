@@ -3,7 +3,21 @@
 from __future__ import annotations
 
 import jax
+import jax.numpy as jnp
 from blackjax.diagnostics import effective_sample_size, potential_scale_reduction
+
+
+def _ensure_multi_chain(arr: jax.Array, chain_axis: int = 0) -> jax.Array:
+    """If ``arr`` has only one chain, split it in half along the draw axis."""
+    if arr.shape[chain_axis] > 1:
+        return arr
+    # Squeeze out the singleton chain dimension, split draws in half
+    flat = jnp.squeeze(arr, axis=chain_axis)
+    n_draws = flat.shape[0]
+    half = n_draws // 2
+    first = flat[:half]
+    second = flat[half : 2 * half]
+    return jnp.stack([first, second], axis=0)
 
 
 def rhat(samples: dict[str, jax.Array]) -> dict[str, float]:
@@ -12,14 +26,17 @@ def rhat(samples: dict[str, jax.Array]) -> dict[str, float]:
     Parameters
     ----------
     samples : dict[str, jax.Array]
-        Parameter names to arrays of shape ``(chain, draw)``.
+        Parameter names to arrays of shape ``(chain, draw, *param_shape)``.
 
     Returns
     -------
     dict[str, float]
-        R-hat value per parameter.  Values near 1 indicate convergence.
+        Maximum R-hat per parameter (conservative for vector params).
     """
-    return {name: float(potential_scale_reduction(arr)) for name, arr in samples.items()}
+    return {
+        name: float(jnp.max(potential_scale_reduction(_ensure_multi_chain(arr))))
+        for name, arr in samples.items()
+    }
 
 
 def ess(samples: dict[str, jax.Array]) -> dict[str, float]:
@@ -28,11 +45,11 @@ def ess(samples: dict[str, jax.Array]) -> dict[str, float]:
     Parameters
     ----------
     samples : dict[str, jax.Array]
-        Parameter names to arrays of shape ``(chain, draw)``.
+        Parameter names to arrays of shape ``(chain, draw, *param_shape)``.
 
     Returns
     -------
     dict[str, float]
-        ESS per parameter.  Higher is better.
+        Minimum ESS per parameter (conservative for vector params).
     """
-    return {name: float(effective_sample_size(arr)) for name, arr in samples.items()}
+    return {name: float(jnp.min(effective_sample_size(arr))) for name, arr in samples.items()}

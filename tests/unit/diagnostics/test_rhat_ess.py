@@ -63,3 +63,28 @@ def test_ess_multi_param() -> None:
     assert set(result.keys()) == {"a", "b"}
     assert all(isinstance(v, float) for v in result.values())
     assert all(v > 0 for v in result.values())
+
+
+def test_rhat_single_chain_splits_internally() -> None:
+    """Single chain (1, N) is split in half before computing rhat."""
+    key = jax.random.PRNGKey(5)
+    n = 500
+    chain = jax.random.normal(key, (n,))
+    samples = {"mu": chain.reshape(1, n)}
+
+    result = rhat(samples)
+    assert "mu" in result
+    assert 0.95 < result["mu"] < 1.10  # split rhat ≈ 1.0 for i.i.d. draws
+
+
+def test_rhat_multi_chain_pass_through() -> None:
+    """Multiple chains (4, N) are passed through to BlackJAX unchanged."""
+    key = jax.random.PRNGKey(6)
+    keys = jax.random.split(key, 4)
+    n = 250
+    chains = [jax.random.normal(k, (n,)) for k in keys]
+    samples = {"mu": jnp.stack(chains)}  # (4, 250)
+
+    result = rhat(samples)
+    assert "mu" in result
+    assert 0.95 < result["mu"] < 1.10  # 4 good chains → rhat ≈ 1.0
