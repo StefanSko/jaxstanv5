@@ -30,6 +30,18 @@ class _WindowAdaptationRun(Protocol):
     ) -> tuple[tuple[object, Mapping[str, jax.Array]], object]: ...
 
 
+class _DrawSamples(Protocol):
+    """JIT-compiled post-warmup draw loop."""
+
+    def __call__(
+        self,
+        state: object,
+        sample_keys: jax.Array,
+        step_size: jax.Array,
+        inverse_mass_matrix: jax.Array,
+    ) -> tuple[object, jax.Array]: ...
+
+
 @dataclass(frozen=True)
 class SamplerResult:
     """Results of MCMC sampling.
@@ -68,6 +80,120 @@ def unflatten_samples(
     return result
 
 
+@dataclass(frozen=True, init=False)
+class CompiledSampler:
+    """Reusable NUTS sampler for one bound model shape.
+
+    Compile once for repeated same-shape sampling runs.  The simple ``sample``
+    function remains the one-shot convenience path.
+    """
+
+    _bound: BoundModel
+    _warmup_run: _WindowAdaptationRun
+    _draw_samples: _DrawSamples
+
+    def __init__(self) -> None:
+        raise TypeError("Use compile_sampler(...) to create a CompiledSampler")
+
+    @classmethod
+    def _create(
+        cls,
+        bound: BoundModel,
+        warmup_run: _WindowAdaptationRun,
+        draw_samples: _DrawSamples,
+    ) -> CompiledSampler:
+        sampler = cast(CompiledSampler, object.__new__(cls))
+        object.__setattr__(sampler, "_bound", bound)
+        object.__setattr__(sampler, "_warmup_run", warmup_run)
+        object.__setattr__(sampler, "_draw_samples", draw_samples)
+        return sampler
+
+    def sample(
+        self,
+        seed: int,
+        num_warmup: int,
+        num_samples: int,
+    ) -> SamplerResult:
+        """Draw posterior samples with the compiled sampler."""
+        if self._bound.n_params == 0:
+            return SamplerResult(samples={})
+
+        key = jax.random.PRNGKey(seed)
+        init_q = jnp.zeros(self._bound.n_params)
+
+        (last_state, tuned_params), _ = self._warmup_run(key, init_q, num_steps=num_warmup)
+
+        key, sample_key = jax.random.split(key)
+        sample_keys = jax.random.split(sample_key, num_samples)
+        _, positions = self._draw_samples(
+            last_state,
+            sample_keys,
+            tuned_params["step_size"],
+            tuned_params["inverse_mass_matrix"],
+        )
+
+        return SamplerResult(samples=unflatten_samples(positions, self._bound.param_shapes))
+
+
+def compile_sampler(bound: BoundModel) -> CompiledSampler:
+    """Compile a reusable NUTS sampler for one bound model shape."""
+    if bound.n_params == 0:
+
+        def warmup_run(
+            rng_key: jax.Array,
+            position: jax.Array,
+            *,
+            num_steps: int,
+        ) -> tuple[tuple[object, Mapping[str, jax.Array]], object]:
+            raise RuntimeError("Parameterless models do not run warmup")
+
+        def draw_samples(
+            state: object,
+            sample_keys: jax.Array,
+            step_size: jax.Array,
+            inverse_mass_matrix: jax.Array,
+        ) -> tuple[object, jax.Array]:
+            raise RuntimeError("Parameterless models do not draw samples")
+
+        return CompiledSampler._create(
+            bound=bound, warmup_run=warmup_run, draw_samples=draw_samples
+        )
+
+    log_prob = compile_log_density(bound)
+    warmup = blackjax.window_adaptation(
+        blackjax.nuts,
+        log_prob,
+        is_mass_matrix_diagonal=True,
+    )
+    warmup_run = cast(_WindowAdaptationRun, warmup.run)
+    nuts_kernel = blackjax.nuts.build_kernel()
+
+    @jax.jit
+    def draw_samples(
+        state: object,
+        sample_keys: jax.Array,
+        step_size: jax.Array,
+        inverse_mass_matrix: jax.Array,
+    ) -> tuple[object, jax.Array]:
+        def step(carry: object, key: jax.Array) -> tuple[object, jax.Array]:
+            new_state, _ = nuts_kernel(
+                key,
+                carry,
+                log_prob,
+                step_size,
+                inverse_mass_matrix,
+            )
+            return new_state, new_state.position
+
+        return jax.lax.scan(step, state, sample_keys)
+
+    return CompiledSampler._create(
+        bound=bound,
+        warmup_run=warmup_run,
+        draw_samples=cast(_DrawSamples, draw_samples),
+    )
+
+
 def sample(
     bound: BoundModel,
     seed: int,
@@ -92,41 +218,8 @@ def sample(
     SamplerResult
         Drawn samples per parameter.
     """
-    log_prob = compile_log_density(bound)
-    n_params = bound.n_params
-
-    if n_params == 0:
-        return SamplerResult(samples={})
-
-    key = jax.random.PRNGKey(seed)
-    init_q = jnp.zeros(n_params)
-
-    # --- warmup ---------------------------------------------------------------
-    warmup = blackjax.window_adaptation(
-        blackjax.nuts,
-        log_prob,
-        is_mass_matrix_diagonal=True,
+    return compile_sampler(bound).sample(
+        seed=seed,
+        num_warmup=num_warmup,
+        num_samples=num_samples,
     )
-    run_fn = cast(_WindowAdaptationRun, warmup.run)
-    (last_state, tuned_params), _ = run_fn(key, init_q, num_steps=num_warmup)
-
-    # --- sampling -------------------------------------------------------------
-    sampler = blackjax.nuts(
-        log_prob,
-        step_size=tuned_params["step_size"],
-        inverse_mass_matrix=tuned_params["inverse_mass_matrix"],
-    )
-
-    key, sample_key = jax.random.split(key)
-    sample_keys = jax.random.split(sample_key, num_samples)
-
-    @jax.jit
-    def step(state: object, key: jax.Array) -> tuple[object, jax.Array]:
-        new_state, _ = sampler.step(key, state)
-        return new_state, new_state.position
-
-    _, positions = jax.lax.scan(step, last_state, sample_keys)
-
-    # positions: (num_samples, n_params)
-    named = unflatten_samples(positions, bound.param_shapes)
-    return SamplerResult(samples=named)

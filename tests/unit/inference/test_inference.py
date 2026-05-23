@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 
-from jaxstanv5.inference.core import SamplerResult, unflatten_samples
+from jaxstanv5.distributions import Normal
+from jaxstanv5.inference.core import SamplerResult, compile_sampler, sample, unflatten_samples
+from jaxstanv5.model.bound import BoundModel
+from jaxstanv5.model.decorator import ModelMeta, ResolvedObserved
+from jaxstanv5.model.expr import ConstNode
 
 
 def test_unflatten_scalar_params() -> None:
@@ -63,3 +67,58 @@ def test_sampler_result_dataclass() -> None:
 
     assert r.samples is samples
     assert r.samples["mu"].shape == (1, 3)
+
+
+def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None:
+    meta = ModelMeta(
+        params={},
+        data_slots=[],
+        observed_name="y",
+        observed=ResolvedObserved(Normal(ConstNode(0.0), ConstNode(1.0))),
+        expressions={},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={"y": jnp.array(0.0)},
+        param_shapes={},
+        n_params=0,
+    )
+
+    compiled = compile_sampler(bound)
+
+    assert compiled.sample(seed=0, num_warmup=10, num_samples=10) == SamplerResult(samples={})
+
+
+def test_sample_uses_compiled_sampler(monkeypatch) -> None:
+    meta = ModelMeta(
+        params={},
+        data_slots=[],
+        observed_name="y",
+        observed=ResolvedObserved(Normal(ConstNode(0.0), ConstNode(1.0))),
+        expressions={},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={"y": jnp.array(0.0)},
+        param_shapes={},
+        n_params=0,
+    )
+    calls: list[BoundModel] = []
+
+    class FakeCompiledSampler:
+        def sample(self, seed: int, num_warmup: int, num_samples: int) -> SamplerResult:
+            assert seed == 4
+            assert num_warmup == 5
+            assert num_samples == 6
+            return SamplerResult(samples={"sentinel": jnp.array([[1.0]])})
+
+    def fake_compile_sampler(received: BoundModel) -> FakeCompiledSampler:
+        calls.append(received)
+        return FakeCompiledSampler()
+
+    monkeypatch.setattr("jaxstanv5.inference.core.compile_sampler", fake_compile_sampler)
+
+    result = sample(bound, seed=4, num_warmup=5, num_samples=6)
+
+    assert calls == [bound]
+    assert set(result.samples) == {"sentinel"}
