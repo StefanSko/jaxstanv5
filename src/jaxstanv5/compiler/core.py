@@ -106,12 +106,8 @@ def constrain_params(
     return constrained, log_jac
 
 
-def compile_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
-    """Compile a bound model into a JAX-callable log-density function.
-
-    Returns a function ``f(q) -> scalar`` where ``q`` is a flat unconstrained
-    parameter vector.  The function is JAX-traceable and can be ``jax.jit``-ed.
-    """
+def _build_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
+    """Build a JAX-traceable log-density closure from static bound-model metadata."""
     meta = bound.meta
     shapes = bound.param_shapes
 
@@ -132,3 +128,13 @@ def compile_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
         return lp
 
     return log_prob
+
+
+def compile_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
+    """Compile a bound model into a lazily JIT-compiled log-density function.
+
+    Returns a function ``f(q) -> scalar`` where ``q`` is a flat unconstrained
+    parameter vector.  The first same-shape call traces and compiles the numeric
+    log-density; subsequent same-shape calls reuse the compiled executable.
+    """
+    return jax.jit(_build_log_density(bound))
