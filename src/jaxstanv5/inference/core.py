@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Protocol, cast
 
 import blackjax
 import jax
@@ -11,6 +12,22 @@ import jax.numpy as jnp
 
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.model.bound import BoundModel
+
+
+class _WindowAdaptationRun(Protocol):
+    """BlackJAX window adaptation run callable.
+
+    BlackJAX's public ``RunFn`` protocol omits the supported ``num_steps``
+    argument, so keep the cast narrow at the BlackJAX boundary.
+    """
+
+    def __call__(
+        self,
+        rng_key: jax.Array,
+        position: jax.Array,
+        *,
+        num_steps: int,
+    ) -> tuple[tuple[object, Mapping[str, jax.Array]], object]: ...
 
 
 @dataclass(frozen=True)
@@ -90,7 +107,7 @@ def sample(
         log_prob,
         is_mass_matrix_diagonal=True,
     )
-    run_fn = cast(Any, warmup.run)
+    run_fn = cast(_WindowAdaptationRun, warmup.run)
     (last_state, tuned_params), _ = run_fn(key, init_q, num_steps=num_warmup)
 
     # --- sampling -------------------------------------------------------------
