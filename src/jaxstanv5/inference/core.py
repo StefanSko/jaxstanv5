@@ -147,7 +147,7 @@ def compile_sampler(bound: BoundModel) -> CompiledSampler:
         ) -> tuple[tuple[object, Mapping[str, jax.Array]], object]:
             raise RuntimeError("Parameterless models do not run warmup")
 
-        def draw_samples(
+        def _draw_samples(
             state: object,
             sample_keys: jax.Array,
             step_size: jax.Array,
@@ -156,7 +156,7 @@ def compile_sampler(bound: BoundModel) -> CompiledSampler:
             raise RuntimeError("Parameterless models do not draw samples")
 
         return CompiledSampler._create(
-            bound=bound, warmup_run=warmup_run, draw_samples=draw_samples
+            bound=bound, warmup_run=warmup_run, draw_samples=_draw_samples
         )
 
     log_prob = compile_log_density(bound)
