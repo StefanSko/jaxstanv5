@@ -21,7 +21,7 @@ Small, concrete improvement ideas that are not required for the current model-de
 
 ## Distribution normalization
 
-- Revisit generic dataclass rebuilding in `rebuild_distribution(...)`.
+- Revisit generic dataclass-based distribution normalization.
   It is convenient now, but explicit model-side distribution metadata may become
   clearer as more distributions are added.
 

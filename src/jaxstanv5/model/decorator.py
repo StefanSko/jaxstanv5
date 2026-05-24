@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Protocol, cast
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -22,10 +22,6 @@ from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, P
 
 type ModelClass = type[object]
 type SymbolTable = dict[DeclarationSymbol, str]
-
-
-class FieldResolver(Protocol):
-    def __call__(self, value: object) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -204,9 +200,16 @@ def resolve_declaration_distribution(
     symbols: SymbolTable,
 ) -> Distribution:
     """Resolve symbolic distribution fields into final expression nodes."""
-    return rebuild_distribution(
-        distribution, lambda value: resolve_declaration_distribution_field(value, symbols)
-    )
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return distribution
+    resolved = {
+        field.name: resolve_declaration_distribution_field(
+            getattr(distribution, field.name),
+            symbols,
+        )
+        for field in fields(distribution)
+    }
+    return type(distribution)(**resolved)
 
 
 def resolve_declaration_distribution_field(value: object, symbols: SymbolTable) -> object:
@@ -256,16 +259,3 @@ def resolve_symbol(symbol: DeclarationSymbol, symbols: SymbolTable) -> str:
     if name is None:
         raise ValueError(f"Unknown declaration symbol: {symbol}")
     return name
-
-
-def rebuild_distribution(
-    distribution: Distribution,
-    resolve_field: FieldResolver,
-) -> Distribution:
-    if not is_dataclass(distribution) or isinstance(distribution, type):
-        return distribution
-    resolved = {
-        field.name: resolve_field(getattr(distribution, field.name))
-        for field in fields(distribution)
-    }
-    return type(distribution)(**resolved)
