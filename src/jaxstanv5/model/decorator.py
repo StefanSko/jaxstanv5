@@ -51,50 +51,39 @@ class ModelMeta:
     expressions: dict[str, ExprNode]
 
 
+@dataclass(frozen=True)
+class _ResolvedParamData:
+    """Resolved parameter/data inventory from a declaration class."""
+
+    params: dict[str, ResolvedParam]
+    data_slots: list[str]
+
+
+@dataclass(frozen=True)
+class _ResolvedObservedDeclaration:
+    """Resolved observed likelihood metadata."""
+
+    observed_name: str
+    observed: ResolvedObserved
+
+
 def resolve_model_declaration(cls: ModelClass) -> ModelMeta:
     """Resolve a declaration class into final model metadata."""
-    symbols = collect_declaration_symbols(cls)
-    params: dict[str, ResolvedParam] = {}
-    data_slots: list[str] = []
-
-    for name, value in cls.__dict__.items():
-        if isinstance(value, Param):
-            params[name] = ResolvedParam(
-                distribution=resolve_declaration_distribution(value.distribution, symbols),
-                constraint=value.constraint,
-                size=resolve_declaration_size(value.size, symbols),
-            )
-        elif isinstance(value, Data):
-            data_slots.append(name)
-
-    observed_name: str | None = None
-    observed: ResolvedObserved | None = None
-    expressions: dict[str, ExprNode] = {}
-
-    for name, value in cls.__dict__.items():
-        if isinstance(value, Observed):
-            if observed_name is not None:
-                raise ValueError("Model declarations must contain exactly one Observed")
-            observed_name = name
-            observed = ResolvedObserved(
-                resolve_declaration_distribution(value.distribution, symbols)
-            )
-        elif is_deferred_expr(value):
-            expressions[name] = resolve_declaration_expr(value, symbols)
-
-    if observed_name is None or observed is None:
-        raise ValueError("Model declarations must contain exactly one Observed")
+    symbols = _collect_declaration_symbols(cls)
+    param_data = _resolve_param_data(cls, symbols)
+    observed = _resolve_observed_declaration(cls, symbols)
+    expressions = _resolve_expressions(cls, symbols)
 
     return ModelMeta(
-        params=params,
-        data_slots=data_slots,
-        observed_name=observed_name,
-        observed=observed,
+        params=param_data.params,
+        data_slots=param_data.data_slots,
+        observed_name=observed.observed_name,
+        observed=observed.observed,
         expressions=expressions,
     )
 
 
-def collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
+def _collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
     """Collect declaration symbols and reject declaration aliases."""
     symbols: SymbolTable = {}
 
@@ -109,6 +98,61 @@ def collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
             symbols[value.symbol] = name
 
     return symbols
+
+
+def _resolve_param_data(cls: ModelClass, symbols: SymbolTable) -> _ResolvedParamData:
+    """Resolve parameter/data inventory into final named metadata."""
+    params: dict[str, ResolvedParam] = {}
+    data_slots: list[str] = []
+
+    for name, value in cls.__dict__.items():
+        if isinstance(value, Param):
+            params[name] = ResolvedParam(
+                distribution=resolve_declaration_distribution(value.distribution, symbols),
+                constraint=value.constraint,
+                size=resolve_declaration_size(value.size, symbols),
+            )
+        elif isinstance(value, Data):
+            data_slots.append(name)
+
+    return _ResolvedParamData(params=params, data_slots=data_slots)
+
+
+def _resolve_observed_declaration(
+    cls: ModelClass,
+    symbols: SymbolTable,
+) -> _ResolvedObservedDeclaration:
+    """Resolve the single observed likelihood declaration."""
+    observed_name: str | None = None
+    observed: ResolvedObserved | None = None
+
+    for name, value in cls.__dict__.items():
+        if isinstance(value, Observed):
+            if observed_name is not None:
+                raise ValueError("Model declarations must contain exactly one Observed")
+            observed_name = name
+            observed = ResolvedObserved(
+                resolve_declaration_distribution(value.distribution, symbols)
+            )
+
+    if observed_name is None or observed is None:
+        raise ValueError("Model declarations must contain exactly one Observed")
+
+    return _ResolvedObservedDeclaration(
+        observed_name=observed_name,
+        observed=observed,
+    )
+
+
+def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, ExprNode]:
+    """Resolve top-level derived declaration expressions into final IR."""
+    expressions: dict[str, ExprNode] = {}
+
+    for name, value in cls.__dict__.items():
+        if is_deferred_expr(value):
+            expressions[name] = resolve_declaration_expr(value, symbols)
+
+    return expressions
 
 
 def model(cls: ModelClass) -> ModelClass:
