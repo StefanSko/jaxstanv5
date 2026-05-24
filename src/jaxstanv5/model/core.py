@@ -12,7 +12,7 @@ from jaxstanv5.model._deferred import DeclarationSymbol, DeferredBinOp, Deferred
 _SYMBOL_IDS = count()
 
 
-def next_symbol() -> DeclarationSymbol:
+def _next_symbol() -> DeclarationSymbol:
     """Return a fresh declaration symbol."""
     return DeclarationSymbol(next(_SYMBOL_IDS))
 
@@ -24,7 +24,7 @@ class Param(SymbolicDistributionParameter):
     distribution: Distribution
     constraint: Constraint | None = None
     size: Data | int | None = None
-    symbol: DeclarationSymbol = field(default_factory=next_symbol, init=False, repr=False)
+    symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
 
     def __add__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("+", self, other)
@@ -58,7 +58,7 @@ class Param(SymbolicDistributionParameter):
 class Data(SymbolicDistributionParameter):
     """Data declaration used inside ``@model`` class bodies."""
 
-    symbol: DeclarationSymbol = field(default_factory=next_symbol, init=False, repr=False)
+    symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
 
     def __add__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("+", self, other)

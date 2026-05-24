@@ -32,31 +32,31 @@ class ParamRef(SymbolicDistributionParameter):
     name: str
 
     def __add__(self, other: object) -> BinOp:
-        return BinOp("+", self, to_expr(other))
+        return BinOp("+", self, _to_expr(other))
 
     def __radd__(self, other: object) -> BinOp:
-        return BinOp("+", to_expr(other), self)
+        return BinOp("+", _to_expr(other), self)
 
     def __sub__(self, other: object) -> BinOp:
-        return BinOp("-", self, to_expr(other))
+        return BinOp("-", self, _to_expr(other))
 
     def __rsub__(self, other: object) -> BinOp:
-        return BinOp("-", to_expr(other), self)
+        return BinOp("-", _to_expr(other), self)
 
     def __mul__(self, other: object) -> BinOp:
-        return BinOp("*", self, to_expr(other))
+        return BinOp("*", self, _to_expr(other))
 
     def __rmul__(self, other: object) -> BinOp:
-        return BinOp("*", to_expr(other), self)
+        return BinOp("*", _to_expr(other), self)
 
     def __truediv__(self, other: object) -> BinOp:
-        return BinOp("/", self, to_expr(other))
+        return BinOp("/", self, _to_expr(other))
 
     def __rtruediv__(self, other: object) -> BinOp:
-        return BinOp("/", to_expr(other), self)
+        return BinOp("/", _to_expr(other), self)
 
     def __getitem__(self, index: object) -> IndexOp:
-        return IndexOp(self, to_expr(index))
+        return IndexOp(self, _to_expr(index))
 
 
 @dataclass(frozen=True)
@@ -66,31 +66,31 @@ class DataRef(SymbolicDistributionParameter):
     name: str
 
     def __add__(self, other: object) -> BinOp:
-        return BinOp("+", self, to_expr(other))
+        return BinOp("+", self, _to_expr(other))
 
     def __radd__(self, other: object) -> BinOp:
-        return BinOp("+", to_expr(other), self)
+        return BinOp("+", _to_expr(other), self)
 
     def __sub__(self, other: object) -> BinOp:
-        return BinOp("-", self, to_expr(other))
+        return BinOp("-", self, _to_expr(other))
 
     def __rsub__(self, other: object) -> BinOp:
-        return BinOp("-", to_expr(other), self)
+        return BinOp("-", _to_expr(other), self)
 
     def __mul__(self, other: object) -> BinOp:
-        return BinOp("*", self, to_expr(other))
+        return BinOp("*", self, _to_expr(other))
 
     def __rmul__(self, other: object) -> BinOp:
-        return BinOp("*", to_expr(other), self)
+        return BinOp("*", _to_expr(other), self)
 
     def __truediv__(self, other: object) -> BinOp:
-        return BinOp("/", self, to_expr(other))
+        return BinOp("/", self, _to_expr(other))
 
     def __rtruediv__(self, other: object) -> BinOp:
-        return BinOp("/", to_expr(other), self)
+        return BinOp("/", _to_expr(other), self)
 
     def __getitem__(self, index: object) -> IndexOp:
-        return IndexOp(self, to_expr(index))
+        return IndexOp(self, _to_expr(index))
 
 
 @dataclass(frozen=True)
@@ -100,31 +100,31 @@ class ConstNode(SymbolicDistributionParameter):
     value: int | float
 
     def __add__(self, other: object) -> BinOp:
-        return BinOp("+", self, to_expr(other))
+        return BinOp("+", self, _to_expr(other))
 
     def __radd__(self, other: object) -> BinOp:
-        return BinOp("+", to_expr(other), self)
+        return BinOp("+", _to_expr(other), self)
 
     def __sub__(self, other: object) -> BinOp:
-        return BinOp("-", self, to_expr(other))
+        return BinOp("-", self, _to_expr(other))
 
     def __rsub__(self, other: object) -> BinOp:
-        return BinOp("-", to_expr(other), self)
+        return BinOp("-", _to_expr(other), self)
 
     def __mul__(self, other: object) -> BinOp:
-        return BinOp("*", self, to_expr(other))
+        return BinOp("*", self, _to_expr(other))
 
     def __rmul__(self, other: object) -> BinOp:
-        return BinOp("*", to_expr(other), self)
+        return BinOp("*", _to_expr(other), self)
 
     def __truediv__(self, other: object) -> BinOp:
-        return BinOp("/", self, to_expr(other))
+        return BinOp("/", self, _to_expr(other))
 
     def __rtruediv__(self, other: object) -> BinOp:
-        return BinOp("/", to_expr(other), self)
+        return BinOp("/", _to_expr(other), self)
 
     def __getitem__(self, index: object) -> IndexOp:
-        return IndexOp(self, to_expr(index))
+        return IndexOp(self, _to_expr(index))
 
 
 @dataclass(frozen=True)
@@ -136,31 +136,31 @@ class BinOp(SymbolicDistributionParameter):
     right: ExprNode
 
     def __add__(self, other: object) -> BinOp:
-        return BinOp("+", self, to_expr(other))
+        return BinOp("+", self, _to_expr(other))
 
     def __radd__(self, other: object) -> BinOp:
-        return BinOp("+", to_expr(other), self)
+        return BinOp("+", _to_expr(other), self)
 
     def __sub__(self, other: object) -> BinOp:
-        return BinOp("-", self, to_expr(other))
+        return BinOp("-", self, _to_expr(other))
 
     def __rsub__(self, other: object) -> BinOp:
-        return BinOp("-", to_expr(other), self)
+        return BinOp("-", _to_expr(other), self)
 
     def __mul__(self, other: object) -> BinOp:
-        return BinOp("*", self, to_expr(other))
+        return BinOp("*", self, _to_expr(other))
 
     def __rmul__(self, other: object) -> BinOp:
-        return BinOp("*", to_expr(other), self)
+        return BinOp("*", _to_expr(other), self)
 
     def __truediv__(self, other: object) -> BinOp:
-        return BinOp("/", self, to_expr(other))
+        return BinOp("/", self, _to_expr(other))
 
     def __rtruediv__(self, other: object) -> BinOp:
-        return BinOp("/", to_expr(other), self)
+        return BinOp("/", _to_expr(other), self)
 
     def __getitem__(self, index: object) -> IndexOp:
-        return IndexOp(self, to_expr(index))
+        return IndexOp(self, _to_expr(index))
 
 
 @dataclass(frozen=True)
@@ -171,34 +171,34 @@ class IndexOp(SymbolicDistributionParameter):
     index: ExprNode
 
     def __add__(self, other: object) -> BinOp:
-        return BinOp("+", self, to_expr(other))
+        return BinOp("+", self, _to_expr(other))
 
     def __radd__(self, other: object) -> BinOp:
-        return BinOp("+", to_expr(other), self)
+        return BinOp("+", _to_expr(other), self)
 
     def __sub__(self, other: object) -> BinOp:
-        return BinOp("-", self, to_expr(other))
+        return BinOp("-", self, _to_expr(other))
 
     def __rsub__(self, other: object) -> BinOp:
-        return BinOp("-", to_expr(other), self)
+        return BinOp("-", _to_expr(other), self)
 
     def __mul__(self, other: object) -> BinOp:
-        return BinOp("*", self, to_expr(other))
+        return BinOp("*", self, _to_expr(other))
 
     def __rmul__(self, other: object) -> BinOp:
-        return BinOp("*", to_expr(other), self)
+        return BinOp("*", _to_expr(other), self)
 
     def __truediv__(self, other: object) -> BinOp:
-        return BinOp("/", self, to_expr(other))
+        return BinOp("/", self, _to_expr(other))
 
     def __rtruediv__(self, other: object) -> BinOp:
-        return BinOp("/", to_expr(other), self)
+        return BinOp("/", _to_expr(other), self)
 
     def __getitem__(self, index: object) -> IndexOp:
-        return IndexOp(self, to_expr(index))
+        return IndexOp(self, _to_expr(index))
 
 
-def to_expr(value: object) -> ExprNode:
+def _to_expr(value: object) -> ExprNode:
     """Convert supported Python values to expression nodes."""
     if isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp):
         return value

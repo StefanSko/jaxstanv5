@@ -12,7 +12,7 @@ import pytest
 from jaxstanv5.distributions.normal import Normal
 from jaxstanv5.model._deferred import DeferredBinOp, DeferredExpr, DeferredIndexOp
 from jaxstanv5.model.core import Data, Param
-from jaxstanv5.model.decorator import resolve_declaration_expr
+from jaxstanv5.model.decorator import _resolve_declaration_expr
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef
 
 
@@ -102,7 +102,7 @@ def test_declaration_resolution_rejects_unsupported_deferred_operands() -> None:
     expr = alpha + "not an expression"
 
     with pytest.raises(TypeError, match="declaration expression"):
-        resolve_declaration_expr(expr, {alpha.symbol: "alpha"})
+        _resolve_declaration_expr(expr, {alpha.symbol: "alpha"})
 
 
 def test_deferred_expr_type_alias_covers_operator_results() -> None:

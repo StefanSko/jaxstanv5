@@ -108,9 +108,9 @@ def _resolve_param_data(cls: ModelClass, symbols: SymbolTable) -> _ResolvedParam
     for name, value in cls.__dict__.items():
         if isinstance(value, Param):
             params[name] = ResolvedParam(
-                distribution=resolve_declaration_distribution(value.distribution, symbols),
+                distribution=_resolve_declaration_distribution(value.distribution, symbols),
                 constraint=value.constraint,
-                size=resolve_declaration_size(value.size, symbols),
+                size=_resolve_declaration_size(value.size, symbols),
             )
         elif isinstance(value, Data):
             data_slots.append(name)
@@ -132,7 +132,7 @@ def _resolve_observed_declaration(
                 raise ValueError("Model declarations must contain exactly one Observed")
             observed_name = name
             observed = ResolvedObserved(
-                resolve_declaration_distribution(value.distribution, symbols)
+                _resolve_declaration_distribution(value.distribution, symbols)
             )
 
     if observed_name is None or observed is None:
@@ -150,7 +150,7 @@ def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, Exp
 
     for name, value in cls.__dict__.items():
         if is_deferred_expr(value):
-            expressions[name] = resolve_declaration_expr(value, symbols)
+            expressions[name] = _resolve_declaration_expr(value, symbols)
 
     return expressions
 
@@ -159,11 +159,11 @@ def model(cls: ModelClass) -> ModelClass:
     """Attach final model metadata to a declaration class."""
     meta = resolve_model_declaration(cls)
     setattr(cls, "_model_meta", meta)  # noqa: B010
-    setattr(cls, "bind", classmethod(make_bind(meta)))  # noqa: B010
+    setattr(cls, "bind", classmethod(_make_bind(meta)))  # noqa: B010
     return cls
 
 
-def make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
+def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
     """Create a classmethod-compatible bind function for model metadata."""
 
     def bind(_cls: ModelClass, **values: object) -> object:
@@ -181,22 +181,22 @@ def make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
 
         data = {name: jnp.asarray(value) for name, value in values.items()}
         param_shapes = {
-            name: resolve_param_shape(param.size, data) for name, param in meta.params.items()
+            name: _resolve_param_shape(param.size, data) for name, param in meta.params.items()
         }
-        n_params = sum(param_count(shape) for shape in param_shapes.values())
+        n_params = sum(_param_count(shape) for shape in param_shapes.values())
         return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
     return bind
 
 
-def resolve_param_shape(
+def _resolve_param_shape(
     size: DataRef | int | None,
     data: dict[str, jax.Array],
 ) -> tuple[int, ...]:
     if size is None:
         return ()
     if isinstance(size, int):
-        return (validate_parameter_size(size, "Parameter size"),)
+        return (_validate_parameter_size(size, "Parameter size"),)
 
     size_value = data[size.name]
     if size_value.ndim != 0:
@@ -204,14 +204,14 @@ def resolve_param_shape(
     if not jnp.issubdtype(size_value.dtype, jnp.integer):
         raise TypeError(f"Data-dependent parameter size {size.name!r} must be integer")
     return (
-        validate_parameter_size(
+        _validate_parameter_size(
             int(size_value),
             f"Data-dependent parameter size {size.name!r}",
         ),
     )
 
 
-def param_count(shape: tuple[int, ...]) -> int:
+def _param_count(shape: tuple[int, ...]) -> int:
     count = 1
     for dim in shape:
         if dim < 0:
@@ -220,7 +220,7 @@ def param_count(shape: tuple[int, ...]) -> int:
     return count
 
 
-def validate_parameter_size(size: int, label: str) -> int:
+def _validate_parameter_size(size: int, label: str) -> int:
     if isinstance(size, bool):
         raise TypeError(f"{label} must be an integer, not bool")
     if size < 0:
@@ -228,18 +228,18 @@ def validate_parameter_size(size: int, label: str) -> int:
     return size
 
 
-def resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | int | None:
+def _resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | int | None:
     """Resolve a declaration-size value into final size metadata."""
     if size is None:
         return None
     if isinstance(size, int):
-        return validate_parameter_size(size, "Parameter size")
+        return _validate_parameter_size(size, "Parameter size")
     if isinstance(size, Data):
-        return DataRef(resolve_symbol(size.symbol, symbols))
+        return DataRef(_resolve_symbol(size.symbol, symbols))
     raise TypeError(f"Cannot resolve {type(size).__name__} as a declaration size")
 
 
-def resolve_declaration_distribution(
+def _resolve_declaration_distribution(
     distribution: Distribution,
     symbols: SymbolTable,
 ) -> Distribution:
@@ -247,7 +247,7 @@ def resolve_declaration_distribution(
     if not is_dataclass(distribution) or isinstance(distribution, type):
         return distribution
     resolved = {
-        field.name: resolve_declaration_distribution_field(
+        field.name: _resolve_declaration_distribution_field(
             getattr(distribution, field.name),
             symbols,
         )
@@ -256,49 +256,49 @@ def resolve_declaration_distribution(
     return type(distribution)(**resolved)
 
 
-def resolve_declaration_distribution_field(value: object, symbols: SymbolTable) -> object:
-    if is_declaration_expr(value):
-        return resolve_declaration_expr(value, symbols)
-    if is_final_expr_node(value):
+def _resolve_declaration_distribution_field(value: object, symbols: SymbolTable) -> object:
+    if _is_declaration_expr(value):
+        return _resolve_declaration_expr(value, symbols)
+    if _is_final_expr_node(value):
         raise TypeError("Final expression nodes are not valid in model declarations")
     if is_dataclass(value) and not isinstance(value, type):
-        return resolve_declaration_distribution(cast(Distribution, value), symbols)
+        return _resolve_declaration_distribution(cast(Distribution, value), symbols)
     return value
 
 
-def resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
+def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
     """Resolve class-body declaration syntax into final expression IR."""
     if isinstance(value, Param):
-        return ParamRef(resolve_symbol(value.symbol, symbols))
+        return ParamRef(_resolve_symbol(value.symbol, symbols))
     if isinstance(value, Data):
-        return DataRef(resolve_symbol(value.symbol, symbols))
+        return DataRef(_resolve_symbol(value.symbol, symbols))
     if isinstance(value, int | float):
         return ConstNode(value)
     if isinstance(value, DeferredBinOp):
         return BinOp(
             value.op,
-            resolve_declaration_expr(value.left, symbols),
-            resolve_declaration_expr(value.right, symbols),
+            _resolve_declaration_expr(value.left, symbols),
+            _resolve_declaration_expr(value.right, symbols),
         )
     if isinstance(value, DeferredIndexOp):
         return IndexOp(
-            resolve_declaration_expr(value.base, symbols),
-            resolve_declaration_expr(value.index, symbols),
+            _resolve_declaration_expr(value.base, symbols),
+            _resolve_declaration_expr(value.index, symbols),
         )
     raise TypeError(f"Cannot resolve {type(value).__name__} as a declaration expression")
 
 
-def is_declaration_expr(value: object) -> bool:
+def _is_declaration_expr(value: object) -> bool:
     """Return whether ``value`` can resolve to final expression IR."""
     return isinstance(value, Param | Data | DeferredBinOp | DeferredIndexOp | int | float)
 
 
-def is_final_expr_node(value: object) -> bool:
+def _is_final_expr_node(value: object) -> bool:
     """Return whether ``value`` is already resolved final expression IR."""
     return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp)
 
 
-def resolve_symbol(symbol: DeclarationSymbol, symbols: SymbolTable) -> str:
+def _resolve_symbol(symbol: DeclarationSymbol, symbols: SymbolTable) -> str:
     name = symbols.get(symbol)
     if name is None:
         raise ValueError(f"Unknown declaration symbol: {symbol}")

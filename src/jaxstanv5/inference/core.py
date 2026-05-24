@@ -57,7 +57,7 @@ class SamplerResult:
     samples: dict[str, jax.Array]
 
 
-def unflatten_samples(
+def _unflatten_samples(
     flat: jax.Array,
     shapes: dict[str, tuple[int, ...]],
 ) -> dict[str, jax.Array]:
@@ -81,7 +81,7 @@ def unflatten_samples(
     return result
 
 
-def constrain_sample_values(
+def _constrain_sample_values(
     samples: dict[str, jax.Array],
     meta: ModelMeta,
 ) -> dict[str, jax.Array]:
@@ -148,8 +148,8 @@ class CompiledSampler:
             tuned_params["inverse_mass_matrix"],
         )
 
-        unconstrained = unflatten_samples(positions, self._bound.param_shapes)
-        constrained = constrain_sample_values(unconstrained, self._bound.meta)
+        unconstrained = _unflatten_samples(positions, self._bound.param_shapes)
+        constrained = _constrain_sample_values(unconstrained, self._bound.meta)
         return SamplerResult(samples=constrained)
 
 

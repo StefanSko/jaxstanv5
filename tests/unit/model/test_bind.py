@@ -14,9 +14,9 @@ from jaxstanv5.model.decorator import (
     ModelMeta,
     ResolvedObserved,
     ResolvedParam,
-    make_bind,
-    param_count,
-    resolve_param_shape,
+    _make_bind,
+    _param_count,
+    _resolve_param_shape,
 )
 from jaxstanv5.model.expr import DataRef
 
@@ -40,7 +40,7 @@ def make_meta() -> ModelMeta:
 
 
 def bind_meta(meta: ModelMeta, **values: object) -> BoundModel:
-    bind = cast(BindFn, make_bind(meta))
+    bind = cast(BindFn, _make_bind(meta))
     return cast(BoundModel, bind(type("Model", (), {}), **values))
 
 
@@ -71,32 +71,32 @@ def test_bind_converts_data_to_arrays_and_resolves_all_parameter_shapes() -> Non
 
 def test_resolve_param_shape_rejects_negative_literal_size() -> None:
     with pytest.raises(ValueError, match="Parameter size must be non-negative"):
-        resolve_param_shape(-1, {})
+        _resolve_param_shape(-1, {})
 
 
 def test_resolve_param_shape_rejects_bool_literal_size() -> None:
     with pytest.raises(TypeError, match="Parameter size must be an integer, not bool"):
-        resolve_param_shape(True, {})
+        _resolve_param_shape(True, {})
 
 
 def test_resolve_param_shape_rejects_non_scalar_data_size() -> None:
     with pytest.raises(ValueError, match="Data-dependent parameter size 'n' must be scalar"):
-        resolve_param_shape(DataRef("n"), {"n": jnp.asarray([2, 3])})
+        _resolve_param_shape(DataRef("n"), {"n": jnp.asarray([2, 3])})
 
 
 def test_resolve_param_shape_rejects_float_data_size() -> None:
     with pytest.raises(TypeError, match="Data-dependent parameter size 'n' must be integer"):
-        resolve_param_shape(DataRef("n"), {"n": jnp.asarray(2.5)})
+        _resolve_param_shape(DataRef("n"), {"n": jnp.asarray(2.5)})
 
 
 def test_resolve_param_shape_rejects_negative_data_size() -> None:
     with pytest.raises(ValueError, match="Data-dependent parameter size 'n' must be non-negative"):
-        resolve_param_shape(DataRef("n"), {"n": jnp.asarray(-1)})
+        _resolve_param_shape(DataRef("n"), {"n": jnp.asarray(-1)})
 
 
 def test_param_count_multiplies_dimensions_and_rejects_negative_dimensions() -> None:
-    assert param_count(()) == 1
-    assert param_count((2, 3, 4)) == 24
+    assert _param_count(()) == 1
+    assert _param_count((2, 3, 4)) == 24
 
     with pytest.raises(ValueError, match="Parameter shape dimensions must be non-negative"):
-        param_count((2, -1))
+        _param_count((2, -1))

@@ -11,7 +11,7 @@ from jaxstanv5.distributions.core import (
     DistributionParameter,
     DistributionValue,
     LogProbability,
-    concrete_parameter,
+    _concrete_parameter,
 )
 
 
@@ -24,8 +24,8 @@ class Normal:
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise normal log-density for ``x``."""
-        loc = jnp.asarray(concrete_parameter(self.loc))
-        scale = jnp.asarray(concrete_parameter(self.scale))
+        loc = jnp.asarray(_concrete_parameter(self.loc))
+        scale = jnp.asarray(_concrete_parameter(self.scale))
         value = jnp.asarray(x)
         standardized = (value - loc) / scale
         return -0.5 * standardized**2 - jnp.log(scale) - 0.5 * math.log(2.0 * math.pi)

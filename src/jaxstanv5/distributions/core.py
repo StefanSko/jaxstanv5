@@ -15,7 +15,7 @@ type DistributionParameter = ArrayLike | SymbolicDistributionParameter
 type LogProbability = jax.Array
 
 
-def concrete_parameter(value: DistributionParameter) -> ArrayLike:
+def _concrete_parameter(value: DistributionParameter) -> ArrayLike:
     """Treat a distribution field as concrete after symbolic field evaluation."""
     return cast(ArrayLike, value)
 

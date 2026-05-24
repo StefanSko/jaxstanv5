@@ -22,7 +22,7 @@ _BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
 }
 
 
-def evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
+def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
     """Evaluate a symbolic expression tree to a concrete JAX array."""
     if isinstance(node, ParamRef):
         return values[node.name]
@@ -31,15 +31,15 @@ def evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
     if isinstance(node, ConstNode):
         return jnp.asarray(node.value)
     if isinstance(node, BinOp):
-        left = evaluate_expr(node.left, values)
-        right = evaluate_expr(node.right, values)
+        left = _evaluate_expr(node.left, values)
+        right = _evaluate_expr(node.right, values)
         op_fn = _BINOPS.get(node.op)
         if op_fn is None:
             raise ValueError(f"Unknown binary operator: {node.op!r}")
         return op_fn(left, right)
     if isinstance(node, IndexOp):
-        base = evaluate_expr(node.base, values)
-        index = evaluate_expr(node.index, values)
+        base = _evaluate_expr(node.base, values)
+        index = _evaluate_expr(node.index, values)
         return base[index]
     raise TypeError(f"Cannot evaluate expression node: {type(node).__name__}")
 
@@ -49,7 +49,7 @@ def _is_expr_node(value: object) -> bool:
     return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp)
 
 
-def evaluate_distribution[DistributionT: Distribution](
+def _evaluate_distribution[DistributionT: Distribution](
     distribution: DistributionT,
     values: dict[str, jax.Array],
 ) -> DistributionT:
@@ -61,16 +61,16 @@ def evaluate_distribution[DistributionT: Distribution](
     for f in fields(distribution):
         val = getattr(distribution, f.name)
         if _is_expr_node(val):
-            resolved[f.name] = evaluate_expr(val, values)
+            resolved[f.name] = _evaluate_expr(val, values)
         elif is_dataclass(val) and not isinstance(val, type):
-            resolved[f.name] = evaluate_distribution(val, values)
+            resolved[f.name] = _evaluate_distribution(val, values)
         else:
             resolved[f.name] = val
 
     return cast(DistributionT, type(distribution)(**resolved))
 
 
-def split_params(
+def _split_params(
     flat: jax.Array,
     shapes: dict[str, tuple[int, ...]],
 ) -> dict[str, jax.Array]:
@@ -89,7 +89,7 @@ def split_params(
     return result
 
 
-def constrain_params(
+def _constrain_params(
     params: dict[str, jax.Array],
     meta: ModelMeta,
 ) -> tuple[dict[str, jax.Array], jax.Array]:
@@ -112,17 +112,17 @@ def _build_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
     shapes = bound.param_shapes
 
     def log_prob(q: jax.Array) -> jax.Array:
-        params = split_params(q, shapes)
-        constrained, log_jac = constrain_params(params, meta)
+        params = _split_params(q, shapes)
+        constrained, log_jac = _constrain_params(params, meta)
         values = {**constrained, **bound.data}
 
         lp: jax.Array = log_jac
 
         for name, pinfo in meta.params.items():
-            dist = evaluate_distribution(pinfo.distribution, values)
+            dist = _evaluate_distribution(pinfo.distribution, values)
             lp = lp + jnp.sum(dist.log_prob(constrained[name]))
 
-        obs_dist = evaluate_distribution(meta.observed.distribution, values)
+        obs_dist = _evaluate_distribution(meta.observed.distribution, values)
         lp = lp + jnp.sum(obs_dist.log_prob(bound.data[meta.observed_name]))
 
         return lp

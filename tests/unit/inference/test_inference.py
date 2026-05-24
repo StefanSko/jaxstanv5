@@ -8,9 +8,9 @@ from jaxstanv5.constraints import Positive
 from jaxstanv5.distributions import Normal
 from jaxstanv5.inference.core import (
     SamplerResult,
+    _constrain_sample_values,
+    _unflatten_samples,
     compile_sampler,
-    constrain_sample_values,
-    unflatten_samples,
 )
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
@@ -21,7 +21,7 @@ def test_unflatten_scalar_params() -> None:
     """Flat (N, 2) with two scalar params → dict of (1, N) each."""
     flat = jnp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     shapes: dict[str, tuple[int, ...]] = {"a": (), "b": ()}
-    result = unflatten_samples(flat, shapes)
+    result = _unflatten_samples(flat, shapes)
 
     assert set(result.keys()) == {"a", "b"}
     assert result["a"].shape == (1, 3)
@@ -35,7 +35,7 @@ def test_unflatten_mixed_shapes() -> None:
     # scalar alpha (1 element), vector beta (2 elements) → 3 total
     flat = jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
     shapes: dict[str, tuple[int, ...]] = {"alpha": (), "beta": (2,)}
-    result = unflatten_samples(flat, shapes)
+    result = _unflatten_samples(flat, shapes)
 
     assert result["alpha"].shape == (1, 2)
     assert result["beta"].shape == (1, 2, 2)
@@ -48,7 +48,7 @@ def test_unflatten_single_sample() -> None:
     """Single draw with one scalar param."""
     flat = jnp.array([[7.0]])
     shapes: dict[str, tuple[int, ...]] = {"mu": ()}
-    result = unflatten_samples(flat, shapes)
+    result = _unflatten_samples(flat, shapes)
 
     assert result["mu"].shape == (1, 1)
     assert jnp.allclose(result["mu"][0, 0], jnp.array(7.0))
@@ -59,7 +59,7 @@ def test_unflatten_zero_sized_parameter_does_not_advance_offset() -> None:
     flat = jnp.array([[10.0, 20.0], [30.0, 40.0]])
     shapes: dict[str, tuple[int, ...]] = {"empty": (0,), "first": (), "second": ()}
 
-    result = unflatten_samples(flat, shapes)
+    result = _unflatten_samples(flat, shapes)
 
     assert result["empty"].shape == (1, 2, 0)
     assert jnp.allclose(result["first"][0], jnp.array([10.0, 30.0]))
@@ -76,7 +76,7 @@ def test_constrain_sample_values_applies_parameter_constraints() -> None:
     )
     samples = {"sigma": jnp.array([[0.0, jnp.log(2.0)]])}
 
-    constrained = constrain_sample_values(samples, meta)
+    constrained = _constrain_sample_values(samples, meta)
 
     assert jnp.allclose(constrained["sigma"], jnp.array([[1.0, 2.0]]))
 
