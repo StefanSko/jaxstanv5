@@ -55,7 +55,7 @@ Important invariants:
 - `expr.py` is final/resolved only: `ParamRef.name: str`, `DataRef.name: str`.
 - `core.py` never constructs final `expr.py` nodes.
 - Class-body operators create private deferred syntax tokens, not semantic IR.
-- `resolve_model_declaration(...)` is the only transition from declaration
+- `_resolve_model_declaration(...)` is the only transition from declaration
   symbols to final named refs.
 
 This avoids a mixed intermediate representation such as
@@ -180,12 +180,12 @@ The decorator should remain a small explicit transition:
 
 ```python
 def model(cls: type[object]) -> type[object]:
-    meta = resolve_model_declaration(cls)
+    meta = _resolve_model_declaration(cls)
     attach metadata and bind
     return cls
 ```
 
-### `resolve_model_declaration(cls)`
+### `_resolve_model_declaration(cls)`
 
 Responsibilities:
 
@@ -325,7 +325,7 @@ Implemented:
 - private deferred syntax capture in `_deferred.py`
 - final expression IR in `expr.py`
 - declaration classes in `core.py`
-- explicit `resolve_model_declaration -> model` pipeline
+- explicit `_resolve_model_declaration -> model` pipeline
 - distribution and size resolution for hierarchical declarations
 - `BoundModel`
 - `bind(...)`
@@ -377,7 +377,7 @@ Keep these true:
 - `core.py` does not import or build final expression IR.
 - `expr.py` is resolved/final only.
 - `ParamRef.name` and `DataRef.name` are strings.
-- `@model`/`resolve_model_declaration` is the only transition from declaration
+- `@model`/`_resolve_model_declaration` is the only transition from declaration
   symbols to names.
 - `Observed` is not a `Data` slot, but `bind(...)` still requires observed data.
 - `BoundModel` contains data and shapes only; no inference logic.

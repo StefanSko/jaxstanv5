@@ -67,7 +67,7 @@ class _ResolvedObservedDeclaration:
     observed: ResolvedObserved
 
 
-def resolve_model_declaration(cls: ModelClass) -> ModelMeta:
+def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
     """Resolve a declaration class into final model metadata."""
     symbols = _collect_declaration_symbols(cls)
     param_data = _resolve_param_data(cls, symbols)
@@ -157,7 +157,7 @@ def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, Exp
 
 def model(cls: ModelClass) -> ModelClass:
     """Attach final model metadata to a declaration class."""
-    meta = resolve_model_declaration(cls)
+    meta = _resolve_model_declaration(cls)
     setattr(cls, "_model_meta", meta)  # noqa: B010
     setattr(cls, "bind", classmethod(_make_bind(meta)))  # noqa: B010
     return cls
