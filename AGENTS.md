@@ -59,8 +59,17 @@ document that tradeoff.
 
 ## Development process
 
-Use staged red-green TDD for user-visible additions:
-1. Add or update a red integration test for the intended public workflow.
+Work collaboratively with the user. Do not treat the project instructions as an
+autonomous end-to-end workflow. Wait for user confirmation when scope,
+architecture, test strategy, or cleanup direction is unclear.
+
+Use staged red-green TDD for user-visible additions, but apply it from the
+current agreed state; not every task starts at step 1.
+
+Typical flow:
+
+1. If no public workflow target exists yet, add or update a red integration test
+   for the intended behavior.
 2. If the integration test is too broad or noisy, add a focused red seam test for
    the first architectural path that should work.
 3. Drive the path with red/green unit tests for each primitive.
@@ -70,10 +79,12 @@ Use staged red-green TDD for user-visible additions:
    otherwise merge or delete them after the integration path is green.
 6. Refactor only after the relevant tests are green.
 
-Prefer vertical integration and iterative development. Work toward one end-to-end path first, then improve breadth and polish.
+Prefer vertical integration and iterative development. Work toward one
+end-to-end path first, then improve breadth and polish.
 
-Test public behavior through public APIs; do not interrogate objects in ways that leak private internals into higher-level tests.
-Avoid monkeypatching and mocking; prefer real collaborators and behavioral tests.
+Test public behavior through public APIs; do not interrogate objects in ways that
+leak private internals into higher-level tests. Avoid monkeypatching and mocking;
+prefer real collaborators and behavioral tests.
 
 ## Validation
 
