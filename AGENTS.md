@@ -61,10 +61,14 @@ document that tradeoff.
 
 Use staged red-green TDD for user-visible additions:
 1. Add or update a red integration test for the intended public workflow.
-2. Add a red slice test for the first architectural path that should work.
-3. Drive the slice with red/green unit tests for each primitive.
-4. Make the slice green, then make the integration path green or document why it remains intentionally red.
-5. Refactor only after the relevant tests are green.
+2. If the integration test is too broad or noisy, add a focused red seam test for
+   the first architectural path that should work.
+3. Drive the path with red/green unit tests for each primitive.
+4. Make the focused path green, then make the integration path green or document
+   why it remains intentionally red.
+5. Keep focused seam tests only when they remain useful durable coverage;
+   otherwise merge or delete them after the integration path is green.
+6. Refactor only after the relevant tests are green.
 
 Prefer vertical integration and iterative development. Work toward one end-to-end path first, then improve breadth and polish.
 
