@@ -70,8 +70,7 @@ def test_constrain_sample_values_applies_parameter_constraints() -> None:
     meta = ModelMeta(
         params={"sigma": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), Positive(), None)},
         data_slots=[],
-        observed_name="y",
-        observed=ResolvedObserved(Normal(ConstNode(0.0), ConstNode(1.0))),
+        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
     samples = {"sigma": jnp.array([[0.0, jnp.log(2.0)]])}
@@ -94,8 +93,7 @@ def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None
     meta = ModelMeta(
         params={},
         data_slots=[],
-        observed_name="y",
-        observed=ResolvedObserved(Normal(ConstNode(0.0), ConstNode(1.0))),
+        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
     bound = BoundModel(

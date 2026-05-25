@@ -35,8 +35,9 @@ class ResolvedParam:
 
 @dataclass(frozen=True)
 class ResolvedObserved:
-    """Observed metadata after declaration symbols are resolved to names."""
+    """Observed likelihood metadata after declaration symbols are resolved to names."""
 
+    name: str
     distribution: Distribution
 
 
@@ -46,8 +47,7 @@ class ModelMeta:
 
     params: dict[str, ResolvedParam]
     data_slots: list[str]
-    observed_name: str
-    observed: ResolvedObserved
+    observed_nodes: tuple[ResolvedObserved, ...]
     expressions: dict[str, ExprNode]
 
 
@@ -57,8 +57,7 @@ class _ResolvedDeclarations:
 
     params: dict[str, ResolvedParam]
     data_slots: list[str]
-    observed_name: str
-    observed: ResolvedObserved
+    observed_nodes: tuple[ResolvedObserved, ...]
 
 
 def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
@@ -70,8 +69,7 @@ def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
     return ModelMeta(
         params=declarations.params,
         data_slots=declarations.data_slots,
-        observed_name=declarations.observed_name,
-        observed=declarations.observed,
+        observed_nodes=declarations.observed_nodes,
         expressions=expressions,
     )
 
@@ -81,7 +79,7 @@ def _collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
     symbols: SymbolTable = {}
 
     for name, value in cls.__dict__.items():
-        if isinstance(value, Param | Data):
+        if isinstance(value, Param | Data | Observed):
             existing_name = symbols.get(value.symbol)
             if existing_name is not None:
                 raise ValueError(
@@ -97,8 +95,7 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
     """Resolve top-level declaration inventory into final named metadata."""
     params: dict[str, ResolvedParam] = {}
     data_slots: list[str] = []
-    observed_name: str | None = None
-    observed: ResolvedObserved | None = None
+    observed_nodes: list[ResolvedObserved] = []
 
     for name, value in cls.__dict__.items():
         if isinstance(value, Param):
@@ -110,21 +107,20 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
         elif isinstance(value, Data):
             data_slots.append(name)
         elif isinstance(value, Observed):
-            if observed_name is not None:
-                raise ValueError("Model declarations must contain exactly one Observed")
-            observed_name = name
-            observed = ResolvedObserved(
-                _resolve_declaration_distribution(value.distribution, symbols)
+            observed_nodes.append(
+                ResolvedObserved(
+                    name=name,
+                    distribution=_resolve_declaration_distribution(value.distribution, symbols),
+                )
             )
 
-    if observed_name is None or observed is None:
-        raise ValueError("Model declarations must contain exactly one Observed")
+    if not observed_nodes:
+        raise ValueError("Model declarations must contain at least one Observed")
 
     return _ResolvedDeclarations(
         params=params,
         data_slots=data_slots,
-        observed_name=observed_name,
-        observed=observed,
+        observed_nodes=tuple(observed_nodes),
     )
 
 
@@ -154,7 +150,7 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
         from jaxstanv5.model.bound import BoundModel
 
         expected = set(meta.data_slots)
-        expected.add(meta.observed_name)
+        expected.update(observed.name for observed in meta.observed_nodes)
         actual = set(values)
         missing = expected - actual
         extra = actual - expected

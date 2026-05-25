@@ -28,6 +28,23 @@ class HierarchicalRegression:
     y = Observed(Normal(alpha, 1.0))
 ```
 
+Multiple observed likelihood sites are supported:
+
+```python
+@model
+class MeasurementErrorRegression:
+    n = Data()
+    x_sd = Data()
+    y_sd = Data()
+    alpha = Param(Normal(0.0, 1.0))
+    beta = Param(Normal(0.0, 1.0))
+    x_true = Param(Normal(0.0, 1.0), size=n)
+    mu = alpha + beta * x_true
+    y_true = Param(Normal(mu, 1.0), size=n)
+    x_obs = Observed(Normal(x_true, x_sd))
+    y_obs = Observed(Normal(y_true, y_sd))
+```
+
 ---
 
 ## Current architecture
@@ -198,7 +215,7 @@ Responsibilities:
    - `None -> None`
    - `int -> int`
    - `Data -> DataRef(name)`
-6. Collect exactly one `Observed` declaration.
+6. Collect one or more `Observed` declarations.
 7. Resolve deferred class-body expression attributes to final `ExprNode` trees.
 8. Return final `ModelMeta`.
 
@@ -230,11 +247,16 @@ Resolved final metadata:
 
 ```python
 @dataclass(frozen=True)
+class ResolvedObserved:
+    name: str
+    distribution: Distribution
+
+
+@dataclass(frozen=True)
 class ModelMeta:
     params: dict[str, ResolvedParam]
     data_slots: list[str]
-    observed_name: str
-    observed: ResolvedObserved
+    observed_nodes: tuple[ResolvedObserved, ...]
     expressions: dict[str, ExprNode]
 ```
 
@@ -270,7 +292,7 @@ resolved model class -> BoundModel
 Responsibilities:
 
 1. Require all explicit data slots.
-2. Require observed data by `observed_name`.
+2. Require observed data for every `observed_nodes` entry.
 3. Reject extra data.
 4. Convert values to JAX arrays.
 5. Resolve parameter shapes.

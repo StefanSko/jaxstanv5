@@ -93,3 +93,4 @@ class Observed:
     """Observed variable declaration."""
 
     distribution: Distribution
+    symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)

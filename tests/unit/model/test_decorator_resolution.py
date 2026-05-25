@@ -52,14 +52,36 @@ def test_resolve_declarations_resolves_param_data_and_observed_inventory() -> No
     resolved = _resolve_declarations(Fixture, symbols)
 
     assert resolved.data_slots == ["n_groups"]
-    assert resolved.observed_name == "y"
+    assert tuple(node.name for node in resolved.observed_nodes) == ("y",)
     assert set(resolved.params) == {"alpha_offset"}
     assert resolved.params["alpha_offset"].size == DataRef("n_groups")
-    assert normal_fields(resolved.observed.distribution).loc == BinOp(
+    assert normal_fields(resolved.observed_nodes[0].distribution).loc == BinOp(
         "+",
         ParamRef("alpha_offset"),
         DataRef("n_groups"),
     )
+
+
+def test_resolve_declarations_resolves_multiple_observed_nodes() -> None:
+    theta = Param(Normal(0.0, 1.0))
+    x = Data()
+
+    class Fixture:
+        theta_value = theta
+        x_error = x
+        x_obs = Observed(Normal(dist_param(theta), dist_param(x)))
+        y_obs = Observed(Normal(dist_param(theta + 1.0), 2.0))
+
+    symbols = _collect_declaration_symbols(Fixture)
+    resolved = _resolve_declarations(Fixture, symbols)
+
+    assert tuple(node.name for node in resolved.observed_nodes) == ("x_obs", "y_obs")
+    x_dist = normal_fields(resolved.observed_nodes[0].distribution)
+    y_dist = normal_fields(resolved.observed_nodes[1].distribution)
+    assert x_dist.loc == ParamRef("theta_value")
+    assert x_dist.scale == DataRef("x_error")
+    assert y_dist.loc == BinOp("+", ParamRef("theta_value"), ConstNode(1.0))
+    assert y_dist.scale == ConstNode(2.0)
 
 
 def test_resolve_declaration_expr_builds_final_tree_recursively() -> None:

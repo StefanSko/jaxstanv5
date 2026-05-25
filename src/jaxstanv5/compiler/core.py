@@ -122,8 +122,9 @@ def _build_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
             dist = _evaluate_distribution(pinfo.distribution, values)
             lp = lp + jnp.sum(dist.log_prob(constrained[name]))
 
-        obs_dist = _evaluate_distribution(meta.observed.distribution, values)
-        lp = lp + jnp.sum(obs_dist.log_prob(bound.data[meta.observed_name]))
+        for observed in meta.observed_nodes:
+            obs_dist = _evaluate_distribution(observed.distribution, values)
+            lp = lp + jnp.sum(obs_dist.log_prob(bound.data[observed.name]))
 
         return lp
 

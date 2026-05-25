@@ -43,8 +43,7 @@ def test_scalar_unconstrained() -> None:
     meta = ModelMeta(
         params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
         data_slots=[],
-        observed_name="y",
-        observed=ResolvedObserved(Normal(ParamRef("mu"), ConstNode(1.0))),
+        observed_nodes=(ResolvedObserved("y", Normal(ParamRef("mu"), ConstNode(1.0))),),
         expressions={},
     )
     bound = BoundModel(
@@ -64,14 +63,40 @@ def test_scalar_unconstrained() -> None:
     assert jnp.allclose(lp, expected, atol=1e-6)
 
 
+def test_multiple_observed_nodes_contribute_to_log_density() -> None:
+    meta = ModelMeta(
+        params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
+        data_slots=[],
+        observed_nodes=(
+            ResolvedObserved("y", Normal(ParamRef("mu"), ConstNode(1.0))),
+            ResolvedObserved("z", Normal(ParamRef("mu"), ConstNode(2.0))),
+        ),
+        expressions={},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={"y": jnp.array(2.0), "z": jnp.array(-1.0)},
+        param_shapes={"mu": ()},
+        n_params=1,
+    )
+
+    log_prob = compile_log_density(bound)
+    lp = log_prob(jnp.array([0.5]))
+
+    expected = Normal(0.0, 1.0).log_prob(jnp.array(0.5))
+    expected += Normal(0.5, 1.0).log_prob(jnp.array(2.0))
+    expected += Normal(0.5, 2.0).log_prob(jnp.array(-1.0))
+
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
 def test_compiled_log_density_does_not_reenter_python_for_same_shape_calls() -> None:
     """After the first trace, same-shape calls should use the compiled executable."""
     counter = _TraceCounter()
     meta = ModelMeta(
         params={"theta": ResolvedParam(_CountingLogProb(counter), None, None)},
         data_slots=[],
-        observed_name="y",
-        observed=ResolvedObserved(Normal(ParamRef("theta"), ConstNode(1.0))),
+        observed_nodes=(ResolvedObserved("y", Normal(ParamRef("theta"), ConstNode(1.0))),),
         expressions={},
     )
     bound = BoundModel(
@@ -96,8 +121,7 @@ def test_compiled_log_density_remains_differentiable() -> None:
     meta = ModelMeta(
         params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
         data_slots=[],
-        observed_name="y",
-        observed=ResolvedObserved(Normal(ParamRef("mu"), ConstNode(1.0))),
+        observed_nodes=(ResolvedObserved("y", Normal(ParamRef("mu"), ConstNode(1.0))),),
         expressions={},
     )
     bound = BoundModel(
@@ -118,8 +142,7 @@ def test_no_params() -> None:
     meta = ModelMeta(
         params={},
         data_slots=[],
-        observed_name="y",
-        observed=ResolvedObserved(Normal(ConstNode(0.0), ConstNode(1.0))),
+        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
     bound = BoundModel(

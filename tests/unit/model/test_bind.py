@@ -33,8 +33,7 @@ def make_meta() -> ModelMeta:
             "group": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=DataRef("n")),
         },
         data_slots=["x", "n"],
-        observed_name="y",
-        observed=ResolvedObserved(Normal(0.0, 1.0)),
+        observed_nodes=(ResolvedObserved("y", Normal(0.0, 1.0)),),
         expressions={},
     )
 
@@ -42,6 +41,21 @@ def make_meta() -> ModelMeta:
 def bind_meta(meta: ModelMeta, **values: object) -> BoundModel:
     bind = cast(BindFn, _make_bind(meta))
     return cast(BoundModel, bind(type("Model", (), {}), **values))
+
+
+def test_bind_requires_all_observed_node_values() -> None:
+    meta = ModelMeta(
+        params={},
+        data_slots=["x"],
+        observed_nodes=(
+            ResolvedObserved("x_obs", Normal(0.0, 1.0)),
+            ResolvedObserved("y_obs", Normal(0.0, 1.0)),
+        ),
+        expressions={},
+    )
+
+    with pytest.raises(ValueError, match=r"Missing model data: \['y_obs'\]"):
+        bind_meta(meta, x=0.0, x_obs=1.0)
 
 
 def test_bind_rejects_missing_data_and_observed_values() -> None:

@@ -93,7 +93,7 @@ def test_model_decorator_attaches_expected_final_metadata() -> None:
 
     assert list(meta.params) == ["alpha_pop", "sigma_alpha", "alpha"]
     assert meta.data_slots == ["n_groups", "group_idx"]
-    assert meta.observed_name == "y"
+    assert tuple(node.name for node in meta.observed_nodes) == ("y",)
     assert set(meta.expressions) == {"centered_alpha", "mu"}
 
 
@@ -124,7 +124,7 @@ def test_expressions_and_observed_distribution_are_final_expression_trees() -> N
         BinOp("*", ParamRef("sigma_alpha"), meta.expressions["centered_alpha"]),
     )
 
-    observed_dist = normal_fields(meta.observed.distribution)
+    observed_dist = normal_fields(meta.observed_nodes[0].distribution)
     assert_final_tree(observed_dist.loc)
     assert observed_dist.scale == ParamRef("sigma_alpha")
 

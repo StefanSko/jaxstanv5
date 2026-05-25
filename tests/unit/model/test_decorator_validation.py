@@ -20,17 +20,18 @@ def test_private_model_declaration_resolution_rejects_missing_observed_declarati
         alpha = Param(Normal(0.0, 1.0))
         x = Data()
 
-    with pytest.raises(ValueError, match="exactly one Observed"):
+    with pytest.raises(ValueError, match="at least one Observed"):
         _resolve_model_declaration(MissingObserved)
 
 
-def test_private_model_declaration_resolution_rejects_multiple_observed_declarations() -> None:
+def test_private_model_declaration_resolution_accepts_multiple_observed_declarations() -> None:
     class MultipleObserved:
         y = Observed(Normal(0.0, 1.0))
         z = Observed(Normal(0.0, 1.0))
 
-    with pytest.raises(ValueError, match="exactly one Observed"):
-        _resolve_model_declaration(MultipleObserved)
+    meta = _resolve_model_declaration(MultipleObserved)
+
+    assert tuple(node.name for node in meta.observed_nodes) == ("y", "z")
 
 
 def test_private_model_declaration_resolution_keeps_observed_name_out_of_data_slots() -> None:
@@ -41,7 +42,7 @@ def test_private_model_declaration_resolution_keeps_observed_name_out_of_data_sl
     meta = _resolve_model_declaration(Fixture)
 
     assert meta.data_slots == ["x"]
-    assert meta.observed_name == "y"
+    assert tuple(node.name for node in meta.observed_nodes) == ("y",)
 
 
 def test_private_model_declaration_resolution_rejects_invalid_parameter_size_type() -> None:
@@ -90,3 +91,12 @@ def test_private_model_declaration_resolution_rejects_aliased_data_declarations(
 
     with pytest.raises(ValueError, match="Declaration aliases are not supported"):
         _resolve_model_declaration(AliasedData)
+
+
+def test_private_model_declaration_resolution_rejects_aliased_observed_declarations() -> None:
+    class AliasedObserved:
+        y = Observed(Normal(0.0, 1.0))
+        z = y
+
+    with pytest.raises(ValueError, match="Declaration aliases are not supported"):
+        _resolve_model_declaration(AliasedObserved)

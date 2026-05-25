@@ -83,3 +83,40 @@ def test_bind_resolves_data_dependent_hierarchical_parameter_sizes() -> None:
         "alpha": (3,),
     }
     assert bound_n_params(bound) == 5
+
+
+def test_bind_accepts_multiple_observed_likelihood_sites() -> None:
+    @model
+    class MeasurementErrorModel:
+        n = Data()
+        x_sd = Data()
+        y_sd = Data()
+
+        alpha = Param(Normal(0.0, 1.0))
+        beta = Param(Normal(0.0, 1.0))
+        sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+
+        x_true = Param(Normal(0.0, 1.0), size=n)
+        mu = alpha + beta * x_true
+        y_true = Param(Normal(dist_param(mu), dist_param(sigma)), size=n)
+
+        x_obs = Observed(Normal(dist_param(x_true), dist_param(x_sd)))
+        y_obs = Observed(Normal(dist_param(y_true), dist_param(y_sd)))
+
+    bound = bind_model(
+        MeasurementErrorModel,
+        n=3,
+        x_sd=jnp.asarray([0.05, 0.05, 0.05]),
+        y_sd=jnp.asarray([0.10, 0.10, 0.10]),
+        x_obs=jnp.asarray([-1.0, 0.0, 1.0]),
+        y_obs=jnp.asarray([0.5, 1.0, 1.5]),
+    )
+
+    assert bound_param_shapes(bound) == {
+        "alpha": (),
+        "beta": (),
+        "sigma": (),
+        "x_true": (3,),
+        "y_true": (3,),
+    }
+    assert bound_n_params(bound) == 9
