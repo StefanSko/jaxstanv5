@@ -9,11 +9,13 @@ import pytest
 
 from jaxstanv5.distributions.core import DistributionParameter
 from jaxstanv5.distributions.normal import Normal
-from jaxstanv5.model.core import Data, Param
+from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.decorator import (
+    _collect_declaration_symbols,
     _resolve_declaration_distribution,
     _resolve_declaration_expr,
     _resolve_declaration_size,
+    _resolve_declarations,
 )
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef
 
@@ -35,6 +37,29 @@ def normal_fields(value: object) -> NormalFields:
 @dataclass(frozen=True)
 class UnknownExpr:
     value: object
+
+
+def test_resolve_declarations_resolves_param_data_and_observed_inventory() -> None:
+    n = Data()
+    alpha = Param(Normal(0.0, 1.0), size=n)
+
+    class Fixture:
+        n_groups = n
+        alpha_offset = alpha
+        y = Observed(Normal(dist_param(alpha + n), 1.0))
+
+    symbols = _collect_declaration_symbols(Fixture)
+    resolved = _resolve_declarations(Fixture, symbols)
+
+    assert resolved.data_slots == ["n_groups"]
+    assert resolved.observed_name == "y"
+    assert set(resolved.params) == {"alpha_offset"}
+    assert resolved.params["alpha_offset"].size == DataRef("n_groups")
+    assert normal_fields(resolved.observed.distribution).loc == BinOp(
+        "+",
+        ParamRef("alpha_offset"),
+        DataRef("n_groups"),
+    )
 
 
 def test_resolve_declaration_expr_builds_final_tree_recursively() -> None:

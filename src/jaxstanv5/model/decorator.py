@@ -52,17 +52,11 @@ class ModelMeta:
 
 
 @dataclass(frozen=True)
-class _ResolvedParamData:
-    """Resolved parameter/data inventory from a declaration class."""
+class _ResolvedDeclarations:
+    """Resolved top-level declarations from a declaration class."""
 
     params: dict[str, ResolvedParam]
     data_slots: list[str]
-
-
-@dataclass(frozen=True)
-class _ResolvedObservedDeclaration:
-    """Resolved observed likelihood metadata."""
-
     observed_name: str
     observed: ResolvedObserved
 
@@ -70,15 +64,14 @@ class _ResolvedObservedDeclaration:
 def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
     """Resolve a declaration class into final model metadata."""
     symbols = _collect_declaration_symbols(cls)
-    param_data = _resolve_param_data(cls, symbols)
-    observed = _resolve_observed_declaration(cls, symbols)
+    declarations = _resolve_declarations(cls, symbols)
     expressions = _resolve_expressions(cls, symbols)
 
     return ModelMeta(
-        params=param_data.params,
-        data_slots=param_data.data_slots,
-        observed_name=observed.observed_name,
-        observed=observed.observed,
+        params=declarations.params,
+        data_slots=declarations.data_slots,
+        observed_name=declarations.observed_name,
+        observed=declarations.observed,
         expressions=expressions,
     )
 
@@ -100,10 +93,12 @@ def _collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
     return symbols
 
 
-def _resolve_param_data(cls: ModelClass, symbols: SymbolTable) -> _ResolvedParamData:
-    """Resolve parameter/data inventory into final named metadata."""
+def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDeclarations:
+    """Resolve top-level declaration inventory into final named metadata."""
     params: dict[str, ResolvedParam] = {}
     data_slots: list[str] = []
+    observed_name: str | None = None
+    observed: ResolvedObserved | None = None
 
     for name, value in cls.__dict__.items():
         if isinstance(value, Param):
@@ -114,20 +109,7 @@ def _resolve_param_data(cls: ModelClass, symbols: SymbolTable) -> _ResolvedParam
             )
         elif isinstance(value, Data):
             data_slots.append(name)
-
-    return _ResolvedParamData(params=params, data_slots=data_slots)
-
-
-def _resolve_observed_declaration(
-    cls: ModelClass,
-    symbols: SymbolTable,
-) -> _ResolvedObservedDeclaration:
-    """Resolve the single observed likelihood declaration."""
-    observed_name: str | None = None
-    observed: ResolvedObserved | None = None
-
-    for name, value in cls.__dict__.items():
-        if isinstance(value, Observed):
+        elif isinstance(value, Observed):
             if observed_name is not None:
                 raise ValueError("Model declarations must contain exactly one Observed")
             observed_name = name
@@ -138,7 +120,9 @@ def _resolve_observed_declaration(
     if observed_name is None or observed is None:
         raise ValueError("Model declarations must contain exactly one Observed")
 
-    return _ResolvedObservedDeclaration(
+    return _ResolvedDeclarations(
+        params=params,
+        data_slots=data_slots,
         observed_name=observed_name,
         observed=observed,
     )
