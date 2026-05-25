@@ -29,7 +29,8 @@ Use strict typing throughout. Never use `Any`. Avoid untyped structured dictiona
 
 ## Architecture
 
-Follow `.pi/skills/rust-style-python`.
+Follow `.pi/skills/rust-style-python` and keep the project invariants in
+[`docs/invariants.md`](docs/invariants.md) true.
 
 Prefer:
 - immutable or effectively immutable data
