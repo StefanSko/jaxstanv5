@@ -1,16 +1,15 @@
 # Backlog
 
-Small, concrete improvement ideas that are not required for the current model-declaration slice.
+Small, concrete improvement ideas that are not required for the current working vertical slice.
 
 ## Model declaration typing
 
-- Introduce explicit symbolic distribution parameter types once compiler work starts.
-  Current tests need casts because runtime distributions are typed for numeric/JAX
-  parameters, while model declarations pass symbolic deferred/final expressions.
+- Introduce explicit symbolic distribution parameter types if casts around
+  `DistributionParameter` become too noisy as distributions expand.
 - Consider phase-specific distribution metadata if plain distribution dataclasses
   become awkward:
   - declaration-time distribution parameters
-  - resolved distribution parameters
+  - resolved symbolic distribution parameters
   - executable numeric distribution parameters
 
 ## Decorated model typing
@@ -21,21 +20,19 @@ Small, concrete improvement ideas that are not required for the current model-de
 
 ## Distribution normalization
 
-- Revisit generic dataclass-based distribution normalization.
-  It is convenient now, but explicit model-side distribution metadata may become
-  clearer as more distributions are added.
+- Decide whether scalar distribution fields should remain raw scalars or always
+  normalize to `ConstNode` in resolved model metadata.
+- Revisit generic dataclass-based distribution normalization as more
+  distributions are added.
 
 ## Model declaration validation
 
 - Keep expanding validation around declaration edge cases as new DSL features are
   added.
-- Decide explicit behavior for unsupported distribution field values before
-  compiler work depends on them.
+- Decide explicit behavior for unsupported distribution field values before more
+  compiler behavior depends on them.
 
-## Integration path
+## Diagnostics
 
-- Keep the red integration test as the public workflow target.
-- Implement missing vertical-slice APIs in order:
-  1. compile `BoundModel` to log density
-  2. expose NUTS-only `sample(...)`
-  3. expose diagnostics `rhat`, `ess`, divergences
+- Expose and test divergences as part of the public sampling result once the
+  minimal diagnostics API settles.
