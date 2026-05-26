@@ -15,6 +15,9 @@ from enum import Enum
 import jax
 import jax.numpy as jnp
 
+from jaxstanv5.diagnostics import ess as effective_sample_size
+from jaxstanv5.diagnostics import rhat as potential_scale_reduction
+from jaxstanv5.inference import sample
 from jaxstanv5.model.bound import BoundModel
 
 
@@ -61,22 +64,22 @@ VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
     ),
     ValidationPlanItem(
         stage=ValidationStage.PRIVATE_HELPERS,
-        status=ValidationStageStatus.PLANNED,
+        status=ValidationStageStatus.IMPLEMENTED,
         description="Typed private helpers for references, draw summaries, and assertions.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.PUBLIC_MULTI_CHAIN_DRAWS,
-        status=ValidationStageStatus.PLANNED,
+        status=ValidationStageStatus.IMPLEMENTED,
         description="Use the public num_chains sampling API to obtain validation draws.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.ALWAYS_ON_NORMAL_TEST,
-        status=ValidationStageStatus.PLANNED,
+        status=ValidationStageStatus.IMPLEMENTED,
         description="Fast CI test for analytic Normal posterior mean, sd, ESS, and R-hat.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.STANDARDIZED_DISCREPANCIES,
-        status=ValidationStageStatus.PLANNED,
+        status=ValidationStageStatus.IMPLEMENTED,
         description="Record signed z-scores and k_min values for posterior summaries.",
     ),
     ValidationPlanItem(
@@ -281,8 +284,37 @@ def summarize_scalar_draws(
     *,
     parameter: str,
 ) -> ScalarDrawSummary:
-    """Stage 2: summarize scalar posterior draws with ESS, R-hat, and MCSE."""
-    raise _not_implemented(ValidationStage.PRIVATE_HELPERS)
+    """Implemented stage: summarize scalar posterior draws with ESS, R-hat, and MCSE."""
+    if parameter not in samples:
+        raise ValueError(f"Missing samples for parameter: {parameter}")
+
+    draws = jnp.asarray(samples[parameter])
+    if draws.ndim != 2:
+        raise ValueError("Scalar draw arrays must have shape (num_chains, num_samples)")
+
+    sample_count = draws.size
+    if sample_count < 2:
+        raise ValueError("At least two scalar draws are required")
+
+    parameter_samples = {parameter: draws}
+    ess_value = effective_sample_size(parameter_samples)[parameter]
+    if ess_value <= 0.0:
+        raise ValueError("ESS must be positive to compute MCSE")
+
+    mean = float(jnp.mean(draws))
+    centered = draws - mean
+    sd = float(jnp.sqrt(jnp.sum(centered**2) / (sample_count - 1)))
+    mcse_mean = sd / math.sqrt(ess_value)
+
+    return ScalarDrawSummary(
+        parameter=parameter,
+        mean=mean,
+        sd=sd,
+        ess=ess_value,
+        rhat=potential_scale_reduction(parameter_samples)[parameter],
+        mcse_mean=mcse_mean,
+        mcse_sd=None,
+    )
 
 
 def draw_validation_chains(
@@ -290,8 +322,14 @@ def draw_validation_chains(
     *,
     run: ChainRunSpec,
 ) -> Mapping[str, jax.Array]:
-    """Stage 3: draw validation chains through the public sampling API."""
-    raise _not_implemented(ValidationStage.PUBLIC_MULTI_CHAIN_DRAWS)
+    """Implemented stage: draw validation chains through the public sampling API."""
+    return sample(
+        bound,
+        seed=run.seed,
+        num_chains=run.num_chains,
+        num_warmup=run.num_warmup,
+        num_samples=run.num_samples,
+    ).samples
 
 
 def assert_normal_known_scale_matches_reference(
@@ -301,8 +339,33 @@ def assert_normal_known_scale_matches_reference(
     run: ChainRunSpec,
     max_k: float,
 ) -> tuple[ScalarValidationResult, ...]:
-    """Stage 4: fast always-on analytic Normal posterior validation."""
-    raise _not_implemented(ValidationStage.ALWAYS_ON_NORMAL_TEST)
+    """Implemented stage: validate a scalar Normal posterior mean within MCSE."""
+    if max_k <= 0.0:
+        raise ValueError("max_k must be positive")
+
+    samples = draw_validation_chains(bound, run=run)
+    summary = summarize_scalar_draws(samples, parameter=reference.parameter)
+
+    if summary.rhat > 1.05:
+        raise AssertionError(
+            f"R-hat for {summary.parameter} is {summary.rhat:.3f}; expected <= 1.05"
+        )
+    if summary.ess < 100.0:
+        raise AssertionError(f"ESS for {summary.parameter} is {summary.ess:.1f}; expected >= 100.0")
+
+    result = standardized_discrepancy(
+        parameter=reference.parameter,
+        summary_name="mean",
+        estimate=summary.mean,
+        reference=reference.mean,
+        mcse=summary.mcse_mean,
+    )
+    if result.k_min > max_k:
+        raise AssertionError(
+            f"Posterior mean for {result.parameter} differs from reference by "
+            f"{result.k_min:.2f} MCSEs; expected <= {max_k:.2f}"
+        )
+    return (result,)
 
 
 def standardized_discrepancy(
@@ -313,8 +376,20 @@ def standardized_discrepancy(
     reference: float,
     mcse: float,
 ) -> ScalarValidationResult:
-    """Stage 5: compute signed z and k_min for one scalar summary."""
-    raise _not_implemented(ValidationStage.STANDARDIZED_DISCREPANCIES)
+    """Implemented stage: compute signed z and k_min for one scalar summary."""
+    if mcse <= 0.0:
+        raise ValueError("mcse must be positive")
+
+    signed_z = (estimate - reference) / mcse
+    return ScalarValidationResult(
+        parameter=parameter,
+        summary_name=summary_name,
+        estimate=estimate,
+        reference=reference,
+        mcse=mcse,
+        signed_z=signed_z,
+        k_min=abs(signed_z),
+    )
 
 
 def positive_scale_grid_reference(
