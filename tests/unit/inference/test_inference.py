@@ -10,7 +10,6 @@ from jaxstanv5.distributions import Normal
 from jaxstanv5.inference.core import (
     SamplerResult,
     _constrain_sample_values,
-    _stack_chain_samples,
     _unflatten_samples,
     compile_sampler,
 )
@@ -66,27 +65,6 @@ def test_unflatten_zero_sized_parameter_does_not_advance_offset() -> None:
     assert result["empty"].shape == (1, 2, 0)
     assert jnp.allclose(result["first"][0], jnp.array([10.0, 30.0]))
     assert jnp.allclose(result["second"][0], jnp.array([20.0, 40.0]))
-
-
-def test_stack_chain_samples_concatenates_one_chain_results() -> None:
-    first = {
-        "alpha": jnp.array([[1.0, 2.0]]),
-        "beta": jnp.array([[[1.0, 2.0], [3.0, 4.0]]]),
-    }
-    second = {
-        "alpha": jnp.array([[3.0, 4.0]]),
-        "beta": jnp.array([[[5.0, 6.0], [7.0, 8.0]]]),
-    }
-
-    result = _stack_chain_samples((first, second))
-
-    assert result["alpha"].shape == (2, 2)
-    assert result["beta"].shape == (2, 2, 2)
-    assert jnp.allclose(result["alpha"], jnp.array([[1.0, 2.0], [3.0, 4.0]]))
-    assert jnp.allclose(
-        result["beta"],
-        jnp.array([[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]),
-    )
 
 
 def test_constrain_sample_values_applies_parameter_constraints() -> None:

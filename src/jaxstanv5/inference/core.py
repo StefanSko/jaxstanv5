@@ -128,20 +128,7 @@ def _sample_one_chain(
     return _constrain_sample_values(unconstrained, bound.meta)
 
 
-def _stack_chain_samples(
-    chain_samples: tuple[dict[str, jax.Array], ...],
-) -> dict[str, jax.Array]:
-    """Stack one-or-more one-chain sample dictionaries along the chain axis."""
-    if len(chain_samples) == 0:
-        raise ValueError("At least one chain is required")
-
-    result: dict[str, jax.Array] = {}
-    for name in chain_samples[0]:
-        result[name] = jnp.concatenate(tuple(samples[name] for samples in chain_samples), axis=0)
-    return result
-
-
-def _sample_chains_loop(
+def _sample_chains(
     bound: BoundModel,
     warmup_run: _WindowAdaptationRun,
     draw_samples: _DrawSamples,
@@ -151,38 +138,7 @@ def _sample_chains_loop(
     num_warmup: int,
     num_samples: int,
 ) -> dict[str, jax.Array]:
-    """Draw independent chains with a simple Python loop."""
-    chain_keys = jax.random.split(rng_key, num_chains)
-    chain_samples = tuple(
-        _sample_one_chain(
-            bound,
-            warmup_run,
-            draw_samples,
-            chain_key,
-            num_warmup=num_warmup,
-            num_samples=num_samples,
-        )
-        for chain_key in chain_keys
-    )
-    return _stack_chain_samples(chain_samples)
-
-
-def _sample_chains_vmap(
-    bound: BoundModel,
-    warmup_run: _WindowAdaptationRun,
-    draw_samples: _DrawSamples,
-    rng_key: jax.Array,
-    *,
-    num_chains: int,
-    num_warmup: int,
-    num_samples: int,
-) -> dict[str, jax.Array]:
-    """Experimental private candidate for batched chain sampling.
-
-    This is intentionally not used by the public sampler yet.  It exists so we
-    can compare behavior and speed against the loop implementation before
-    deciding whether batched chains are worth making the default.
-    """
+    """Draw independent chains by batching the one-chain sampler."""
     chain_keys = jax.random.split(rng_key, num_chains)
 
     def sample_chain(chain_key: jax.Array) -> dict[str, jax.Array]:
@@ -242,7 +198,7 @@ class CompiledSampler:
             return SamplerResult(samples={})
 
         key = jax.random.PRNGKey(seed)
-        samples = _sample_chains_loop(
+        samples = _sample_chains(
             self._bound,
             self._warmup_run,
             self._draw_samples,
