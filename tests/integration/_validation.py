@@ -89,8 +89,8 @@ VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
     ),
     ValidationPlanItem(
         stage=ValidationStage.STAN_REFERENCE,
-        status=ValidationStageStatus.PLANNED,
-        description="Slow fixed-data posterior summary comparisons against Stan.",
+        status=ValidationStageStatus.COMPLETED,
+        description="Slow fixed-data log-density and posterior-summary comparisons against Stan.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.SBC_REFERENCE,
@@ -475,9 +475,65 @@ def compare_against_stan_reference(
     jaxstan_summaries: tuple[ScalarDrawSummary, ...],
     stan_summaries: tuple[ScalarDrawSummary, ...],
     max_k: float,
+    max_rhat: float = 1.05,
+    min_ess: float = 100.0,
 ) -> tuple[ScalarValidationResult, ...]:
-    """Stage 7: compare jaxstan summaries against Stan within combined MCSE."""
-    raise _not_implemented(ValidationStage.STAN_REFERENCE)
+    """Implemented stage: compare jaxstan summaries against Stan.
+
+    Means are compared using the combined Monte Carlo standard error:
+    ``sqrt(mcse_jaxstan**2 + mcse_stan**2)``.
+    """
+    if max_k <= 0.0:
+        raise ValueError("max_k must be positive")
+    if max_rhat <= 0.0:
+        raise ValueError("max_rhat must be positive")
+    if min_ess <= 0.0:
+        raise ValueError("min_ess must be positive")
+
+    stan_by_parameter = {summary.parameter: summary for summary in stan_summaries}
+    results: list[ScalarValidationResult] = []
+    for jaxstan_summary in jaxstan_summaries:
+        if jaxstan_summary.rhat > max_rhat:
+            raise AssertionError(
+                f"jaxstan R-hat for {jaxstan_summary.parameter} is "
+                f"{jaxstan_summary.rhat:.3f}; expected <= {max_rhat:.3f}"
+            )
+        if jaxstan_summary.ess < min_ess:
+            raise AssertionError(
+                f"jaxstan ESS for {jaxstan_summary.parameter} is "
+                f"{jaxstan_summary.ess:.1f}; expected >= {min_ess:.1f}"
+            )
+
+        stan_summary = stan_by_parameter.get(jaxstan_summary.parameter)
+        if stan_summary is None:
+            raise ValueError(f"Missing Stan summary for parameter: {jaxstan_summary.parameter}")
+        if stan_summary.rhat > max_rhat:
+            raise AssertionError(
+                f"Stan R-hat for {stan_summary.parameter} is "
+                f"{stan_summary.rhat:.3f}; expected <= {max_rhat:.3f}"
+            )
+        if stan_summary.ess < min_ess:
+            raise AssertionError(
+                f"Stan ESS for {stan_summary.parameter} is "
+                f"{stan_summary.ess:.1f}; expected >= {min_ess:.1f}"
+            )
+
+        combined_mcse = math.sqrt(jaxstan_summary.mcse_mean**2 + stan_summary.mcse_mean**2)
+        result = standardized_discrepancy(
+            parameter=jaxstan_summary.parameter,
+            summary_name="mean",
+            estimate=jaxstan_summary.mean,
+            reference=stan_summary.mean,
+            mcse=combined_mcse,
+        )
+        if result.k_min > max_k:
+            raise AssertionError(
+                f"jaxstan posterior mean for {result.parameter} differs from Stan by "
+                f"{result.k_min:.2f} combined MCSEs; expected <= {max_k:.2f}"
+            )
+        results.append(result)
+
+    return tuple(results)
 
 
 def run_sbc_rank_validation(

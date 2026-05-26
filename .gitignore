@@ -12,6 +12,12 @@ build/
 dist/
 *.egg-info/
 
+# Stan/CmdStan build artifacts
+reference/stan/models/*.hpp
+reference/stan/models/*.o
+reference/stan/models/normal_known_scale
+reference/stan/models/positive_scale_normal
+
 # OS/editor
 .DS_Store
 .idea/

@@ -137,6 +137,24 @@ The compiled log density is:
 parameter priors + constraint Jacobians + all observed likelihood terms
 ```
 
+## Stan reference checks
+
+Optional Stan reference fixtures live in [`reference/stan/`](reference/stan/).
+They are used by standalone scripts, not by the default pytest suite and not by
+runtime code.
+
+Run fixed-data Stan comparisons with:
+
+```bash
+uv run --script scripts/check_stan_log_density_reference.py
+uv run --script scripts/check_stan_posterior_reference.py
+```
+
+The log-density script compares jaxstan's unconstrained compiled density against
+CmdStan at equivalent parameter values, with known Normal constants restored for
+these fixtures. The posterior script compares jaxstan and Stan posterior means
+using combined MCSE-scaled discrepancies.
+
 ## Development
 
 Run the full validation loop with:
