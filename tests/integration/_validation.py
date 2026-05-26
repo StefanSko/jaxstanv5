@@ -36,9 +36,9 @@ class ValidationStage(Enum):
 
 
 class ValidationStageStatus(Enum):
-    """Implementation status for one validation-plan item."""
+    """Completion status for one validation-plan item."""
 
-    IMPLEMENTED = "implemented"
+    COMPLETED = "completed"
     PLANNED = "planned"
 
 
@@ -54,32 +54,32 @@ class ValidationPlanItem:
 VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
     ValidationPlanItem(
         stage=ValidationStage.ANALYTIC_SCALAR_NORMAL_REFERENCE,
-        status=ValidationStageStatus.IMPLEMENTED,
+        status=ValidationStageStatus.COMPLETED,
         description="Analytic posterior reference for scalar Normal known-scale models.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.ANALYTIC_HIERARCHICAL_NORMAL_REFERENCE,
-        status=ValidationStageStatus.IMPLEMENTED,
+        status=ValidationStageStatus.COMPLETED,
         description="Analytic posterior reference for hierarchical Normal known-scale models.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.PRIVATE_HELPERS,
-        status=ValidationStageStatus.IMPLEMENTED,
+        status=ValidationStageStatus.COMPLETED,
         description="Typed private helpers for references, draw summaries, and assertions.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.PUBLIC_MULTI_CHAIN_DRAWS,
-        status=ValidationStageStatus.IMPLEMENTED,
+        status=ValidationStageStatus.COMPLETED,
         description="Use the public num_chains sampling API to obtain validation draws.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.ALWAYS_ON_NORMAL_TEST,
-        status=ValidationStageStatus.IMPLEMENTED,
+        status=ValidationStageStatus.COMPLETED,
         description="Fast CI test for analytic Normal posterior mean, sd, ESS, and R-hat.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.STANDARDIZED_DISCREPANCIES,
-        status=ValidationStageStatus.IMPLEMENTED,
+        status=ValidationStageStatus.COMPLETED,
         description="Record signed z-scores and k_min values for posterior summaries.",
     ),
     ValidationPlanItem(
