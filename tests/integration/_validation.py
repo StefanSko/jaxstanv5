@@ -84,7 +84,7 @@ VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
     ),
     ValidationPlanItem(
         stage=ValidationStage.CONSTRAINED_NORMAL_REFERENCE,
-        status=ValidationStageStatus.PLANNED,
+        status=ValidationStageStatus.COMPLETED,
         description="Numerical reference for a positive-scale Normal model.",
     ),
     ValidationPlanItem(
@@ -332,26 +332,34 @@ def draw_validation_chains(
     ).samples
 
 
-def assert_normal_known_scale_matches_reference(
+def assert_scalar_mean_matches_reference(
     bound: BoundModel,
     *,
     reference: ScalarReference,
     run: ChainRunSpec,
     max_k: float,
+    max_rhat: float = 1.05,
+    min_ess: float = 100.0,
 ) -> tuple[ScalarValidationResult, ...]:
-    """Implemented stage: validate a scalar Normal posterior mean within MCSE."""
+    """Validate a scalar posterior mean against a reference within MCSE."""
     if max_k <= 0.0:
         raise ValueError("max_k must be positive")
+    if max_rhat <= 0.0:
+        raise ValueError("max_rhat must be positive")
+    if min_ess <= 0.0:
+        raise ValueError("min_ess must be positive")
 
     samples = draw_validation_chains(bound, run=run)
     summary = summarize_scalar_draws(samples, parameter=reference.parameter)
 
-    if summary.rhat > 1.05:
+    if summary.rhat > max_rhat:
         raise AssertionError(
-            f"R-hat for {summary.parameter} is {summary.rhat:.3f}; expected <= 1.05"
+            f"R-hat for {summary.parameter} is {summary.rhat:.3f}; expected <= {max_rhat:.3f}"
         )
-    if summary.ess < 100.0:
-        raise AssertionError(f"ESS for {summary.parameter} is {summary.ess:.1f}; expected >= 100.0")
+    if summary.ess < min_ess:
+        raise AssertionError(
+            f"ESS for {summary.parameter} is {summary.ess:.1f}; expected >= {min_ess:.1f}"
+        )
 
     result = standardized_discrepancy(
         parameter=reference.parameter,
@@ -366,6 +374,22 @@ def assert_normal_known_scale_matches_reference(
             f"{result.k_min:.2f} MCSEs; expected <= {max_k:.2f}"
         )
     return (result,)
+
+
+def assert_normal_known_scale_matches_reference(
+    bound: BoundModel,
+    *,
+    reference: ScalarReference,
+    run: ChainRunSpec,
+    max_k: float,
+) -> tuple[ScalarValidationResult, ...]:
+    """Implemented stage: validate a scalar Normal posterior mean within MCSE."""
+    return assert_scalar_mean_matches_reference(
+        bound,
+        reference=reference,
+        run=run,
+        max_k=max_k,
+    )
 
 
 def standardized_discrepancy(
@@ -402,8 +426,48 @@ def positive_scale_grid_reference(
     grid_max: float,
     grid_size: int,
 ) -> ScalarReference:
-    """Stage 6: compute a numerical reference for a positive-scale Normal model."""
-    raise _not_implemented(ValidationStage.CONSTRAINED_NORMAL_REFERENCE)
+    """Implemented stage: numerical posterior reference for a positive scale.
+
+    Model:
+        ``sigma ~ Normal(prior_loc, prior_scale), sigma > 0``
+        ``y_i ~ Normal(0, sigma)``
+
+    The returned summaries are expectations over the constrained scale ``sigma``.
+    A uniform grid and trapezoidal weights approximate the one-dimensional
+    posterior integral.
+    """
+    _require_positive_scale("prior_scale", prior_scale)
+    _require_positive_scale("grid_min", grid_min)
+    if grid_max <= grid_min:
+        raise ValueError("grid_max must be greater than grid_min")
+    if grid_size < 2:
+        raise ValueError("grid_size must be at least 2")
+
+    y_values = jnp.ravel(jnp.asarray(y))
+    sigma = jnp.linspace(grid_min, grid_max, grid_size)
+    log_two_pi = math.log(2.0 * math.pi)
+
+    standardized_prior = (sigma - prior_loc) / prior_scale
+    log_prior = -jnp.log(prior_scale) - 0.5 * log_two_pi - 0.5 * standardized_prior**2
+    log_likelihood_terms = (
+        -jnp.log(sigma) - 0.5 * log_two_pi - 0.5 * (y_values[:, None] / sigma) ** 2
+    )
+    log_likelihood = jnp.sum(log_likelihood_terms, axis=0)
+
+    trapezoid_weights = jnp.ones_like(sigma)
+    trapezoid_weights = trapezoid_weights.at[0].set(0.5)
+    trapezoid_weights = trapezoid_weights.at[-1].set(0.5)
+    log_weights = log_prior + log_likelihood + jnp.log(trapezoid_weights)
+    normalized_weights = jax.nn.softmax(log_weights)
+
+    mean = float(jnp.sum(normalized_weights * sigma))
+    second_moment = float(jnp.sum(normalized_weights * sigma**2))
+    variance = max(second_moment - mean**2, 0.0)
+    return ScalarReference(
+        parameter=parameter,
+        mean=mean,
+        sd=math.sqrt(variance),
+    )
 
 
 def compare_against_stan_reference(

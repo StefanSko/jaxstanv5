@@ -7,6 +7,7 @@ import pytest
 from _validation import (
     hierarchical_normal_known_scale_reference,
     normal_known_scale_reference,
+    positive_scale_grid_reference,
 )
 
 
@@ -22,6 +23,22 @@ def test_normal_known_scale_reference_returns_conjugate_posterior() -> None:
     assert reference.parameter == "mu"
     assert reference.mean == pytest.approx(1.8461538462)
     assert reference.sd == pytest.approx(0.5547001962)
+
+
+def test_positive_scale_grid_reference_returns_numerical_posterior() -> None:
+    reference = positive_scale_grid_reference(
+        parameter="sigma",
+        y=jnp.array([-0.5, 0.25, 1.0, -1.25]),
+        prior_loc=0.0,
+        prior_scale=1.0,
+        grid_min=0.01,
+        grid_max=5.0,
+        grid_size=20_000,
+    )
+
+    assert reference.parameter == "sigma"
+    assert reference.mean == pytest.approx(0.976905, abs=1e-5)
+    assert reference.sd == pytest.approx(0.334986, abs=1e-5)
 
 
 def test_hierarchical_normal_known_scale_reference_returns_gaussian_posterior() -> None:
