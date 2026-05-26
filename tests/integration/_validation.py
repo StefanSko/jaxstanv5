@@ -25,7 +25,8 @@ class ValidationStage(Enum):
     ALWAYS_ON_NORMAL_TEST = "always_on_normal_test"
     STANDARDIZED_DISCREPANCIES = "standardized_discrepancies"
     CONSTRAINED_NORMAL_REFERENCE = "constrained_normal_reference"
-    STAN_AND_SBC_REFERENCE = "stan_and_sbc_reference"
+    STAN_REFERENCE = "stan_reference"
+    SBC_REFERENCE = "sbc_reference"
 
 
 @dataclass(frozen=True)
@@ -62,8 +63,12 @@ VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
         description="Numerical reference for a positive-scale Normal model.",
     ),
     ValidationPlanItem(
-        stage=ValidationStage.STAN_AND_SBC_REFERENCE,
-        description="Slow Stan comparison and simulation-based calibration checks.",
+        stage=ValidationStage.STAN_REFERENCE,
+        description="Slow fixed-data posterior summary comparisons against Stan.",
+    ),
+    ValidationPlanItem(
+        stage=ValidationStage.SBC_REFERENCE,
+        description="Simulation-based calibration rank checks over generated datasets.",
     ),
 )
 
@@ -198,8 +203,8 @@ def compare_against_stan_reference(
     stan_summaries: tuple[ScalarDrawSummary, ...],
     max_k: float,
 ) -> tuple[ScalarValidationResult, ...]:
-    """Stage 7a: compare jaxstan summaries against Stan within combined MCSE."""
-    raise _not_implemented(ValidationStage.STAN_AND_SBC_REFERENCE)
+    """Stage 7: compare jaxstan summaries against Stan within combined MCSE."""
+    raise _not_implemented(ValidationStage.STAN_REFERENCE)
 
 
 def run_sbc_rank_validation(
@@ -208,5 +213,5 @@ def run_sbc_rank_validation(
     num_simulations: int,
     num_posterior_draws: int,
 ) -> SbcValidationResult:
-    """Stage 7b: run simulation-based calibration for one scalar parameter."""
-    raise _not_implemented(ValidationStage.STAN_AND_SBC_REFERENCE)
+    """Stage 8: run simulation-based calibration for one scalar parameter."""
+    raise _not_implemented(ValidationStage.SBC_REFERENCE)
