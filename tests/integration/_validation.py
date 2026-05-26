@@ -21,7 +21,7 @@ class ValidationStage(Enum):
 
     ANALYTIC_NORMAL_REFERENCE = "analytic_normal_reference"
     PRIVATE_HELPERS = "private_helpers"
-    INDEPENDENT_CHAINS = "independent_chains"
+    PUBLIC_MULTI_CHAIN_DRAWS = "public_multi_chain_draws"
     ALWAYS_ON_NORMAL_TEST = "always_on_normal_test"
     STANDARDIZED_DISCREPANCIES = "standardized_discrepancies"
     CONSTRAINED_NORMAL_REFERENCE = "constrained_normal_reference"
@@ -47,8 +47,8 @@ VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
         description="Typed private helpers for references, draw summaries, and assertions.",
     ),
     ValidationPlanItem(
-        stage=ValidationStage.INDEPENDENT_CHAINS,
-        description="Run a compiled sampler repeatedly to build explicit multi-chain draws.",
+        stage=ValidationStage.PUBLIC_MULTI_CHAIN_DRAWS,
+        description="Use the public num_chains sampling API to obtain validation draws.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.ALWAYS_ON_NORMAL_TEST,
@@ -75,9 +75,10 @@ VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
 
 @dataclass(frozen=True)
 class ChainRunSpec:
-    """Sampler settings for repeated independent chains."""
+    """Sampler settings for public multi-chain validation runs."""
 
-    seeds: tuple[int, ...]
+    seed: int
+    num_chains: int
     num_warmup: int
     num_samples: int
 
@@ -151,13 +152,13 @@ def summarize_scalar_draws(
     raise _not_implemented(ValidationStage.PRIVATE_HELPERS)
 
 
-def draw_independent_chains(
+def draw_validation_chains(
     bound: BoundModel,
     *,
     run: ChainRunSpec,
 ) -> Mapping[str, jax.Array]:
-    """Stage 3: draw explicit independent chains for a bound model."""
-    raise _not_implemented(ValidationStage.INDEPENDENT_CHAINS)
+    """Stage 3: draw validation chains through the public sampling API."""
+    raise _not_implemented(ValidationStage.PUBLIC_MULTI_CHAIN_DRAWS)
 
 
 def assert_normal_known_scale_matches_reference(
