@@ -21,6 +21,7 @@ Run the optional checks from the repository root:
 ```bash
 uv run --script scripts/check_stan_log_density_reference.py
 uv run --script scripts/check_stan_posterior_reference.py
+uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
 
 The log-density check compares jaxstan's unconstrained compiled log density to
@@ -32,4 +33,6 @@ jaxstan receives the corresponding unconstrained values; both include the
 Jacobian adjustment.
 
 The posterior check runs Stan and jaxstan on the same fixed data and compares
-posterior means using the combined Monte Carlo standard error.
+posterior means using the combined Monte Carlo standard error. The stress script
+repeats this comparison over configurable seeds and reports sampling time
+summaries for both systems.

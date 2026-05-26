@@ -148,12 +148,15 @@ Run fixed-data Stan comparisons with:
 ```bash
 uv run --script scripts/check_stan_log_density_reference.py
 uv run --script scripts/check_stan_posterior_reference.py
+uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
 
 The log-density script compares jaxstan's unconstrained compiled density against
 CmdStan at equivalent parameter values, with known Normal constants restored for
 these fixtures. The posterior script compares jaxstan and Stan posterior means
-using combined MCSE-scaled discrepancies.
+using combined MCSE-scaled discrepancies. The stress script repeats the Stan
+posterior comparison across seeds and reports sampling time summaries for both
+jaxstan and Stan.
 
 ## Development
 
