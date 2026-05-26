@@ -21,7 +21,8 @@ from jaxstanv5.model.bound import BoundModel
 class ValidationStage(Enum):
     """Ordered stages for the Normal-path validation harness."""
 
-    ANALYTIC_NORMAL_REFERENCE = "analytic_normal_reference"
+    ANALYTIC_SCALAR_NORMAL_REFERENCE = "analytic_scalar_normal_reference"
+    ANALYTIC_HIERARCHICAL_NORMAL_REFERENCE = "analytic_hierarchical_normal_reference"
     PRIVATE_HELPERS = "private_helpers"
     PUBLIC_MULTI_CHAIN_DRAWS = "public_multi_chain_draws"
     ALWAYS_ON_NORMAL_TEST = "always_on_normal_test"
@@ -31,45 +32,66 @@ class ValidationStage(Enum):
     SBC_REFERENCE = "sbc_reference"
 
 
+class ValidationStageStatus(Enum):
+    """Implementation status for one validation-plan item."""
+
+    IMPLEMENTED = "implemented"
+    PLANNED = "planned"
+
+
 @dataclass(frozen=True)
 class ValidationPlanItem:
     """One planned validation stage."""
 
     stage: ValidationStage
+    status: ValidationStageStatus
     description: str
 
 
 VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
     ValidationPlanItem(
-        stage=ValidationStage.ANALYTIC_NORMAL_REFERENCE,
-        description="Analytic posterior references for Normal known-scale models.",
+        stage=ValidationStage.ANALYTIC_SCALAR_NORMAL_REFERENCE,
+        status=ValidationStageStatus.IMPLEMENTED,
+        description="Analytic posterior reference for scalar Normal known-scale models.",
+    ),
+    ValidationPlanItem(
+        stage=ValidationStage.ANALYTIC_HIERARCHICAL_NORMAL_REFERENCE,
+        status=ValidationStageStatus.IMPLEMENTED,
+        description="Analytic posterior reference for hierarchical Normal known-scale models.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.PRIVATE_HELPERS,
+        status=ValidationStageStatus.PLANNED,
         description="Typed private helpers for references, draw summaries, and assertions.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.PUBLIC_MULTI_CHAIN_DRAWS,
+        status=ValidationStageStatus.PLANNED,
         description="Use the public num_chains sampling API to obtain validation draws.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.ALWAYS_ON_NORMAL_TEST,
+        status=ValidationStageStatus.PLANNED,
         description="Fast CI test for analytic Normal posterior mean, sd, ESS, and R-hat.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.STANDARDIZED_DISCREPANCIES,
+        status=ValidationStageStatus.PLANNED,
         description="Record signed z-scores and k_min values for posterior summaries.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.CONSTRAINED_NORMAL_REFERENCE,
+        status=ValidationStageStatus.PLANNED,
         description="Numerical reference for a positive-scale Normal model.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.STAN_REFERENCE,
+        status=ValidationStageStatus.PLANNED,
         description="Slow fixed-data posterior summary comparisons against Stan.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.SBC_REFERENCE,
+        status=ValidationStageStatus.PLANNED,
         description="Simulation-based calibration rank checks over generated datasets.",
     ),
 )
@@ -154,7 +176,7 @@ def normal_known_scale_reference(
     prior_scale: float,
     obs_scale: float,
 ) -> ScalarReference:
-    """Stage 1: return the analytic posterior for a Normal known-scale model.
+    """Implemented stage: return the analytic posterior for a Normal known-scale model.
 
     Model:
         ``mu ~ Normal(prior_loc, prior_scale)``
@@ -188,7 +210,7 @@ def hierarchical_normal_known_scale_reference(
     group_scale: float,
     obs_scale: float,
 ) -> HierarchicalNormalReference:
-    """Stage 1: return analytic references for a Normal-Normal hierarchy.
+    """Implemented stage: return analytic references for a Normal-Normal hierarchy.
 
     ``y`` must be rectangular with shape ``(num_groups, observations_per_group)``.
 
