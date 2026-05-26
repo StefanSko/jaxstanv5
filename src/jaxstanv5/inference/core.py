@@ -50,8 +50,8 @@ class SamplerResult:
     Attributes
     ----------
     samples
-        Parameter names to arrays of shape ``(1, num_samples, *param_shape)``.
-        The leading dimension is the chain (always 1 for single-chain NUTS).
+        Parameter names to arrays of shape ``(num_chains, num_samples, *param_shape)``.
+        The leading dimension is the chain.
     """
 
     samples: dict[str, jax.Array]
@@ -96,6 +96,51 @@ def _constrain_sample_values(
     return result
 
 
+def _sample_one_chain(
+    bound: BoundModel,
+    warmup_run: _WindowAdaptationRun,
+    draw_samples: _DrawSamples,
+    rng_key: jax.Array,
+    *,
+    num_warmup: int,
+    num_samples: int,
+) -> dict[str, jax.Array]:
+    """Draw one NUTS chain for a bound model.
+
+    Returns arrays with shape ``(1, num_samples, *param_shape)``.  The single
+    leading chain axis keeps the one-chain path compatible with stacked
+    multi-chain results.
+    """
+    init_q = jnp.zeros(bound.n_params)
+    warmup_key, sample_key = jax.random.split(rng_key)
+
+    (last_state, tuned_params), _ = warmup_run(warmup_key, init_q, num_steps=num_warmup)
+
+    sample_keys = jax.random.split(sample_key, num_samples)
+    _, positions = draw_samples(
+        last_state,
+        sample_keys,
+        tuned_params["step_size"],
+        tuned_params["inverse_mass_matrix"],
+    )
+
+    unconstrained = _unflatten_samples(positions, bound.param_shapes)
+    return _constrain_sample_values(unconstrained, bound.meta)
+
+
+def _stack_chain_samples(
+    chain_samples: tuple[dict[str, jax.Array], ...],
+) -> dict[str, jax.Array]:
+    """Stack one-or-more one-chain sample dictionaries along the chain axis."""
+    if len(chain_samples) == 0:
+        raise ValueError("At least one chain is required")
+
+    result: dict[str, jax.Array] = {}
+    for name in chain_samples[0]:
+        result[name] = jnp.concatenate(tuple(samples[name] for samples in chain_samples), axis=0)
+    return result
+
+
 @dataclass(frozen=True, init=False)
 class CompiledSampler:
     """Reusable NUTS sampler for one bound model shape.
@@ -129,28 +174,29 @@ class CompiledSampler:
         seed: int,
         num_warmup: int,
         num_samples: int,
+        *,
+        num_chains: int = 1,
     ) -> SamplerResult:
         """Draw posterior samples with the compiled sampler."""
+        if num_chains < 1:
+            raise ValueError("num_chains must be at least 1")
         if self._bound.n_params == 0:
             return SamplerResult(samples={})
 
         key = jax.random.PRNGKey(seed)
-        init_q = jnp.zeros(self._bound.n_params)
-
-        (last_state, tuned_params), _ = self._warmup_run(key, init_q, num_steps=num_warmup)
-
-        key, sample_key = jax.random.split(key)
-        sample_keys = jax.random.split(sample_key, num_samples)
-        _, positions = self._draw_samples(
-            last_state,
-            sample_keys,
-            tuned_params["step_size"],
-            tuned_params["inverse_mass_matrix"],
+        chain_keys = jax.random.split(key, num_chains)
+        chain_samples = tuple(
+            _sample_one_chain(
+                self._bound,
+                self._warmup_run,
+                self._draw_samples,
+                chain_key,
+                num_warmup=num_warmup,
+                num_samples=num_samples,
+            )
+            for chain_key in chain_keys
         )
-
-        unconstrained = _unflatten_samples(positions, self._bound.param_shapes)
-        constrained = _constrain_sample_values(unconstrained, self._bound.meta)
-        return SamplerResult(samples=constrained)
+        return SamplerResult(samples=_stack_chain_samples(chain_samples))
 
 
 def compile_sampler(bound: BoundModel) -> CompiledSampler:
@@ -217,6 +263,8 @@ def sample(
     seed: int,
     num_warmup: int,
     num_samples: int,
+    *,
+    num_chains: int = 1,
 ) -> SamplerResult:
     """Draw posterior samples via NUTS with window adaptation.
 
@@ -229,7 +277,9 @@ def sample(
     num_warmup
         Number of warmup / adaptation steps.
     num_samples
-        Number of post-warmup draws.
+        Number of post-warmup draws per chain.
+    num_chains
+        Number of independent NUTS chains to run.
 
     Returns
     -------
@@ -240,4 +290,5 @@ def sample(
         seed=seed,
         num_warmup=num_warmup,
         num_samples=num_samples,
+        num_chains=num_chains,
     )

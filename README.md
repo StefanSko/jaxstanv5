@@ -46,15 +46,15 @@ x_data = jnp.linspace(-3.0, 3.0, 50)
 y_data = 2.0 + 0.5 * x_data
 
 bound = LinearRegression.bind(x=x_data, y=y_data)
-result = sample(bound, seed=42, num_warmup=200, num_samples=500)
+result = sample(bound, seed=42, num_warmup=200, num_samples=500, num_chains=4)
 
 rhat_values = rhat(result.samples)
 ess_values = ess(result.samples)
 ```
 
 `result.samples` maps parameter names to JAX arrays with shape
-`(1, num_samples, *param_shape)`. The leading dimension is the chain dimension;
-currently sampling is single-chain NUTS.
+`(num_chains, num_samples, *param_shape)`. The leading dimension is the chain
+dimension. If `num_chains` is omitted, sampling defaults to one chain.
 
 ## Model declarations
 

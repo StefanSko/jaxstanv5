@@ -33,14 +33,32 @@ def test_simple_normal_sampling_returns_finite_samples_and_diagnostics() -> None
     assert ess_vals["mu"] > 50
 
 
+def test_simple_normal_sampling_supports_multiple_chains_and_diagnostics() -> None:
+    bound = bind_model(SimpleNormal, y=jnp.array(2.0))
+    result = sample(bound, seed=42, num_warmup=200, num_samples=500, num_chains=4)
+
+    assert result.samples["mu"].shape == (4, 500)
+    assert jnp.all(jnp.isfinite(result.samples["mu"]))
+    assert not jnp.allclose(result.samples["mu"][0], result.samples["mu"][1])
+
+    rhat_vals = rhat(result.samples)
+    ess_vals = ess(result.samples)
+    assert rhat_vals["mu"] < 1.10
+    assert ess_vals["mu"] > 100
+
+
 def test_compiled_sampler_reuses_bound_model_for_multiple_runs() -> None:
     bound = bind_model(SimpleNormal, y=jnp.array(2.0))
     compiled = compile_sampler(bound)
 
     first = compiled.sample(seed=10, num_warmup=50, num_samples=100)
     second = compiled.sample(seed=11, num_warmup=50, num_samples=100)
+    multi_chain = compiled.sample(seed=12, num_warmup=50, num_samples=100, num_chains=2)
 
     assert first.samples["mu"].shape == (1, 100)
     assert second.samples["mu"].shape == (1, 100)
+    assert multi_chain.samples["mu"].shape == (2, 100)
     assert jnp.all(jnp.isfinite(first.samples["mu"]))
     assert jnp.all(jnp.isfinite(second.samples["mu"]))
+    assert jnp.all(jnp.isfinite(multi_chain.samples["mu"]))
+    assert not jnp.allclose(multi_chain.samples["mu"][0], multi_chain.samples["mu"][1])

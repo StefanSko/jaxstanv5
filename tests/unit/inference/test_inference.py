@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import jax.numpy as jnp
+import pytest
 
 from jaxstanv5.constraints import Positive
 from jaxstanv5.distributions import Normal
@@ -89,6 +90,25 @@ def test_sampler_result_dataclass() -> None:
     assert r.samples["mu"].shape == (1, 3)
 
 
+def test_sample_rejects_non_positive_chain_count() -> None:
+    meta = ModelMeta(
+        params={},
+        data_slots=[],
+        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
+        expressions={},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={"y": jnp.array(0.0)},
+        param_shapes={},
+        n_params=0,
+    )
+    compiled = compile_sampler(bound)
+
+    with pytest.raises(ValueError, match="num_chains"):
+        compiled.sample(seed=0, num_warmup=10, num_samples=10, num_chains=0)
+
+
 def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None:
     meta = ModelMeta(
         params={},
@@ -105,4 +125,6 @@ def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None
 
     compiled = compile_sampler(bound)
 
-    assert compiled.sample(seed=0, num_warmup=10, num_samples=10) == SamplerResult(samples={})
+    assert compiled.sample(seed=0, num_warmup=10, num_samples=10, num_chains=4) == SamplerResult(
+        samples={}
+    )

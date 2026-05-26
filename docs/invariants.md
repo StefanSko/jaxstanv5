@@ -44,3 +44,4 @@ Core invariants that should remain true as the codebase changes.
 - Log density = constraint Jacobians + parameter priors + all observed
   likelihood terms.
 - Sampling returns constrained parameter values.
+- Sampling result arrays have shape `(num_chains, num_samples, *param_shape)`.
