@@ -7,11 +7,13 @@ stage green at a time without adding runtime API surface.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
 import jax
+import jax.numpy as jnp
 
 from jaxstanv5.model.bound import BoundModel
 
@@ -40,7 +42,7 @@ class ValidationPlanItem:
 VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
     ValidationPlanItem(
         stage=ValidationStage.ANALYTIC_NORMAL_REFERENCE,
-        description="Analytic posterior reference for the Normal known-scale model.",
+        description="Analytic posterior references for Normal known-scale models.",
     ),
     ValidationPlanItem(
         stage=ValidationStage.PRIVATE_HELPERS,
@@ -93,6 +95,14 @@ class ScalarReference:
 
 
 @dataclass(frozen=True)
+class HierarchicalNormalReference:
+    """Reference posterior summaries for a Normal-Normal hierarchy."""
+
+    population: ScalarReference
+    groups: tuple[ScalarReference, ...]
+
+
+@dataclass(frozen=True)
 class ScalarDrawSummary:
     """Posterior draw summary for one scalar parameter."""
 
@@ -131,6 +141,11 @@ def _not_implemented(stage: ValidationStage) -> NotImplementedError:
     return NotImplementedError(f"Validation stage is not implemented yet: {stage.value}")
 
 
+def _require_positive_scale(name: str, value: float) -> None:
+    if value <= 0.0:
+        raise ValueError(f"{name} must be positive")
+
+
 def normal_known_scale_reference(
     *,
     parameter: str,
@@ -139,8 +154,104 @@ def normal_known_scale_reference(
     prior_scale: float,
     obs_scale: float,
 ) -> ScalarReference:
-    """Stage 1: return the analytic posterior for a Normal known-scale model."""
-    raise _not_implemented(ValidationStage.ANALYTIC_NORMAL_REFERENCE)
+    """Stage 1: return the analytic posterior for a Normal known-scale model.
+
+    Model:
+        ``mu ~ Normal(prior_loc, prior_scale)``
+        ``y_i ~ Normal(mu, obs_scale)``
+    """
+    _require_positive_scale("prior_scale", prior_scale)
+    _require_positive_scale("obs_scale", obs_scale)
+
+    y_values = jnp.ravel(jnp.asarray(y))
+    prior_precision = 1.0 / prior_scale**2
+    obs_precision = 1.0 / obs_scale**2
+    posterior_precision = prior_precision + float(y_values.size) * obs_precision
+    posterior_variance = 1.0 / posterior_precision
+    posterior_mean = posterior_variance * (
+        prior_loc * prior_precision + float(jnp.sum(y_values)) * obs_precision
+    )
+    return ScalarReference(
+        parameter=parameter,
+        mean=posterior_mean,
+        sd=math.sqrt(posterior_variance),
+    )
+
+
+def hierarchical_normal_known_scale_reference(
+    *,
+    population_parameter: str,
+    group_parameter: str,
+    y: jax.Array,
+    prior_loc: float,
+    prior_scale: float,
+    group_scale: float,
+    obs_scale: float,
+) -> HierarchicalNormalReference:
+    """Stage 1: return analytic references for a Normal-Normal hierarchy.
+
+    ``y`` must be rectangular with shape ``(num_groups, observations_per_group)``.
+
+    Model:
+        ``mu_pop ~ Normal(prior_loc, prior_scale)``
+        ``theta_g ~ Normal(mu_pop, group_scale)``
+        ``y_gi ~ Normal(theta_g, obs_scale)``
+    """
+    _require_positive_scale("prior_scale", prior_scale)
+    _require_positive_scale("group_scale", group_scale)
+    _require_positive_scale("obs_scale", obs_scale)
+
+    y_values = jnp.asarray(y)
+    if y_values.ndim != 2:
+        raise ValueError("y must have shape (num_groups, observations_per_group)")
+
+    num_groups = y_values.shape[0]
+    observations_per_group = y_values.shape[1]
+    dimension = num_groups + 1
+
+    prior_precision = 1.0 / prior_scale**2
+    group_precision = 1.0 / group_scale**2
+    obs_precision = 1.0 / obs_scale**2
+
+    precision = jnp.zeros((dimension, dimension))
+    information = jnp.zeros((dimension,))
+
+    precision = precision.at[0, 0].add(prior_precision)
+    information = information.at[0].add(prior_loc * prior_precision)
+
+    for group_index in range(num_groups):
+        theta_index = group_index + 1
+        precision = precision.at[0, 0].add(group_precision)
+        precision = precision.at[theta_index, theta_index].add(group_precision)
+        precision = precision.at[0, theta_index].add(-group_precision)
+        precision = precision.at[theta_index, 0].add(-group_precision)
+        precision = precision.at[theta_index, theta_index].add(
+            observations_per_group * obs_precision
+        )
+        information = information.at[theta_index].add(
+            jnp.sum(y_values[group_index]) * obs_precision
+        )
+
+    posterior_mean = jnp.linalg.solve(precision, information)
+    posterior_covariance = jnp.linalg.inv(precision)
+    posterior_sd = jnp.sqrt(jnp.diag(posterior_covariance))
+
+    groups = tuple(
+        ScalarReference(
+            parameter=f"{group_parameter}[{group_index}]",
+            mean=float(posterior_mean[group_index + 1]),
+            sd=float(posterior_sd[group_index + 1]),
+        )
+        for group_index in range(num_groups)
+    )
+    return HierarchicalNormalReference(
+        population=ScalarReference(
+            parameter=population_parameter,
+            mean=float(posterior_mean[0]),
+            sd=float(posterior_sd[0]),
+        ),
+        groups=groups,
+    )
 
 
 def summarize_scalar_draws(
