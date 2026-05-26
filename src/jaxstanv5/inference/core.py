@@ -141,6 +141,64 @@ def _stack_chain_samples(
     return result
 
 
+def _sample_chains_loop(
+    bound: BoundModel,
+    warmup_run: _WindowAdaptationRun,
+    draw_samples: _DrawSamples,
+    rng_key: jax.Array,
+    *,
+    num_chains: int,
+    num_warmup: int,
+    num_samples: int,
+) -> dict[str, jax.Array]:
+    """Draw independent chains with a simple Python loop."""
+    chain_keys = jax.random.split(rng_key, num_chains)
+    chain_samples = tuple(
+        _sample_one_chain(
+            bound,
+            warmup_run,
+            draw_samples,
+            chain_key,
+            num_warmup=num_warmup,
+            num_samples=num_samples,
+        )
+        for chain_key in chain_keys
+    )
+    return _stack_chain_samples(chain_samples)
+
+
+def _sample_chains_vmap(
+    bound: BoundModel,
+    warmup_run: _WindowAdaptationRun,
+    draw_samples: _DrawSamples,
+    rng_key: jax.Array,
+    *,
+    num_chains: int,
+    num_warmup: int,
+    num_samples: int,
+) -> dict[str, jax.Array]:
+    """Experimental private candidate for batched chain sampling.
+
+    This is intentionally not used by the public sampler yet.  It exists so we
+    can compare behavior and speed against the loop implementation before
+    deciding whether batched chains are worth making the default.
+    """
+    chain_keys = jax.random.split(rng_key, num_chains)
+
+    def sample_chain(chain_key: jax.Array) -> dict[str, jax.Array]:
+        return _sample_one_chain(
+            bound,
+            warmup_run,
+            draw_samples,
+            chain_key,
+            num_warmup=num_warmup,
+            num_samples=num_samples,
+        )
+
+    batched = jax.vmap(sample_chain)(chain_keys)
+    return {name: jnp.squeeze(values, axis=1) for name, values in batched.items()}
+
+
 @dataclass(frozen=True, init=False)
 class CompiledSampler:
     """Reusable NUTS sampler for one bound model shape.
@@ -184,19 +242,16 @@ class CompiledSampler:
             return SamplerResult(samples={})
 
         key = jax.random.PRNGKey(seed)
-        chain_keys = jax.random.split(key, num_chains)
-        chain_samples = tuple(
-            _sample_one_chain(
-                self._bound,
-                self._warmup_run,
-                self._draw_samples,
-                chain_key,
-                num_warmup=num_warmup,
-                num_samples=num_samples,
-            )
-            for chain_key in chain_keys
+        samples = _sample_chains_loop(
+            self._bound,
+            self._warmup_run,
+            self._draw_samples,
+            key,
+            num_chains=num_chains,
+            num_warmup=num_warmup,
+            num_samples=num_samples,
         )
-        return SamplerResult(samples=_stack_chain_samples(chain_samples))
+        return SamplerResult(samples=samples)
 
 
 def compile_sampler(bound: BoundModel) -> CompiledSampler:
