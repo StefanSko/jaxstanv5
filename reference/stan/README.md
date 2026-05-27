@@ -33,6 +33,8 @@ jaxstan receives the corresponding unconstrained values; both include the
 Jacobian adjustment.
 
 The posterior check runs Stan and jaxstan on the same fixed data and compares
-posterior means using the combined Monte Carlo standard error. The stress script
-repeats this comparison over configurable seeds and reports sampling time
-summaries for both systems.
+posterior means using the combined Monte Carlo standard error. The posterior
+scripts align jaxstan's `target_acceptance_rate` with Stan's `adapt_delta` and
+default to `0.95`. The stress script repeats this comparison over configurable
+seeds and reports NUTS diagnostics (divergences, acceptance rates, and
+integration-step counts) and sampling time summaries for both systems.

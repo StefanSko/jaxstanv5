@@ -22,7 +22,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 import jax
 import jax.numpy as jnp
@@ -31,7 +31,7 @@ jax.config.update("jax_enable_x64", True)
 logging.getLogger("cmdstanpy").setLevel(logging.WARNING)
 
 if TYPE_CHECKING:
-    from jaxstanv5.inference import CompiledSampler
+    from jaxstanv5.inference import CompiledSampler, NutsDiagnosticTrace, SamplerResult
     from jaxstanv5.model.bound import BoundModel
 
 
@@ -47,7 +47,7 @@ class StressConfig:
     max_k: float
     max_rhat: float
     min_ess: float
-    stan_adapt_delta: float
+    target_acceptance_rate: float
 
 
 @dataclass(frozen=True)
@@ -85,6 +85,13 @@ class CaseRunSuccess:
     stan_rhat: float
     jaxstan_ess: float
     stan_ess: float
+    jaxstan_warmup_divergences: int
+    jaxstan_sampling_divergences: int
+    stan_sampling_divergences: int
+    jaxstan_acceptance_rate_mean: float
+    stan_acceptance_rate_mean: float
+    jaxstan_max_integration_steps: int
+    stan_max_leapfrog_steps: int
     jaxstan_sampling_seconds: float
     stan_sampling_seconds: float
 
@@ -108,6 +115,23 @@ class StressResult:
     successes: tuple[CaseRunSuccess, ...]
     failures: tuple[CaseRunFailure, ...]
     elapsed_seconds: float
+
+
+class StanDiagnosticTrace(NamedTuple):
+    """Selected Stan sampler diagnostics."""
+
+    is_divergent: jax.Array
+    acceptance_rate: jax.Array
+    num_leapfrog_steps: jax.Array
+    tree_depth: jax.Array
+    energy: jax.Array
+
+
+class StanDrawResult(NamedTuple):
+    """Stan scalar samples and sampler diagnostics."""
+
+    samples: Mapping[str, jax.Array]
+    diagnostics: StanDiagnosticTrace
 
 
 class StanFit(Protocol):
@@ -272,14 +296,17 @@ def _build_bound(case: PosteriorCase, data: Mapping[str, object]) -> BoundModel:
     raise ValueError(f"Unknown posterior case: {case.name}")
 
 
-def _prepare_runtime(case: PosteriorCase) -> CaseRuntime:
+def _prepare_runtime(case: PosteriorCase, config: StressConfig) -> CaseRuntime:
     from jaxstanv5.inference import compile_sampler
 
     data = _load_json(case.stan_data)
     bound = _build_bound(case, data)
     return CaseRuntime(
         case=case,
-        compiled_sampler=compile_sampler(bound),
+        compiled_sampler=compile_sampler(
+            bound,
+            target_acceptance_rate=config.target_acceptance_rate,
+        ),
         stan_model=_cmdstan_model(case.stan_model),
     )
 
@@ -289,14 +316,45 @@ def _block_until_ready(samples: Mapping[str, jax.Array]) -> None:
         value.block_until_ready()
 
 
-def _stan_scalar_samples(fit: StanFit, *, parameter: str) -> Mapping[str, jax.Array]:
+def _block_trace(trace: NutsDiagnosticTrace) -> None:
+    trace.is_divergent.block_until_ready()
+    trace.acceptance_rate.block_until_ready()
+    trace.num_integration_steps.block_until_ready()
+    trace.num_trajectory_expansions.block_until_ready()
+    trace.energy.block_until_ready()
+
+
+def _block_result(result: SamplerResult) -> None:
+    _block_until_ready(result.samples)
+    _block_trace(result.diagnostics.warmup)
+    _block_trace(result.diagnostics.sampling)
+
+
+def _draw_column(
+    draws: jax.Array,
+    column_names: tuple[str, ...],
+    *,
+    name: str,
+) -> jax.Array:
+    if name not in column_names:
+        raise ValueError(f"Missing Stan posterior draws for column: {name}")
+    column_index = column_names.index(name)
+    return draws[:, :, column_index].T
+
+
+def _stan_draw_result(fit: StanFit, *, parameter: str) -> StanDrawResult:
     column_names = tuple(fit.column_names)
-    if parameter not in column_names:
-        raise ValueError(f"Missing Stan posterior draws for parameter: {parameter}")
-    column_index = column_names.index(parameter)
     draws = jnp.asarray(fit.draws(inc_warmup=False, concat_chains=False))
-    parameter_draws = draws[:, :, column_index].T
-    return {parameter: jnp.asarray(parameter_draws)}
+    return StanDrawResult(
+        samples={parameter: _draw_column(draws, column_names, name=parameter)},
+        diagnostics=StanDiagnosticTrace(
+            is_divergent=_draw_column(draws, column_names, name="divergent__").astype(bool),
+            acceptance_rate=_draw_column(draws, column_names, name="accept_stat__"),
+            num_leapfrog_steps=_draw_column(draws, column_names, name="n_leapfrog__"),
+            tree_depth=_draw_column(draws, column_names, name="treedepth__"),
+            energy=_draw_column(draws, column_names, name="energy__"),
+        ),
+    )
 
 
 def _warm_jaxstan(runtimes: tuple[CaseRuntime, ...], config: StressConfig) -> None:
@@ -307,7 +365,7 @@ def _warm_jaxstan(runtimes: tuple[CaseRuntime, ...], config: StressConfig) -> No
             num_warmup=config.num_warmup,
             num_samples=config.num_samples,
         )
-        _block_until_ready(result.samples)
+        _block_result(result)
 
 
 def _run_case(
@@ -330,7 +388,7 @@ def _run_case(
         num_warmup=config.num_warmup,
         num_samples=config.num_samples,
     )
-    _block_until_ready(jaxstan_result.samples)
+    _block_result(jaxstan_result)
     jaxstan_sampling_seconds = time.perf_counter() - jaxstan_start
     jaxstan_summary = summarize_scalar_draws(jaxstan_result.samples, parameter=case.parameter)
 
@@ -345,11 +403,11 @@ def _run_case(
             iter_sampling=config.num_samples,
             show_progress=False,
             output_dir=output_dir,
-            adapt_delta=config.stan_adapt_delta,
+            adapt_delta=config.target_acceptance_rate,
         )
         stan_sampling_seconds = time.perf_counter() - stan_start
-        stan_samples = _stan_scalar_samples(stan_fit, parameter=case.parameter)
-    stan_summary = summarize_scalar_draws(stan_samples, parameter=case.parameter)
+        stan_draw_result = _stan_draw_result(stan_fit, parameter=case.parameter)
+    stan_summary = summarize_scalar_draws(stan_draw_result.samples, parameter=case.parameter)
 
     results = compare_against_stan_reference(
         jaxstan_summaries=(jaxstan_summary,),
@@ -372,13 +430,24 @@ def _run_case(
         stan_rhat=stan_summary.rhat,
         jaxstan_ess=jaxstan_summary.ess,
         stan_ess=stan_summary.ess,
+        jaxstan_warmup_divergences=int(jnp.sum(jaxstan_result.diagnostics.warmup.is_divergent)),
+        jaxstan_sampling_divergences=int(jnp.sum(jaxstan_result.diagnostics.sampling.is_divergent)),
+        stan_sampling_divergences=int(jnp.sum(stan_draw_result.diagnostics.is_divergent)),
+        jaxstan_acceptance_rate_mean=float(
+            jnp.mean(jaxstan_result.diagnostics.sampling.acceptance_rate)
+        ),
+        stan_acceptance_rate_mean=float(jnp.mean(stan_draw_result.diagnostics.acceptance_rate)),
+        jaxstan_max_integration_steps=int(
+            jnp.max(jaxstan_result.diagnostics.sampling.num_integration_steps)
+        ),
+        stan_max_leapfrog_steps=int(jnp.max(stan_draw_result.diagnostics.num_leapfrog_steps)),
         jaxstan_sampling_seconds=jaxstan_sampling_seconds,
         stan_sampling_seconds=stan_sampling_seconds,
     )
 
 
 def _run_stress(config: StressConfig) -> StressResult:
-    runtimes = tuple(_prepare_runtime(case) for case in _cases(_repo_root()))
+    runtimes = tuple(_prepare_runtime(case, config) for case in _cases(_repo_root()))
     _warm_jaxstan(runtimes, config)
 
     successes: list[CaseRunSuccess] = []
@@ -467,7 +536,7 @@ def _print_result(config: StressConfig, result: StressResult) -> None:
     print(
         f"runs_per_case={config.runs} thresholds: max_k={config.max_k:.2f} "
         f"max_rhat={config.max_rhat:.3f} min_ess={config.min_ess:.1f} "
-        f"stan_adapt_delta={config.stan_adapt_delta:.3f}"
+        f"target_acceptance_rate={config.target_acceptance_rate:.3f}"
     )
     print(
         f"elapsed={result.elapsed_seconds:.2f}s avg={result.elapsed_seconds / total:.3f}s/case-run"
@@ -506,6 +575,62 @@ def _print_result(config: StressConfig, result: StressResult) -> None:
             "stan_ess",
             _values_by_case(result.successes, case_name=case_name, selector="stan_ess"),
         )
+        _print_distribution(
+            "jaxstan_warmup_divergences",
+            _values_by_case(
+                result.successes,
+                case_name=case_name,
+                selector="jaxstan_warmup_divergences",
+            ),
+        )
+        _print_distribution(
+            "jaxstan_sampling_divergences",
+            _values_by_case(
+                result.successes,
+                case_name=case_name,
+                selector="jaxstan_sampling_divergences",
+            ),
+        )
+        _print_distribution(
+            "stan_sampling_divergences",
+            _values_by_case(
+                result.successes,
+                case_name=case_name,
+                selector="stan_sampling_divergences",
+            ),
+        )
+        _print_distribution(
+            "jaxstan_acceptance_rate_mean",
+            _values_by_case(
+                result.successes,
+                case_name=case_name,
+                selector="jaxstan_acceptance_rate_mean",
+            ),
+        )
+        _print_distribution(
+            "stan_acceptance_rate_mean",
+            _values_by_case(
+                result.successes,
+                case_name=case_name,
+                selector="stan_acceptance_rate_mean",
+            ),
+        )
+        _print_distribution(
+            "jaxstan_max_integration_steps",
+            _values_by_case(
+                result.successes,
+                case_name=case_name,
+                selector="jaxstan_max_integration_steps",
+            ),
+        )
+        _print_distribution(
+            "stan_max_leapfrog_steps",
+            _values_by_case(
+                result.successes,
+                case_name=case_name,
+                selector="stan_max_leapfrog_steps",
+            ),
+        )
         _print_timing(result.successes, case_name=case_name)
 
     if result.failures:
@@ -530,7 +655,7 @@ def _parse_args() -> StressConfig:
     parser.add_argument("--max-k", type=float, default=4.0)
     parser.add_argument("--max-rhat", type=float, default=1.05)
     parser.add_argument("--min-ess", type=float, default=100.0)
-    parser.add_argument("--stan-adapt-delta", type=float, default=0.95)
+    parser.add_argument("--target-acceptance-rate", type=float, default=0.95)
     args = parser.parse_args()
     return StressConfig(
         runs=args.runs,
@@ -541,7 +666,7 @@ def _parse_args() -> StressConfig:
         max_k=args.max_k,
         max_rhat=args.max_rhat,
         min_ess=args.min_ess,
-        stan_adapt_delta=args.stan_adapt_delta,
+        target_acceptance_rate=args.target_acceptance_rate,
     )
 
 
@@ -561,8 +686,8 @@ def main() -> int:
         raise ValueError("--max-rhat must be positive")
     if config.min_ess <= 0.0:
         raise ValueError("--min-ess must be positive")
-    if not 0.0 < config.stan_adapt_delta < 1.0:
-        raise ValueError("--stan-adapt-delta must be in (0, 1)")
+    if not 0.0 < config.target_acceptance_rate < 1.0:
+        raise ValueError("--target-acceptance-rate must be in (0, 1)")
 
     _add_repo_paths()
     result = _run_stress(config)

@@ -45,3 +45,6 @@ Core invariants that should remain true as the codebase changes.
   likelihood terms.
 - Sampling returns constrained parameter values.
 - Sampling result arrays have shape `(num_chains, num_samples, *param_shape)`.
+- NUTS diagnostics are recorded separately for warmup and post-warmup sampling.
+- Diagnostic arrays have shape `(num_chains, num_steps)`, where `num_steps` is
+  `num_warmup` for warmup diagnostics and `num_samples` for sampling diagnostics.

@@ -14,5 +14,7 @@ public model declaration, binding, compiler, inference, or diagnostics workflow.
 validation. It records the planned Normal-path harness stages before they are
 implemented: analytic references, typed summaries, public multi-chain draws,
 standardized discrepancies, constrained references, Stan comparisons, and
-separate SBC checks. Stan fixtures live in `reference/stan/` and are exercised by
-standalone scripts rather than the default pytest suite.
+separate SBC checks. Public sampler results also expose NUTS diagnostics,
+including divergences, for warmup and post-warmup sampling. Stan fixtures live in
+`reference/stan/` and are exercised by standalone scripts rather than the default
+pytest suite.

@@ -50,11 +50,16 @@ result = sample(bound, seed=42, num_warmup=200, num_samples=500, num_chains=4)
 
 rhat_values = rhat(result.samples)
 ess_values = ess(result.samples)
+sampling_divergences = result.diagnostics.sampling.is_divergent
 ```
 
 `result.samples` maps parameter names to JAX arrays with shape
 `(num_chains, num_samples, *param_shape)`. The leading dimension is the chain
 dimension. If `num_chains` is omitted, sampling defaults to one chain.
+
+`result.diagnostics` records NUTS diagnostics for warmup and post-warmup
+sampling. Diagnostic arrays have shape `(num_chains, num_steps)`. Use
+`target_acceptance_rate` on `sample(...)` to tune the NUTS adaptation target.
 
 ## Model declarations
 
@@ -154,9 +159,10 @@ uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 The log-density script compares jaxstan's unconstrained compiled density against
 CmdStan at equivalent parameter values, with known Normal constants restored for
 these fixtures. The posterior script compares jaxstan and Stan posterior means
-using combined MCSE-scaled discrepancies. The stress script repeats the Stan
-posterior comparison across seeds and reports sampling time summaries for both
-jaxstan and Stan.
+using combined MCSE-scaled discrepancies. The posterior scripts align jaxstan's
+`target_acceptance_rate` with Stan's `adapt_delta` and default to `0.95`. The
+stress script repeats the Stan posterior comparison across seeds and reports
+sampling time summaries for both jaxstan and Stan.
 
 ## Development
 

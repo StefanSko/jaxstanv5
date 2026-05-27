@@ -50,6 +50,10 @@ def test_multi_chain_sampling_preserves_shapes_constraints_and_diagnostics() -> 
 
     assert result.samples["theta"].shape == (3, 300, 3)
     assert result.samples["sigma"].shape == (3, 300)
+    assert result.diagnostics.warmup.is_divergent.shape == (3, 200)
+    assert result.diagnostics.sampling.is_divergent.shape == (3, 300)
+    assert result.diagnostics.sampling.acceptance_rate.shape == (3, 300)
+    assert result.diagnostics.sampling.num_integration_steps.shape == (3, 300)
     assert jnp.all(jnp.isfinite(result.samples["theta"]))
     assert jnp.all(jnp.isfinite(result.samples["sigma"]))
     assert jnp.all(result.samples["sigma"] > 0.0)

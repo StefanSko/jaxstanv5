@@ -21,7 +21,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 import jax
 import jax.numpy as jnp
@@ -30,6 +30,7 @@ jax.config.update("jax_enable_x64", True)
 logging.getLogger("cmdstanpy").setLevel(logging.WARNING)
 
 if TYPE_CHECKING:
+    from jaxstanv5.inference import NutsDiagnosticTrace, SamplerResult
     from jaxstanv5.model.bound import BoundModel
 
 
@@ -44,6 +45,7 @@ class PosteriorConfig:
     max_k: float
     max_rhat: float
     min_ess: float
+    target_acceptance_rate: float
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,25 @@ class PosteriorCaseResult:
     stan_rhat: float
     jaxstan_ess: float
     stan_ess: float
+    jaxstan_warmup_divergences: int
+    jaxstan_sampling_divergences: int
+    stan_sampling_divergences: int
+    jaxstan_acceptance_rate_mean: float
+    stan_acceptance_rate_mean: float
+
+
+class StanDiagnosticTrace(NamedTuple):
+    """Selected Stan sampler diagnostics."""
+
+    is_divergent: jax.Array
+    acceptance_rate: jax.Array
+
+
+class StanDrawResult(NamedTuple):
+    """Stan scalar samples and sampler diagnostics."""
+
+    samples: Mapping[str, jax.Array]
+    diagnostics: StanDiagnosticTrace
 
 
 class StanFit(Protocol):
@@ -100,6 +121,7 @@ class StanPosteriorModel(Protocol):
         iter_sampling: int,
         show_progress: bool,
         output_dir: str,
+        adapt_delta: float,
     ) -> StanFit:
         """Run Stan NUTS."""
         ...
@@ -238,14 +260,42 @@ def _block_until_ready(samples: Mapping[str, jax.Array]) -> None:
         value.block_until_ready()
 
 
-def _stan_scalar_samples(fit: StanFit, *, parameter: str) -> Mapping[str, jax.Array]:
+def _block_trace(trace: NutsDiagnosticTrace) -> None:
+    trace.is_divergent.block_until_ready()
+    trace.acceptance_rate.block_until_ready()
+    trace.num_integration_steps.block_until_ready()
+    trace.num_trajectory_expansions.block_until_ready()
+    trace.energy.block_until_ready()
+
+
+def _block_result(result: SamplerResult) -> None:
+    _block_until_ready(result.samples)
+    _block_trace(result.diagnostics.warmup)
+    _block_trace(result.diagnostics.sampling)
+
+
+def _draw_column(
+    draws: jax.Array,
+    column_names: tuple[str, ...],
+    *,
+    name: str,
+) -> jax.Array:
+    if name not in column_names:
+        raise ValueError(f"Missing Stan posterior draws for column: {name}")
+    column_index = column_names.index(name)
+    return draws[:, :, column_index].T
+
+
+def _stan_draw_result(fit: StanFit, *, parameter: str) -> StanDrawResult:
     column_names = tuple(fit.column_names)
-    if parameter not in column_names:
-        raise ValueError(f"Missing Stan posterior draws for parameter: {parameter}")
-    column_index = column_names.index(parameter)
     draws = jnp.asarray(fit.draws(inc_warmup=False, concat_chains=False))
-    parameter_draws = draws[:, :, column_index].T
-    return {parameter: jnp.asarray(parameter_draws)}
+    return StanDrawResult(
+        samples={parameter: _draw_column(draws, column_names, name=parameter)},
+        diagnostics=StanDiagnosticTrace(
+            is_divergent=_draw_column(draws, column_names, name="divergent__").astype(bool),
+            acceptance_rate=_draw_column(draws, column_names, name="accept_stat__"),
+        ),
+    )
 
 
 def _run_case(case: PosteriorCase, config: PosteriorConfig, *, seed: int) -> PosteriorCaseResult:
@@ -257,14 +307,14 @@ def _run_case(case: PosteriorCase, config: PosteriorConfig, *, seed: int) -> Pos
 
     data = _load_json(case.stan_data)
     bound = _build_bound(case, data)
-    compiled = compile_sampler(bound)
+    compiled = compile_sampler(bound, target_acceptance_rate=config.target_acceptance_rate)
     jaxstan_result = compiled.sample(
         seed=seed,
         num_chains=config.num_chains,
         num_warmup=config.num_warmup,
         num_samples=config.num_samples,
     )
-    _block_until_ready(jaxstan_result.samples)
+    _block_result(jaxstan_result)
     jaxstan_summary = summarize_scalar_draws(jaxstan_result.samples, parameter=case.parameter)
 
     stan_model = _cmdstan_model(case.stan_model)
@@ -278,9 +328,10 @@ def _run_case(case: PosteriorCase, config: PosteriorConfig, *, seed: int) -> Pos
             iter_sampling=config.num_samples,
             show_progress=False,
             output_dir=output_dir,
+            adapt_delta=config.target_acceptance_rate,
         )
-        stan_samples = _stan_scalar_samples(stan_fit, parameter=case.parameter)
-    stan_summary = summarize_scalar_draws(stan_samples, parameter=case.parameter)
+        stan_draw_result = _stan_draw_result(stan_fit, parameter=case.parameter)
+    stan_summary = summarize_scalar_draws(stan_draw_result.samples, parameter=case.parameter)
 
     results = compare_against_stan_reference(
         jaxstan_summaries=(jaxstan_summary,),
@@ -302,6 +353,13 @@ def _run_case(case: PosteriorCase, config: PosteriorConfig, *, seed: int) -> Pos
         stan_rhat=stan_summary.rhat,
         jaxstan_ess=jaxstan_summary.ess,
         stan_ess=stan_summary.ess,
+        jaxstan_warmup_divergences=int(jnp.sum(jaxstan_result.diagnostics.warmup.is_divergent)),
+        jaxstan_sampling_divergences=int(jnp.sum(jaxstan_result.diagnostics.sampling.is_divergent)),
+        stan_sampling_divergences=int(jnp.sum(stan_draw_result.diagnostics.is_divergent)),
+        jaxstan_acceptance_rate_mean=float(
+            jnp.mean(jaxstan_result.diagnostics.sampling.acceptance_rate)
+        ),
+        stan_acceptance_rate_mean=float(jnp.mean(stan_draw_result.diagnostics.acceptance_rate)),
     )
 
 
@@ -316,6 +374,7 @@ def _parse_args() -> PosteriorConfig:
     parser.add_argument("--max-k", type=float, default=4.0)
     parser.add_argument("--max-rhat", type=float, default=1.05)
     parser.add_argument("--min-ess", type=float, default=100.0)
+    parser.add_argument("--target-acceptance-rate", type=float, default=0.95)
     args = parser.parse_args()
     return PosteriorConfig(
         seed=args.seed,
@@ -325,6 +384,7 @@ def _parse_args() -> PosteriorConfig:
         max_k=args.max_k,
         max_rhat=args.max_rhat,
         min_ess=args.min_ess,
+        target_acceptance_rate=args.target_acceptance_rate,
     )
 
 
@@ -338,6 +398,8 @@ def main() -> int:
         raise ValueError("--num-samples must be at least 1")
     if config.max_k <= 0.0:
         raise ValueError("--max-k must be positive")
+    if not 0.0 < config.target_acceptance_rate < 1.0:
+        raise ValueError("--target-acceptance-rate must be in (0, 1)")
 
     _add_repo_paths()
     failures = 0
@@ -351,13 +413,19 @@ def main() -> int:
                 f"jaxstan_mean={result.jaxstan_mean:.6f} stan_mean={result.stan_mean:.6f} "
                 f"combined_mcse={result.combined_mcse:.6f} "
                 f"jaxstan_rhat={result.jaxstan_rhat:.4f} stan_rhat={result.stan_rhat:.4f} "
-                f"jaxstan_ess={result.jaxstan_ess:.1f} stan_ess={result.stan_ess:.1f}"
+                f"jaxstan_ess={result.jaxstan_ess:.1f} stan_ess={result.stan_ess:.1f} "
+                f"jaxstan_warmup_divergences={result.jaxstan_warmup_divergences} "
+                f"jaxstan_sampling_divergences={result.jaxstan_sampling_divergences} "
+                f"stan_sampling_divergences={result.stan_sampling_divergences} "
+                f"jaxstan_acceptance={result.jaxstan_acceptance_rate_mean:.3f} "
+                f"stan_acceptance={result.stan_acceptance_rate_mean:.3f}"
             )
         except Exception as exc:  # noqa: BLE001 - this helper reports reference failures.
             failures += 1
             print(f"FAIL case={case.name} error={type(exc).__name__}: {exc}")
 
     elapsed = time.perf_counter() - start
+    print(f"target_acceptance_rate={config.target_acceptance_rate:.3f}")
     print(f"elapsed={elapsed:.2f}s")
     if failures:
         print(f"failures={failures}")

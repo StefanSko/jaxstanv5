@@ -26,6 +26,12 @@ def test_simple_normal_sampling_returns_finite_samples_and_diagnostics() -> None
     assert "mu" in result.samples
     assert result.samples["mu"].shape == (1, 500)
     assert jnp.all(jnp.isfinite(result.samples["mu"]))
+    assert result.diagnostics.warmup.is_divergent.shape == (1, 200)
+    assert result.diagnostics.sampling.is_divergent.shape == (1, 500)
+    assert result.diagnostics.sampling.acceptance_rate.shape == (1, 500)
+    assert result.diagnostics.sampling.num_integration_steps.shape == (1, 500)
+    assert jnp.all(jnp.isfinite(result.diagnostics.sampling.acceptance_rate))
+    assert not jnp.any(result.diagnostics.sampling.is_divergent)
 
     rhat_vals = rhat(result.samples)
     ess_vals = ess(result.samples)
@@ -39,6 +45,12 @@ def test_simple_normal_sampling_supports_multiple_chains_and_diagnostics() -> No
 
     assert result.samples["mu"].shape == (4, 500)
     assert jnp.all(jnp.isfinite(result.samples["mu"]))
+    assert result.diagnostics.warmup.is_divergent.shape == (4, 200)
+    assert result.diagnostics.sampling.is_divergent.shape == (4, 500)
+    assert result.diagnostics.sampling.acceptance_rate.shape == (4, 500)
+    assert result.diagnostics.sampling.num_integration_steps.shape == (4, 500)
+    assert jnp.all(jnp.isfinite(result.diagnostics.sampling.acceptance_rate))
+    assert not jnp.any(result.diagnostics.sampling.is_divergent)
     assert not jnp.allclose(result.samples["mu"][0], result.samples["mu"][1])
 
     rhat_vals = rhat(result.samples)
@@ -58,6 +70,10 @@ def test_compiled_sampler_reuses_bound_model_for_multiple_runs() -> None:
     assert first.samples["mu"].shape == (1, 100)
     assert second.samples["mu"].shape == (1, 100)
     assert multi_chain.samples["mu"].shape == (2, 100)
+    assert first.diagnostics.warmup.is_divergent.shape == (1, 50)
+    assert first.diagnostics.sampling.is_divergent.shape == (1, 100)
+    assert multi_chain.diagnostics.warmup.is_divergent.shape == (2, 50)
+    assert multi_chain.diagnostics.sampling.is_divergent.shape == (2, 100)
     assert jnp.all(jnp.isfinite(first.samples["mu"]))
     assert jnp.all(jnp.isfinite(second.samples["mu"]))
     assert jnp.all(jnp.isfinite(multi_chain.samples["mu"]))

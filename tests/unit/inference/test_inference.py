@@ -8,6 +8,8 @@ import pytest
 from jaxstanv5.constraints import Positive
 from jaxstanv5.distributions import Normal
 from jaxstanv5.inference.core import (
+    NutsDiagnosticTrace,
+    SamplerDiagnostics,
     SamplerResult,
     _constrain_sample_values,
     _unflatten_samples,
@@ -82,12 +84,39 @@ def test_constrain_sample_values_applies_parameter_constraints() -> None:
 
 
 def test_sampler_result_dataclass() -> None:
-    """SamplerResult is a frozen dataclass with a samples dict."""
+    """SamplerResult is a frozen dataclass with samples and diagnostics."""
     samples = {"mu": jnp.array([[1.0, 2.0, 3.0]])}
-    r = SamplerResult(samples=samples)
+    trace = NutsDiagnosticTrace(
+        is_divergent=jnp.array([[False, False, False]]),
+        acceptance_rate=jnp.array([[0.8, 0.9, 1.0]]),
+        num_integration_steps=jnp.array([[1, 3, 7]]),
+        num_trajectory_expansions=jnp.array([[1, 2, 3]]),
+        energy=jnp.array([[1.0, 1.5, 2.0]]),
+    )
+    diagnostics = SamplerDiagnostics(warmup=trace, sampling=trace)
+    r = SamplerResult(samples=samples, diagnostics=diagnostics)
 
     assert r.samples is samples
     assert r.samples["mu"].shape == (1, 3)
+    assert r.diagnostics is diagnostics
+
+
+def test_compile_sampler_rejects_invalid_target_acceptance_rate() -> None:
+    meta = ModelMeta(
+        params={},
+        data_slots=[],
+        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
+        expressions={},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={"y": jnp.array(0.0)},
+        param_shapes={},
+        n_params=0,
+    )
+
+    with pytest.raises(ValueError, match="target_acceptance_rate"):
+        compile_sampler(bound, target_acceptance_rate=1.0)
 
 
 def test_sample_rejects_non_positive_chain_count() -> None:
@@ -125,6 +154,12 @@ def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None
 
     compiled = compile_sampler(bound)
 
-    assert compiled.sample(seed=0, num_warmup=10, num_samples=10, num_chains=4) == SamplerResult(
-        samples={}
-    )
+    result = compiled.sample(seed=0, num_warmup=10, num_samples=10, num_chains=4)
+
+    assert result.samples == {}
+    assert result.diagnostics.warmup.is_divergent.shape == (4, 10)
+    assert result.diagnostics.sampling.is_divergent.shape == (4, 10)
+    assert not jnp.any(result.diagnostics.warmup.is_divergent)
+    assert not jnp.any(result.diagnostics.sampling.is_divergent)
+    assert jnp.all(jnp.isnan(result.diagnostics.warmup.acceptance_rate))
+    assert jnp.all(jnp.isnan(result.diagnostics.sampling.acceptance_rate))

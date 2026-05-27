@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import NamedTuple, Protocol, cast
 
 import blackjax
 import jax
@@ -13,6 +13,56 @@ import jax.numpy as jnp
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta
+
+
+class NutsDiagnosticTrace(NamedTuple):
+    """Per-transition NUTS diagnostics.
+
+    Arrays have shape ``(num_chains, num_steps)`` on public sampler results.
+    """
+
+    is_divergent: jax.Array
+    acceptance_rate: jax.Array
+    num_integration_steps: jax.Array
+    num_trajectory_expansions: jax.Array
+    energy: jax.Array
+
+
+class SamplerDiagnostics(NamedTuple):
+    """Warmup and post-warmup NUTS diagnostics."""
+
+    warmup: NutsDiagnosticTrace
+    sampling: NutsDiagnosticTrace
+
+
+class _NutsInfo(Protocol):
+    """Subset of BlackJAX NUTSInfo used in public diagnostics."""
+
+    is_divergent: jax.Array
+    acceptance_rate: jax.Array
+    num_integration_steps: jax.Array
+    num_trajectory_expansions: jax.Array
+    energy: jax.Array
+
+
+class _AdaptationInfo(Protocol):
+    """Subset of BlackJAX warmup info used in public diagnostics."""
+
+    info: _NutsInfo
+
+
+class _SampleBlock(NamedTuple):
+    """Stacked unconstrained positions and diagnostics for one chain."""
+
+    positions: jax.Array
+    diagnostics: NutsDiagnosticTrace
+
+
+class _ChainSample(NamedTuple):
+    """Samples and diagnostics for one or more chains."""
+
+    samples: dict[str, jax.Array]
+    diagnostics: SamplerDiagnostics
 
 
 class _WindowAdaptationRun(Protocol):
@@ -28,7 +78,7 @@ class _WindowAdaptationRun(Protocol):
         position: jax.Array,
         *,
         num_steps: int,
-    ) -> tuple[tuple[object, Mapping[str, jax.Array]], object]: ...
+    ) -> tuple[tuple[object, Mapping[str, jax.Array]], _AdaptationInfo]: ...
 
 
 class _DrawSamples(Protocol):
@@ -40,7 +90,7 @@ class _DrawSamples(Protocol):
         sample_keys: jax.Array,
         step_size: jax.Array,
         inverse_mass_matrix: jax.Array,
-    ) -> tuple[object, jax.Array]: ...
+    ) -> tuple[object, _SampleBlock]: ...
 
 
 @dataclass(frozen=True)
@@ -52,9 +102,48 @@ class SamplerResult:
     samples
         Parameter names to arrays of shape ``(num_chains, num_samples, *param_shape)``.
         The leading dimension is the chain.
+    diagnostics
+        Warmup and post-warmup NUTS diagnostics with arrays of shape
+        ``(num_chains, num_steps)``.
     """
 
     samples: dict[str, jax.Array]
+    diagnostics: SamplerDiagnostics
+
+
+def _diagnostic_trace_from_nuts_info(info: _NutsInfo) -> NutsDiagnosticTrace:
+    """Extract backend-neutral scalar diagnostics from BlackJAX NUTS info."""
+    return NutsDiagnosticTrace(
+        is_divergent=jnp.asarray(info.is_divergent),
+        acceptance_rate=jnp.asarray(info.acceptance_rate),
+        num_integration_steps=jnp.asarray(info.num_integration_steps),
+        num_trajectory_expansions=jnp.asarray(info.num_trajectory_expansions),
+        energy=jnp.asarray(info.energy),
+    )
+
+
+def _empty_diagnostic_trace(shape: tuple[int, int]) -> NutsDiagnosticTrace:
+    """Return placeholder diagnostics for models with no NUTS transitions."""
+    return NutsDiagnosticTrace(
+        is_divergent=jnp.zeros(shape, dtype=bool),
+        acceptance_rate=jnp.full(shape, jnp.nan),
+        num_integration_steps=jnp.zeros(shape, dtype=jnp.int32),
+        num_trajectory_expansions=jnp.zeros(shape, dtype=jnp.int32),
+        energy=jnp.full(shape, jnp.nan),
+    )
+
+
+def _empty_sampler_diagnostics(
+    *,
+    num_chains: int,
+    num_warmup: int,
+    num_samples: int,
+) -> SamplerDiagnostics:
+    """Return placeholder diagnostics for parameterless models."""
+    return SamplerDiagnostics(
+        warmup=_empty_diagnostic_trace((num_chains, num_warmup)),
+        sampling=_empty_diagnostic_trace((num_chains, num_samples)),
+    )
 
 
 def _unflatten_samples(
@@ -104,28 +193,39 @@ def _sample_one_chain(
     *,
     num_warmup: int,
     num_samples: int,
-) -> dict[str, jax.Array]:
+) -> _ChainSample:
     """Draw one NUTS chain for a bound model.
 
-    Returns arrays with shape ``(1, num_samples, *param_shape)``.  The single
+    Sample arrays have shape ``(1, num_samples, *param_shape)``.  The single
     leading chain axis keeps the one-chain path compatible with stacked
     multi-chain results.
     """
     init_q = jnp.zeros(bound.n_params)
     warmup_key, sample_key = jax.random.split(rng_key)
 
-    (last_state, tuned_params), _ = warmup_run(warmup_key, init_q, num_steps=num_warmup)
+    (last_state, tuned_params), warmup_info = warmup_run(
+        warmup_key,
+        init_q,
+        num_steps=num_warmup,
+    )
+    warmup_diagnostics = _diagnostic_trace_from_nuts_info(warmup_info.info)
 
     sample_keys = jax.random.split(sample_key, num_samples)
-    _, positions = draw_samples(
+    _, sample_block = draw_samples(
         last_state,
         sample_keys,
         tuned_params["step_size"],
         tuned_params["inverse_mass_matrix"],
     )
 
-    unconstrained = _unflatten_samples(positions, bound.param_shapes)
-    return _constrain_sample_values(unconstrained, bound.meta)
+    unconstrained = _unflatten_samples(sample_block.positions, bound.param_shapes)
+    return _ChainSample(
+        samples=_constrain_sample_values(unconstrained, bound.meta),
+        diagnostics=SamplerDiagnostics(
+            warmup=warmup_diagnostics,
+            sampling=sample_block.diagnostics,
+        ),
+    )
 
 
 def _sample_chains(
@@ -137,11 +237,11 @@ def _sample_chains(
     num_chains: int,
     num_warmup: int,
     num_samples: int,
-) -> dict[str, jax.Array]:
+) -> _ChainSample:
     """Draw independent chains by batching the one-chain sampler."""
     chain_keys = jax.random.split(rng_key, num_chains)
 
-    def sample_chain(chain_key: jax.Array) -> dict[str, jax.Array]:
+    def sample_chain(chain_key: jax.Array) -> _ChainSample:
         return _sample_one_chain(
             bound,
             warmup_run,
@@ -152,7 +252,10 @@ def _sample_chains(
         )
 
     batched = jax.vmap(sample_chain)(chain_keys)
-    return {name: jnp.squeeze(values, axis=1) for name, values in batched.items()}
+    return _ChainSample(
+        samples={name: jnp.squeeze(values, axis=1) for name, values in batched.samples.items()},
+        diagnostics=batched.diagnostics,
+    )
 
 
 @dataclass(frozen=True, init=False)
@@ -195,10 +298,17 @@ class CompiledSampler:
         if num_chains < 1:
             raise ValueError("num_chains must be at least 1")
         if self._bound.n_params == 0:
-            return SamplerResult(samples={})
+            return SamplerResult(
+                samples={},
+                diagnostics=_empty_sampler_diagnostics(
+                    num_chains=num_chains,
+                    num_warmup=num_warmup,
+                    num_samples=num_samples,
+                ),
+            )
 
         key = jax.random.PRNGKey(seed)
-        samples = _sample_chains(
+        chain_sample = _sample_chains(
             self._bound,
             self._warmup_run,
             self._draw_samples,
@@ -207,11 +317,22 @@ class CompiledSampler:
             num_warmup=num_warmup,
             num_samples=num_samples,
         )
-        return SamplerResult(samples=samples)
+        return SamplerResult(samples=chain_sample.samples, diagnostics=chain_sample.diagnostics)
 
 
-def compile_sampler(bound: BoundModel) -> CompiledSampler:
+def _validate_target_acceptance_rate(target_acceptance_rate: float) -> None:
+    """Validate the NUTS adaptation target acceptance rate."""
+    if not 0.0 < target_acceptance_rate < 1.0:
+        raise ValueError("target_acceptance_rate must be in (0, 1)")
+
+
+def compile_sampler(
+    bound: BoundModel,
+    *,
+    target_acceptance_rate: float = 0.8,
+) -> CompiledSampler:
     """Compile a reusable NUTS sampler for one bound model shape."""
+    _validate_target_acceptance_rate(target_acceptance_rate)
     if bound.n_params == 0:
 
         def warmup_run(
@@ -219,7 +340,7 @@ def compile_sampler(bound: BoundModel) -> CompiledSampler:
             position: jax.Array,
             *,
             num_steps: int,
-        ) -> tuple[tuple[object, Mapping[str, jax.Array]], object]:
+        ) -> tuple[tuple[object, Mapping[str, jax.Array]], _AdaptationInfo]:
             raise RuntimeError("Parameterless models do not run warmup")
 
         def _draw_samples(
@@ -227,7 +348,7 @@ def compile_sampler(bound: BoundModel) -> CompiledSampler:
             sample_keys: jax.Array,
             step_size: jax.Array,
             inverse_mass_matrix: jax.Array,
-        ) -> tuple[object, jax.Array]:
+        ) -> tuple[object, _SampleBlock]:
             raise RuntimeError("Parameterless models do not draw samples")
 
         return CompiledSampler._create(
@@ -239,6 +360,7 @@ def compile_sampler(bound: BoundModel) -> CompiledSampler:
         blackjax.nuts,
         log_prob,
         is_mass_matrix_diagonal=True,
+        target_acceptance_rate=target_acceptance_rate,
     )
     warmup_run = cast(_WindowAdaptationRun, warmup.run)
     nuts_kernel = blackjax.nuts.build_kernel()
@@ -249,16 +371,20 @@ def compile_sampler(bound: BoundModel) -> CompiledSampler:
         sample_keys: jax.Array,
         step_size: jax.Array,
         inverse_mass_matrix: jax.Array,
-    ) -> tuple[object, jax.Array]:
-        def step(carry: object, key: jax.Array) -> tuple[object, jax.Array]:
-            new_state, _ = nuts_kernel(
+    ) -> tuple[object, _SampleBlock]:
+        def step(carry: object, key: jax.Array) -> tuple[object, _SampleBlock]:
+            new_state, info = nuts_kernel(
                 key,
                 carry,
                 log_prob,
                 step_size,
                 inverse_mass_matrix,
             )
-            return new_state, new_state.position
+            diagnostics = _diagnostic_trace_from_nuts_info(cast(_NutsInfo, info))
+            return new_state, _SampleBlock(
+                positions=new_state.position,
+                diagnostics=diagnostics,
+            )
 
         return jax.lax.scan(step, state, sample_keys)
 
@@ -276,6 +402,7 @@ def sample(
     num_samples: int,
     *,
     num_chains: int = 1,
+    target_acceptance_rate: float = 0.8,
 ) -> SamplerResult:
     """Draw posterior samples via NUTS with window adaptation.
 
@@ -291,13 +418,15 @@ def sample(
         Number of post-warmup draws per chain.
     num_chains
         Number of independent NUTS chains to run.
+    target_acceptance_rate
+        Target acceptance probability used during NUTS step-size adaptation.
 
     Returns
     -------
     SamplerResult
         Drawn samples per parameter.
     """
-    return compile_sampler(bound).sample(
+    return compile_sampler(bound, target_acceptance_rate=target_acceptance_rate).sample(
         seed=seed,
         num_warmup=num_warmup,
         num_samples=num_samples,
