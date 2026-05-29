@@ -26,3 +26,16 @@ class Distribution(Protocol):
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise log-probability for ``x``."""
         ...
+
+
+class SampleableDistribution(Distribution, Protocol):
+    """Probability distribution that can draw prior-predictive samples."""
+
+    def sample(
+        self,
+        key: jax.Array,
+        *,
+        sample_shape: tuple[int, ...] = (),
+    ) -> jax.Array:
+        """Draw samples with leading ``sample_shape`` dimensions."""
+        ...
