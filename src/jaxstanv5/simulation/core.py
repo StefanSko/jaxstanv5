@@ -8,14 +8,20 @@ from typing import Protocol, cast
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import ndtr, ndtri
 
 from jaxstanv5.compiler.core import _evaluate_distribution
 from jaxstanv5.constraints.core import Constraint
-from jaxstanv5.constraints.positive import Positive
-from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.distributions.normal import Normal
+from jaxstanv5.distributions.core import (
+    Distribution,
+    InverseCdfDistribution,
+    SampleableDistribution,
+)
 from jaxstanv5.model.decorator import ModelMeta, _resolve_param_shape
+from jaxstanv5.simulation.domains import (
+    ScalarIntervalDomain,
+    UnconstrainedDomain,
+    prior_domain_for_constraint,
+)
 
 
 class _ModelWithMeta(Protocol):
@@ -33,32 +39,22 @@ class PriorPredictiveResult:
     data: Mapping[str, jax.Array]
 
 
-def _sample_normal(
+def _sample_interval_restricted(
     key: jax.Array,
-    distribution: Normal,
+    distribution: InverseCdfDistribution,
+    domain: ScalarIntervalDomain,
     *,
     sample_shape: tuple[int, ...],
 ) -> jax.Array:
-    return distribution.sample(key, sample_shape=sample_shape)
-
-
-def _sample_positive_normal(
-    key: jax.Array,
-    distribution: Normal,
-    *,
-    sample_shape: tuple[int, ...],
-) -> jax.Array:
-    loc = jnp.asarray(distribution.loc)
-    scale = jnp.asarray(distribution.scale)
-    event_shape = jnp.broadcast_shapes(loc.shape, scale.shape)
-    lower_probability = ndtr((0.0 - loc) / scale)
+    lower_probability = jnp.asarray(0.0) if domain.lower is None else distribution.cdf(domain.lower)
+    upper_probability = jnp.asarray(1.0) if domain.upper is None else distribution.cdf(domain.upper)
     uniform = jax.random.uniform(
         key,
-        shape=sample_shape + event_shape,
+        shape=sample_shape + distribution.batch_shape(),
         minval=lower_probability,
-        maxval=1.0,
+        maxval=upper_probability,
     )
-    return loc + scale * ndtri(uniform)
+    return distribution.icdf(uniform)
 
 
 def _sample_prior_value(
@@ -69,19 +65,26 @@ def _sample_prior_value(
     sample_shape: tuple[int, ...],
 ) -> jax.Array:
     """Sample one parameter value from its constrained-space prior."""
-    if constraint is None:
-        if isinstance(distribution, Normal):
-            return _sample_normal(key, distribution, sample_shape=sample_shape)
+    domain = prior_domain_for_constraint(constraint)
+
+    if isinstance(domain, UnconstrainedDomain):
+        if isinstance(distribution, SampleableDistribution):
+            return distribution.sample(key, sample_shape=sample_shape)
         raise TypeError(f"Unsupported prior distribution: {type(distribution).__name__}")
 
-    if isinstance(constraint, Positive):
-        if isinstance(distribution, Normal):
-            return _sample_positive_normal(key, distribution, sample_shape=sample_shape)
+    if isinstance(domain, ScalarIntervalDomain):
+        if isinstance(distribution, InverseCdfDistribution):
+            return _sample_interval_restricted(
+                key,
+                distribution,
+                domain,
+                sample_shape=sample_shape,
+            )
         raise TypeError(
-            f"Unsupported positive-constrained prior distribution: {type(distribution).__name__}"
+            f"Unsupported interval-constrained prior distribution: {type(distribution).__name__}"
         )
 
-    raise TypeError(f"Unsupported prior constraint: {type(constraint).__name__}")
+    raise TypeError(f"Unsupported prior domain: {type(domain).__name__}")
 
 
 def _model_meta(model_cls: object) -> ModelMeta:
