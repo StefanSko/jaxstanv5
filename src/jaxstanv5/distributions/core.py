@@ -1,6 +1,6 @@
 """Core distribution types."""
 
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 import jax
 from jax.typing import ArrayLike
@@ -28,6 +28,7 @@ class Distribution(Protocol):
         ...
 
 
+@runtime_checkable
 class SampleableDistribution(Distribution, Protocol):
     """Probability distribution that can draw prior-predictive samples."""
 
@@ -38,4 +39,21 @@ class SampleableDistribution(Distribution, Protocol):
         sample_shape: tuple[int, ...] = (),
     ) -> jax.Array:
         """Draw samples with leading ``sample_shape`` dimensions."""
+        ...
+
+
+@runtime_checkable
+class InverseCdfDistribution(SampleableDistribution, Protocol):
+    """Scalar distribution supporting inverse-CDF restricted sampling."""
+
+    def batch_shape(self) -> tuple[int, ...]:
+        """Return broadcasted non-sample dimensions for distribution parameters."""
+        ...
+
+    def cdf(self, x: DistributionValue) -> jax.Array:
+        """Return element-wise cumulative probability at ``x``."""
+        ...
+
+    def icdf(self, p: DistributionValue) -> jax.Array:
+        """Return element-wise inverse cumulative probability at ``p``."""
         ...
