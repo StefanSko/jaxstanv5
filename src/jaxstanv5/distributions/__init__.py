@@ -7,6 +7,7 @@ from jaxstanv5.distributions.core import (
     LogProbability,
 )
 from jaxstanv5.distributions.normal import Normal
+from jaxstanv5.distributions.uniform import Uniform
 
 __all__ = [
     "Distribution",
@@ -14,4 +15,5 @@ __all__ = [
     "DistributionValue",
     "LogProbability",
     "Normal",
+    "Uniform",
 ]

@@ -7,7 +7,7 @@ import pytest
 
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import Normal, Uniform
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation import simulate_prior_predictive
 
@@ -32,6 +32,13 @@ class PositiveScalePrior:
     """Positive-constrained prior-only model."""
 
     sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+
+
+@model
+class PositiveUniformPrior:
+    """Positive-constrained Uniform prior-only model."""
+
+    theta = Param(Uniform(-1.0, 2.0), constraint=Positive())
 
 
 class UnsupportedDistribution:
@@ -90,6 +97,14 @@ def test_simulate_prior_predictive_draws_positive_constrained_parameters() -> No
 
     assert result.parameters["sigma"].shape == (9,)
     assert jnp.all(result.parameters["sigma"] > 0.0)
+
+
+def test_simulate_prior_predictive_draws_positive_constrained_uniform_parameters() -> None:
+    result = simulate_prior_predictive(PositiveUniformPrior, seed=31, num_samples=20)
+
+    assert result.parameters["theta"].shape == (20,)
+    assert jnp.all(result.parameters["theta"] >= 0.0)
+    assert jnp.all(result.parameters["theta"] <= 2.0)
 
 
 def test_simulate_prior_predictive_resolves_data_dependent_parameter_shape() -> None:
