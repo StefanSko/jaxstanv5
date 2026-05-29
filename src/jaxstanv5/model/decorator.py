@@ -114,8 +114,8 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                 )
             )
 
-    if not observed_nodes:
-        raise ValueError("Model declarations must contain at least one Observed")
+    if not params and not observed_nodes:
+        raise ValueError("Model declarations must contain at least one stochastic declaration")
 
     return _ResolvedDeclarations(
         params=params,

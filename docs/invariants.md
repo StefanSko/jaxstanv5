@@ -14,7 +14,8 @@ Core invariants that should remain true as the codebase changes.
 - `Param(...)` is latent and contributes a prior term.
 - `Data()` is known input and contributes no log-density term.
 - `Observed(...)` is known input and contributes a likelihood term.
-- A model has one or more `Observed` nodes.
+- A model has one or more stochastic declarations: `Param` or `Observed`.
+- `Observed` nodes are optional; prior-only models are valid.
 - Declaration aliases are invalid: one declaration object maps to one class
   attribute name.
 

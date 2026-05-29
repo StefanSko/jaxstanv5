@@ -15,13 +15,24 @@ def param_size(value: object) -> Data | int | None:
     return cast(Data | int | None, value)
 
 
-def test_private_model_declaration_resolution_rejects_missing_observed_declaration() -> None:
-    class MissingObserved:
+def test_private_model_declaration_resolution_accepts_prior_only_model() -> None:
+    class PriorOnly:
         alpha = Param(Normal(0.0, 1.0))
         x = Data()
 
-    with pytest.raises(ValueError, match="at least one Observed"):
-        _resolve_model_declaration(MissingObserved)
+    meta = _resolve_model_declaration(PriorOnly)
+
+    assert tuple(meta.params) == ("alpha",)
+    assert meta.data_slots == ["x"]
+    assert meta.observed_nodes == ()
+
+
+def test_private_model_declaration_resolution_rejects_data_only_model() -> None:
+    class DataOnly:
+        x = Data()
+
+    with pytest.raises(ValueError, match="at least one stochastic declaration"):
+        _resolve_model_declaration(DataOnly)
 
 
 def test_private_model_declaration_resolution_accepts_multiple_observed_declarations() -> None:

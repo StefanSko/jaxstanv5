@@ -157,3 +157,19 @@ def test_no_params() -> None:
 
     expected = Normal(0.0, 1.0).log_prob(jnp.array(2.0))
     assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compile_log_density_handles_prior_only_model() -> None:
+    meta = ModelMeta(
+        params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
+        data_slots=[],
+        observed_nodes=(),
+        expressions={},
+    )
+    bound = BoundModel(meta=meta, data={}, param_shapes={"mu": ()}, n_params=1)
+
+    log_prob = compile_log_density(bound)
+    lp = log_prob(jnp.array([0.5]))
+
+    expected = Normal(0.0, 1.0).log_prob(jnp.array(0.5))
+    assert jnp.allclose(lp, expected, atol=1e-6)
