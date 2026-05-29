@@ -162,6 +162,27 @@ class SbcValidationResult:
     num_posterior_draws: int
 
 
+@dataclass(frozen=True)
+class SbcSimulation:
+    """One simulated truth and corresponding posterior model binding for SBC."""
+
+    true_value: float
+    bound: BoundModel
+
+
+@dataclass(frozen=True)
+class SbcRankUniformitySummary:
+    """Binned rank-uniformity diagnostics for SBC ranks."""
+
+    parameter: str
+    ranks: tuple[int, ...]
+    num_posterior_draws: int
+    bin_counts: tuple[int, ...]
+    expected_bin_count: float
+    max_abs_bin_z: float
+    mean_rank_z: float
+
+
 def _not_implemented(stage: ValidationStage) -> NotImplementedError:
     return NotImplementedError(f"Validation stage is not implemented yet: {stage.value}")
 
@@ -536,11 +557,130 @@ def compare_against_stan_reference(
     return tuple(results)
 
 
+def scalar_sbc_rank(
+    samples: Mapping[str, jax.Array],
+    *,
+    parameter: str,
+    true_value: float,
+) -> int:
+    """Return the SBC rank of ``true_value`` among scalar posterior draws."""
+    if parameter not in samples:
+        raise ValueError(f"Missing samples for parameter: {parameter}")
+
+    draws = jnp.asarray(samples[parameter])
+    if draws.ndim != 2:
+        raise ValueError("Scalar SBC draw arrays must have shape (num_chains, num_samples)")
+    if draws.size < 1:
+        raise ValueError("At least one posterior draw is required")
+
+    return int(jnp.sum(draws < true_value))
+
+
 def run_sbc_rank_validation(
     *,
     parameter: str,
-    num_simulations: int,
-    num_posterior_draws: int,
+    simulations: tuple[SbcSimulation, ...],
+    run: ChainRunSpec,
 ) -> SbcValidationResult:
-    """Stage 8: run simulation-based calibration for one scalar parameter."""
-    raise _not_implemented(ValidationStage.SBC_REFERENCE)
+    """Run simulation-based calibration ranks for one scalar parameter."""
+    if len(simulations) == 0:
+        raise ValueError("At least one SBC simulation is required")
+
+    ranks: list[int] = []
+    num_posterior_draws: int | None = None
+    for simulation in simulations:
+        samples = draw_validation_chains(simulation.bound, run=run)
+        draws = jnp.asarray(samples[parameter])
+        posterior_draw_count = int(draws.size)
+        if num_posterior_draws is None:
+            num_posterior_draws = posterior_draw_count
+        elif posterior_draw_count != num_posterior_draws:
+            raise ValueError("All SBC simulations must use the same number of posterior draws")
+        ranks.append(
+            scalar_sbc_rank(samples, parameter=parameter, true_value=simulation.true_value)
+        )
+
+    if num_posterior_draws is None:
+        raise ValueError("At least one posterior draw is required")
+    return SbcValidationResult(
+        parameter=parameter,
+        ranks=tuple(ranks),
+        num_posterior_draws=num_posterior_draws,
+    )
+
+
+def summarize_sbc_rank_uniformity(
+    result: SbcValidationResult,
+    *,
+    num_rank_bins: int,
+) -> SbcRankUniformitySummary:
+    """Summarize rank uniformity with binned z-scores and mean-rank z-score."""
+    if len(result.ranks) == 0:
+        raise ValueError("At least one SBC rank is required")
+    if result.num_posterior_draws < 1:
+        raise ValueError("num_posterior_draws must be positive")
+    if num_rank_bins < 1:
+        raise ValueError("num_rank_bins must be at least 1")
+    rank_categories = result.num_posterior_draws + 1
+    if num_rank_bins > rank_categories:
+        raise ValueError("num_rank_bins cannot exceed num_posterior_draws + 1")
+
+    bin_counts = [0 for _ in range(num_rank_bins)]
+    for rank in result.ranks:
+        if rank < 0 or rank > result.num_posterior_draws:
+            raise ValueError("SBC ranks must be between 0 and num_posterior_draws")
+        bin_index = min((rank * num_rank_bins) // rank_categories, num_rank_bins - 1)
+        bin_counts[bin_index] += 1
+
+    num_simulations = len(result.ranks)
+    expected_bin_count = num_simulations / num_rank_bins
+    bin_probability = 1.0 / num_rank_bins
+    bin_variance = num_simulations * bin_probability * (1.0 - bin_probability)
+    if bin_variance == 0.0:
+        max_abs_bin_z = 0.0
+    else:
+        bin_sd = math.sqrt(bin_variance)
+        max_abs_bin_z = max(abs((count - expected_bin_count) / bin_sd) for count in bin_counts)
+
+    rank_mean = sum(result.ranks) / num_simulations
+    expected_rank_mean = result.num_posterior_draws / 2.0
+    rank_variance = result.num_posterior_draws * (result.num_posterior_draws + 2.0) / 12.0
+    mean_rank_se = math.sqrt(rank_variance / num_simulations)
+    mean_rank_z = 0.0 if mean_rank_se == 0.0 else (rank_mean - expected_rank_mean) / mean_rank_se
+
+    return SbcRankUniformitySummary(
+        parameter=result.parameter,
+        ranks=result.ranks,
+        num_posterior_draws=result.num_posterior_draws,
+        bin_counts=tuple(bin_counts),
+        expected_bin_count=expected_bin_count,
+        max_abs_bin_z=max_abs_bin_z,
+        mean_rank_z=mean_rank_z,
+    )
+
+
+def assert_sbc_rank_uniformity(
+    result: SbcValidationResult,
+    *,
+    num_rank_bins: int,
+    max_abs_bin_z: float,
+    max_abs_mean_rank_z: float,
+) -> SbcRankUniformitySummary:
+    """Assert that SBC ranks are acceptably close to uniform."""
+    if max_abs_bin_z <= 0.0:
+        raise ValueError("max_abs_bin_z must be positive")
+    if max_abs_mean_rank_z <= 0.0:
+        raise ValueError("max_abs_mean_rank_z must be positive")
+
+    summary = summarize_sbc_rank_uniformity(result, num_rank_bins=num_rank_bins)
+    if summary.max_abs_bin_z > max_abs_bin_z:
+        raise AssertionError(
+            f"SBC rank bin z-score for {summary.parameter} is "
+            f"{summary.max_abs_bin_z:.2f}; expected <= {max_abs_bin_z:.2f}"
+        )
+    if abs(summary.mean_rank_z) > max_abs_mean_rank_z:
+        raise AssertionError(
+            f"SBC mean-rank z-score for {summary.parameter} is "
+            f"{summary.mean_rank_z:.2f}; expected absolute value <= {max_abs_mean_rank_z:.2f}"
+        )
+    return summary
