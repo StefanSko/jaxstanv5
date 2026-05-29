@@ -8,6 +8,7 @@ import pytest
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.constraints import Positive
 from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation import simulate_prior_predictive
 
 
@@ -33,12 +34,26 @@ class PositiveScalePrior:
     sigma = Param(Normal(0.0, 1.0), constraint=Positive())
 
 
+class UnsupportedDistribution:
+    """Distribution with no simulation support."""
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return jnp.zeros_like(jnp.asarray(x))
+
+
 @model
 class DataSizedPrior:
     """Data-dependent vector prior."""
 
     n = Data()
     theta = Param(Normal(0.0, 1.0), size=n)
+
+
+@model
+class UnsupportedPrior:
+    """Prior using an unsupported distribution."""
+
+    theta = Param(UnsupportedDistribution())
 
 
 def test_simulate_prior_predictive_draws_prior_only_parameters_with_vmap_shape() -> None:
@@ -48,6 +63,13 @@ def test_simulate_prior_predictive_draws_prior_only_parameters_with_vmap_shape()
     assert result.observed == {}
     assert result.data == {}
     assert jnp.all(jnp.isfinite(result.parameters["mu"]))
+
+
+def test_simulate_prior_predictive_is_deterministic_for_seed() -> None:
+    first = simulate_prior_predictive(PriorOnlyNormal, seed=101, num_samples=4)
+    second = simulate_prior_predictive(PriorOnlyNormal, seed=101, num_samples=4)
+
+    assert jnp.allclose(first.parameters["mu"], second.parameters["mu"])
 
 
 def test_simulate_prior_predictive_draws_observed_values_with_requested_shape() -> None:
@@ -82,6 +104,11 @@ def test_simulate_prior_predictive_rejects_missing_data() -> None:
         simulate_prior_predictive(DataSizedPrior, seed=5, num_samples=2)
 
 
+def test_simulate_prior_predictive_rejects_extra_data() -> None:
+    with pytest.raises(ValueError, match="Unexpected model data"):
+        simulate_prior_predictive(PriorOnlyNormal, seed=5, num_samples=2, data={"x": 1.0})
+
+
 def test_simulate_prior_predictive_rejects_unknown_observed_shape() -> None:
     with pytest.raises(ValueError, match="Unexpected observed shapes"):
         simulate_prior_predictive(
@@ -90,3 +117,31 @@ def test_simulate_prior_predictive_rejects_unknown_observed_shape() -> None:
             num_samples=2,
             observed_shapes={"y": (1,)},
         )
+
+
+def test_simulate_prior_predictive_rejects_negative_observed_shape() -> None:
+    with pytest.raises(ValueError, match="Observed shape dimensions must be non-negative"):
+        simulate_prior_predictive(
+            NormalWithObserved,
+            seed=7,
+            num_samples=2,
+            observed_shapes={"y": (-1,)},
+        )
+
+
+def test_simulate_prior_predictive_rejects_unsupported_prior_distribution() -> None:
+    with pytest.raises(TypeError, match="Unsupported prior distribution"):
+        simulate_prior_predictive(UnsupportedPrior, seed=8, num_samples=2)
+
+
+def test_simulate_prior_predictive_rejects_undecorated_model() -> None:
+    class Undecorated:
+        theta = Param(Normal(0.0, 1.0))
+
+    with pytest.raises(TypeError, match="decorated with @model"):
+        simulate_prior_predictive(Undecorated, seed=9, num_samples=2)
+
+
+def test_simulate_prior_predictive_rejects_non_positive_num_samples() -> None:
+    with pytest.raises(ValueError, match="num_samples must be at least 1"):
+        simulate_prior_predictive(PriorOnlyNormal, seed=10, num_samples=0)
