@@ -108,6 +108,7 @@ class ChainRunSpec:
     num_chains: int
     num_warmup: int
     num_samples: int
+    target_acceptance_rate: float = 0.8
 
 
 @dataclass(frozen=True)
@@ -350,6 +351,7 @@ def draw_validation_chains(
         num_chains=run.num_chains,
         num_warmup=run.num_warmup,
         num_samples=run.num_samples,
+        target_acceptance_rate=run.target_acceptance_rate,
     ).samples
 
 

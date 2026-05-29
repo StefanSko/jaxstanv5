@@ -142,7 +142,12 @@ The compiled log density is:
 parameter priors + constraint Jacobians + all observed likelihood terms
 ```
 
-## Stan reference checks
+## Reference checks
+
+Prior and prior-predictive simulation are available through
+`jaxstanv5.simulation.simulate_prior_predictive(...)` for supported model
+fragments. It draws parameters and observed values with a leading simulation
+axis, using fixed `Data()` values and optional observed-site shapes.
 
 Optional Stan reference fixtures live in [`reference/stan/`](reference/stan/).
 They are used by standalone scripts, not by the default pytest suite and not by
@@ -163,6 +168,22 @@ using combined MCSE-scaled discrepancies. The posterior scripts align jaxstan's
 `target_acceptance_rate` with Stan's `adapt_delta` and default to `0.95`. The
 stress script repeats the Stan posterior comparison across seeds and reports
 sampling time summaries for both jaxstan and Stan.
+
+Optional SBC checks run prior-predictive simulations, fit generated datasets,
+and check posterior ranks:
+
+```bash
+uv run --script scripts/check_sbc_reference.py --case all
+```
+
+A restricted raw-model adapter is also available for supported Normal models:
+
+```bash
+uv run --script scripts/check_sbc_reference.py \
+  --model-file path/to/model.py:MyModel \
+  --parameter mu \
+  --observed-shape y=8
+```
 
 ## Development
 
