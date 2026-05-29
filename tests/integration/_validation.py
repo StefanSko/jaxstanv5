@@ -94,7 +94,7 @@ VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
     ),
     ValidationPlanItem(
         stage=ValidationStage.SBC_REFERENCE,
-        status=ValidationStageStatus.PLANNED,
+        status=ValidationStageStatus.COMPLETED,
         description="Simulation-based calibration rank checks over generated datasets.",
     ),
 )
