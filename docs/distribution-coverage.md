@@ -38,8 +38,10 @@ Target model families:
   one log-density per event vector.
 - The compiler aggregates every site as `jnp.sum(dist.log_prob(value))`. This
   holds for element-wise distributions and for a single event-wise vector.
-- A distribution used as a prior for an unconstrained parameter must implement
-  `sample` (it is `SampleableDistribution`).
+- An element-wise distribution used as a prior for an unconstrained parameter
+  must implement `sample` (it is `SampleableDistribution`). Event-wise prior
+  sampling, such as `MultivariateNormal`, is deferred until prior simulation has
+  explicit event-shape support.
 - A distribution used as a prior for an interval-constrained parameter must also
   implement `cdf` and `icdf` (it is `InverseCdfDistribution`), because prior
   simulation uses inverse-CDF restricted sampling.

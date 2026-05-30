@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import pytest
 from _validation import (
     hierarchical_normal_known_scale_reference,
+    multivariate_normal_known_covariance_reference,
     normal_known_scale_reference,
     positive_scale_grid_reference,
     scalar_grid_reference,
@@ -55,6 +56,21 @@ def test_positive_scale_grid_reference_returns_numerical_posterior() -> None:
     assert reference.parameter == "sigma"
     assert reference.mean == pytest.approx(0.976905, abs=1e-5)
     assert reference.sd == pytest.approx(0.334986, abs=1e-5)
+
+
+def test_multivariate_normal_known_covariance_reference_returns_gaussian_posterior() -> None:
+    reference = multivariate_normal_known_covariance_reference(
+        parameter="mu",
+        y=jnp.array([1.0, 2.0]),
+        prior_mean=jnp.array([0.0, 0.0]),
+        prior_covariance=jnp.eye(2) * 4.0,
+        obs_covariance=jnp.eye(2),
+    )
+
+    assert reference.parameter == "mu"
+    assert tuple(reference.mean) == pytest.approx((0.8, 1.6))
+    assert tuple(reference.marginal_sd) == pytest.approx((0.8944271909999159, 0.8944271909999159))
+
 
 
 def test_hierarchical_normal_known_scale_reference_returns_gaussian_posterior() -> None:

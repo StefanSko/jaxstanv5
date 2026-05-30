@@ -155,6 +155,29 @@ class ScalarValidationResult:
 
 
 @dataclass(frozen=True)
+class VectorReference:
+    """Reference posterior summary for one vector parameter."""
+
+    parameter: str
+    mean: jax.Array
+    marginal_sd: jax.Array
+
+
+@dataclass(frozen=True)
+class VectorValidationResult:
+    """Standardized comparison for one vector parameter component."""
+
+    parameter: str
+    component: int
+    summary_name: str
+    estimate: float
+    reference: float
+    mcse: float
+    signed_z: float
+    k_min: float
+
+
+@dataclass(frozen=True)
 class SbcValidationResult:
     """Simulation-based calibration ranks for one scalar parameter."""
 
@@ -301,6 +324,43 @@ def hierarchical_normal_known_scale_reference(
     )
 
 
+def multivariate_normal_known_covariance_reference(
+    *,
+    parameter: str,
+    y: jax.Array,
+    prior_mean: jax.Array,
+    prior_covariance: jax.Array,
+    obs_covariance: jax.Array,
+) -> VectorReference:
+    """Return a Gaussian posterior reference for ``theta ~ MVN``, ``y ~ MVN(theta)``."""
+    y_value = jnp.asarray(y)
+    prior_mean_value = jnp.asarray(prior_mean)
+    prior_covariance_value = jnp.asarray(prior_covariance)
+    obs_covariance_value = jnp.asarray(obs_covariance)
+
+    if y_value.ndim != 1:
+        raise ValueError("y must be a one-dimensional vector")
+    if prior_mean_value.shape != y_value.shape:
+        raise ValueError("prior_mean must have the same shape as y")
+    if prior_covariance_value.shape != (y_value.size, y_value.size):
+        raise ValueError("prior_covariance must have shape (n, n)")
+    if obs_covariance_value.shape != (y_value.size, y_value.size):
+        raise ValueError("obs_covariance must have shape (n, n)")
+
+    prior_precision = jnp.linalg.inv(prior_covariance_value)
+    obs_precision = jnp.linalg.inv(obs_covariance_value)
+    posterior_precision = prior_precision + obs_precision
+    posterior_covariance = jnp.linalg.inv(posterior_precision)
+    posterior_mean = posterior_covariance @ (
+        prior_precision @ prior_mean_value + obs_precision @ y_value
+    )
+    return VectorReference(
+        parameter=parameter,
+        mean=posterior_mean,
+        marginal_sd=jnp.sqrt(jnp.diag(posterior_covariance)),
+    )
+
+
 def summarize_scalar_draws(
     samples: Mapping[str, jax.Array],
     *,
@@ -397,6 +457,81 @@ def assert_scalar_mean_matches_reference(
             f"{result.k_min:.2f} MCSEs; expected <= {max_k:.2f}"
         )
     return (result,)
+
+
+def assert_vector_mean_matches_reference(
+    bound: BoundModel,
+    *,
+    reference: VectorReference,
+    run: ChainRunSpec,
+    max_k: float,
+    max_rhat: float = 1.05,
+    min_ess: float = 100.0,
+) -> tuple[VectorValidationResult, ...]:
+    """Validate vector posterior means componentwise against a reference."""
+    if max_k <= 0.0:
+        raise ValueError("max_k must be positive")
+    if max_rhat <= 0.0:
+        raise ValueError("max_rhat must be positive")
+    if min_ess <= 0.0:
+        raise ValueError("min_ess must be positive")
+
+    reference_mean = jnp.asarray(reference.mean)
+    if reference_mean.ndim != 1:
+        raise ValueError("Vector references must be one-dimensional")
+
+    samples = draw_validation_chains(bound, run=run)
+    if reference.parameter not in samples:
+        raise ValueError(f"Missing samples for parameter: {reference.parameter}")
+    draws = jnp.asarray(samples[reference.parameter])
+    if draws.ndim != 3:
+        raise ValueError("Vector draw arrays must have shape (num_chains, num_samples, n)")
+    if draws.shape[-1] != reference_mean.shape[0]:
+        raise ValueError("Vector draw dimension must match reference mean dimension")
+
+    results: list[VectorValidationResult] = []
+    for component in range(reference_mean.shape[0]):
+        component_parameter = f"{reference.parameter}[{component}]"
+        summary = summarize_scalar_draws(
+            {component_parameter: draws[:, :, component]},
+            parameter=component_parameter,
+        )
+        if summary.rhat > max_rhat:
+            raise AssertionError(
+                f"R-hat for {component_parameter} is {summary.rhat:.3f}; "
+                f"expected <= {max_rhat:.3f}"
+            )
+        if summary.ess < min_ess:
+            raise AssertionError(
+                f"ESS for {component_parameter} is {summary.ess:.1f}; "
+                f"expected >= {min_ess:.1f}"
+            )
+        scalar_result = standardized_discrepancy(
+            parameter=component_parameter,
+            summary_name="mean",
+            estimate=summary.mean,
+            reference=float(reference_mean[component]),
+            mcse=summary.mcse_mean,
+        )
+        if scalar_result.k_min > max_k:
+            raise AssertionError(
+                f"Posterior mean for {component_parameter} differs from reference by "
+                f"{scalar_result.k_min:.2f} MCSEs; expected <= {max_k:.2f}"
+            )
+        results.append(
+            VectorValidationResult(
+                parameter=reference.parameter,
+                component=component,
+                summary_name=scalar_result.summary_name,
+                estimate=scalar_result.estimate,
+                reference=scalar_result.reference,
+                mcse=scalar_result.mcse,
+                signed_z=scalar_result.signed_z,
+                k_min=scalar_result.k_min,
+            )
+        )
+    return tuple(results)
+
 
 
 def assert_normal_known_scale_matches_reference(
