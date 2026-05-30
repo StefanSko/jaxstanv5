@@ -12,9 +12,21 @@ Models:
 - `models/positive_scale_normal.stan`
   - `sigma ~ normal(prior_loc, prior_scale)`, with `sigma > 0`
   - `y ~ normal(0, sigma)`
+- `models/exponential_rate.stan`
+  - `rate ~ normal(0, prior_scale)`, with `rate > 0`
+  - `y ~ exponential(rate)`
+- `models/student_t_location.stan`
+  - `mu ~ normal(prior_loc, prior_scale)`
+  - `y ~ student_t(nu, mu, obs_scale)`
+- `models/multivariate_normal_likelihood.stan`
+  - `mu ~ normal(0, prior_scale)`
+  - `y ~ multi_normal_cholesky(mu, chol)`
+- `models/fixed_kernel_gp.stan`
+  - `f ~ multi_normal_cholesky(0, chol)`
+  - `y ~ normal(f, obs_sd)`
 
 Data fixtures live in `data/` and are shared by the Stan log-density and
-posterior-summary scripts.
+posterior-summary scripts where applicable.
 
 Run the optional checks from the repository root:
 
@@ -24,13 +36,13 @@ uv run --script scripts/check_stan_posterior_reference.py
 uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
 
-The log-density check compares jaxstan's unconstrained compiled log density to
-CmdStan's log probability at equivalent fixed parameter values. CmdStanPy's
-`log_prob` reports densities up to parameter-independent constants, so the
-script restores the known Normal constants for these fixed fixtures before
-comparison. For constrained parameters, CmdStan receives constrained values while
-jaxstan receives the corresponding unconstrained values; both include the
-Jacobian adjustment.
+The log-density check compares jaxstan's unconstrained compiled log-density
+**differences** to CmdStan's log-probability differences at equivalent fixed
+parameter values. CmdStanPy's `log_prob` reports densities up to
+parameter-independent constants, and those constants cancel in differences. For
+constrained parameters, CmdStan receives constrained values while jaxstan
+receives the corresponding unconstrained values; both include the Jacobian
+adjustment.
 
 The posterior check runs Stan and jaxstan on the same fixed data and compares
 posterior means using the combined Monte Carlo standard error. The posterior

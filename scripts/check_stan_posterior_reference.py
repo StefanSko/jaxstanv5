@@ -192,6 +192,18 @@ def _cases(root: Path) -> tuple[PosteriorCase, ...]:
             stan_model=stan_root / "models" / "positive_scale_normal.stan",
             stan_data=stan_root / "data" / "positive_scale_normal.json",
         ),
+        PosteriorCase(
+            name="exponential_rate",
+            parameter="rate",
+            stan_model=stan_root / "models" / "exponential_rate.stan",
+            stan_data=stan_root / "data" / "exponential_rate.json",
+        ),
+        PosteriorCase(
+            name="student_t_location",
+            parameter="mu",
+            stan_model=stan_root / "models" / "student_t_location.stan",
+            stan_data=stan_root / "data" / "student_t_location.json",
+        ),
     )
 
 
@@ -247,11 +259,69 @@ def _build_positive_scale_bound(data: Mapping[str, object]) -> BoundModel:
     return cast(BindableModel, PositiveScaleStanReferenceModel).bind(y=y)
 
 
+def _build_exponential_rate_bound(data: Mapping[str, object]) -> BoundModel:
+    from jaxstanv5 import Observed, Param, model
+    from jaxstanv5.constraints import Positive
+    from jaxstanv5.distributions import Exponential, HalfNormal
+
+    class BindableModel(Protocol):
+        """Runtime model class with decorator-attached bind method."""
+
+        def bind(self, **values: object) -> BoundModel:
+            """Bind concrete model data."""
+            ...
+
+    prior_scale = _as_float(data["prior_scale"], name="prior_scale")
+
+    @model
+    class ExponentialRateStanReferenceModel:
+        """Exponential-rate model matching the Stan fixture up to constants."""
+
+        rate = Param(HalfNormal(prior_scale), constraint=Positive())
+        y = Observed(Exponential(rate))
+
+    y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
+    return cast(BindableModel, ExponentialRateStanReferenceModel).bind(y=y)
+
+
+
+def _build_student_t_location_bound(data: Mapping[str, object]) -> BoundModel:
+    from jaxstanv5 import Observed, Param, model
+    from jaxstanv5.distributions import Normal, StudentT
+
+    class BindableModel(Protocol):
+        """Runtime model class with decorator-attached bind method."""
+
+        def bind(self, **values: object) -> BoundModel:
+            """Bind concrete model data."""
+            ...
+
+    nu = _as_float(data["nu"], name="nu")
+    prior_loc = _as_float(data["prior_loc"], name="prior_loc")
+    prior_scale = _as_float(data["prior_scale"], name="prior_scale")
+    obs_scale = _as_float(data["obs_scale"], name="obs_scale")
+
+    @model
+    class StudentTLocationStanReferenceModel:
+        """Student-t location model matching the Stan fixture."""
+
+        mu = Param(Normal(prior_loc, prior_scale))
+        y = Observed(StudentT(nu, mu, obs_scale))
+
+    y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
+    return cast(BindableModel, StudentTLocationStanReferenceModel).bind(y=y)
+
+
+
 def _build_bound(case: PosteriorCase, data: Mapping[str, object]) -> BoundModel:
     if case.name == "normal_known_scale":
         return _build_normal_known_scale_bound(data)
     if case.name == "positive_scale_normal":
         return _build_positive_scale_bound(data)
+    if case.name == "exponential_rate":
+        return _build_exponential_rate_bound(data)
+    if case.name == "student_t_location":
+        return _build_student_t_location_bound(data)
     raise ValueError(f"Unknown posterior case: {case.name}")
 
 

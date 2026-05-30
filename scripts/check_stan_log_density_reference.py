@@ -6,7 +6,12 @@
 #   "jax>=0.6.0",
 # ]
 # ///
-"""Compare jaxstan compiled log densities against Stan fixed-point references."""
+"""Compare jaxstan compiled log-density differences against Stan references.
+
+CmdStanPy's ``log_prob`` reports densities up to parameter-independent
+constants.  This script therefore compares log-density differences from one
+reference point per case.  Distribution unit tests pin exact constants.
+"""
 
 from __future__ import annotations
 
@@ -27,6 +32,10 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 logging.getLogger("cmdstanpy").setLevel(logging.WARNING)
 
+type FloatVector = tuple[float, ...]
+type FloatMatrix = tuple[FloatVector, ...]
+type StanParameterValue = float | FloatVector | FloatMatrix
+
 
 @dataclass(frozen=True)
 class LogDensityConfig:
@@ -41,29 +50,29 @@ class LogDensityPoint:
 
     name: str
     unconstrained: tuple[float, ...]
-    stan_parameters: Mapping[str, float]
+    stan_parameters: Mapping[str, StanParameterValue]
 
 
 @dataclass(frozen=True)
 class LogDensityCase:
-    """One model/data pair for log-density comparison."""
+    """One model/data pair for log-density-difference comparison."""
 
     name: str
     stan_model: Path
     stan_data: Path
+    reference_point: LogDensityPoint
     points: tuple[LogDensityPoint, ...]
     build_jaxstan_log_density: Callable[[Mapping[str, object]], Callable[[jax.Array], jax.Array]]
-    constant_adjustment: Callable[[Mapping[str, object]], float]
 
 
 @dataclass(frozen=True)
 class LogDensityComparison:
-    """One log-density comparison result."""
+    """One log-density-difference comparison result."""
 
     case_name: str
     point_name: str
-    jaxstan_log_density: float
-    stan_log_density: float
+    jaxstan_log_density_difference: float
+    stan_log_density_difference: float
     abs_error: float
 
 
@@ -97,7 +106,7 @@ class StanLogDensityModel(Protocol):
 
     def log_prob(
         self,
-        params: Mapping[str, float],
+        params: Mapping[str, StanParameterValue],
         data: str,
         *,
         jacobian: bool,
@@ -145,10 +154,25 @@ def _as_float(value: object, *, name: str) -> float:
     raise ValueError(f"{name} must be numeric")
 
 
-def _float_sequence(value: object, *, name: str) -> tuple[float, ...]:
+def _float_sequence(value: object, *, name: str) -> FloatVector:
     if not isinstance(value, list):
         raise ValueError(f"{name} must be a JSON list")
     return tuple(_as_float(item, name=f"{name}[]") for item in value)
+
+
+def _float_matrix(value: object, *, name: str) -> FloatMatrix:
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be a JSON matrix")
+    rows: list[FloatVector] = []
+    width: int | None = None
+    for row_index, row_value in enumerate(value):
+        row = _float_sequence(row_value, name=f"{name}[{row_index}]")
+        if width is None:
+            width = len(row)
+        elif len(row) != width:
+            raise ValueError(f"{name} rows must have equal length")
+        rows.append(row)
+    return tuple(rows)
 
 
 def _cmdstan_model(stan_file: Path) -> StanLogDensityModel:
@@ -185,25 +209,6 @@ def _normal_known_scale_log_density(data: Mapping[str, object]) -> Callable[[jax
     return compile_log_density(bound)
 
 
-def _normal_known_scale_constant_adjustment(data: Mapping[str, object]) -> float:
-    sample_count = len(_float_sequence(data["y"], name="y"))
-    prior_scale = _as_float(data["prior_scale"], name="prior_scale")
-    obs_scale = _as_float(data["obs_scale"], name="obs_scale")
-    half_log_two_pi = 0.5 * math.log(2.0 * math.pi)
-    return (
-        -(sample_count + 1) * half_log_two_pi
-        - math.log(prior_scale)
-        - sample_count * math.log(obs_scale)
-    )
-
-
-def _positive_scale_constant_adjustment(data: Mapping[str, object]) -> float:
-    sample_count = len(_float_sequence(data["y"], name="y"))
-    prior_scale = _as_float(data["prior_scale"], name="prior_scale")
-    half_log_two_pi = 0.5 * math.log(2.0 * math.pi)
-    return -(sample_count + 1) * half_log_two_pi - math.log(prior_scale)
-
-
 def _positive_scale_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
     from jaxstanv5 import Observed, Param, model
     from jaxstanv5.compiler.core import compile_log_density
@@ -233,6 +238,132 @@ def _positive_scale_log_density(data: Mapping[str, object]) -> Callable[[jax.Arr
     return compile_log_density(bound)
 
 
+def _exponential_rate_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
+    from jaxstanv5 import Observed, Param, model
+    from jaxstanv5.compiler.core import compile_log_density
+    from jaxstanv5.constraints import Positive
+    from jaxstanv5.distributions import Exponential, HalfNormal
+    from jaxstanv5.model.bound import BoundModel
+
+    class BindableModel(Protocol):
+        """Runtime model class with decorator-attached bind method."""
+
+        def bind(self, **values: object) -> BoundModel:
+            """Bind concrete model data."""
+            ...
+
+    prior_scale = _as_float(data["prior_scale"], name="prior_scale")
+
+    @model
+    class ExponentialRateStanReferenceModel:
+        """Exponential-rate model matching the Stan fixture up to constants."""
+
+        rate = Param(HalfNormal(prior_scale), constraint=Positive())
+        y = Observed(Exponential(rate))
+
+    y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
+    bound = cast(BindableModel, ExponentialRateStanReferenceModel).bind(y=y)
+    return compile_log_density(bound)
+
+
+def _student_t_location_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
+    from jaxstanv5 import Observed, Param, model
+    from jaxstanv5.compiler.core import compile_log_density
+    from jaxstanv5.distributions import Normal, StudentT
+    from jaxstanv5.model.bound import BoundModel
+
+    class BindableModel(Protocol):
+        """Runtime model class with decorator-attached bind method."""
+
+        def bind(self, **values: object) -> BoundModel:
+            """Bind concrete model data."""
+            ...
+
+    nu = _as_float(data["nu"], name="nu")
+    prior_loc = _as_float(data["prior_loc"], name="prior_loc")
+    prior_scale = _as_float(data["prior_scale"], name="prior_scale")
+    obs_scale = _as_float(data["obs_scale"], name="obs_scale")
+
+    @model
+    class StudentTLocationStanReferenceModel:
+        """Student-t location model matching the Stan fixture."""
+
+        mu = Param(Normal(prior_loc, prior_scale))
+        y = Observed(StudentT(nu, mu, obs_scale))
+
+    y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
+    bound = cast(BindableModel, StudentTLocationStanReferenceModel).bind(y=y)
+    return compile_log_density(bound)
+
+
+def _multivariate_normal_likelihood_log_density(
+    data: Mapping[str, object],
+) -> Callable[[jax.Array], jax.Array]:
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.compiler.core import compile_log_density
+    from jaxstanv5.distributions import MultivariateNormal, Normal
+    from jaxstanv5.model.bound import BoundModel
+
+    class BindableModel(Protocol):
+        """Runtime model class with decorator-attached bind method."""
+
+        def bind(self, **values: object) -> BoundModel:
+            """Bind concrete model data."""
+            ...
+
+    prior_scale = _as_float(data["prior_scale"], name="prior_scale")
+
+    @model
+    class MultivariateNormalLikelihoodStanReferenceModel:
+        """Multivariate Normal likelihood model matching the Stan fixture."""
+
+        n_dim = Data()
+        chol = Data()
+
+        mu = Param(Normal(0.0, prior_scale), size=n_dim)
+        y = Observed(MultivariateNormal(mu, chol))
+
+    y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
+    chol = jnp.array(_float_matrix(data["chol"], name="chol"), dtype=jnp.float64)
+    bound = cast(BindableModel, MultivariateNormalLikelihoodStanReferenceModel).bind(
+        n_dim=y.shape[0], chol=chol, y=y
+    )
+    return compile_log_density(bound)
+
+
+def _fixed_kernel_gp_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.compiler.core import compile_log_density
+    from jaxstanv5.distributions import MultivariateNormal, Normal
+    from jaxstanv5.model.bound import BoundModel
+
+    class BindableModel(Protocol):
+        """Runtime model class with decorator-attached bind method."""
+
+        def bind(self, **values: object) -> BoundModel:
+            """Bind concrete model data."""
+            ...
+
+    @model
+    class FixedKernelGpStanReferenceModel:
+        """Fixed-kernel GP model matching the Stan fixture."""
+
+        n = Data()
+        chol = Data()
+        obs_sd = Data()
+
+        f = Param(MultivariateNormal(0.0, chol), size=n)
+        y = Observed(Normal(f, obs_sd))
+
+    y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
+    chol = jnp.array(_float_matrix(data["chol"], name="chol"), dtype=jnp.float64)
+    obs_sd = _as_float(data["obs_sd"], name="obs_sd")
+    bound = cast(BindableModel, FixedKernelGpStanReferenceModel).bind(
+        n=y.shape[0], chol=chol, obs_sd=obs_sd, y=y
+    )
+    return compile_log_density(bound)
+
+
 def _cases(root: Path) -> tuple[LogDensityCase, ...]:
     stan_root = root / "reference" / "stan"
     return (
@@ -240,54 +371,115 @@ def _cases(root: Path) -> tuple[LogDensityCase, ...]:
             name="normal_known_scale",
             stan_model=stan_root / "models" / "normal_known_scale.stan",
             stan_data=stan_root / "data" / "normal_known_scale.json",
+            reference_point=LogDensityPoint("center", (0.0,), {"mu": 0.0}),
             points=(
                 LogDensityPoint("low", (-1.25,), {"mu": -1.25}),
-                LogDensityPoint("center", (0.0,), {"mu": 0.0}),
                 LogDensityPoint("high", (2.0,), {"mu": 2.0}),
             ),
             build_jaxstan_log_density=_normal_known_scale_log_density,
-            constant_adjustment=_normal_known_scale_constant_adjustment,
         ),
         LogDensityCase(
             name="positive_scale_normal",
             stan_model=stan_root / "models" / "positive_scale_normal.stan",
             stan_data=stan_root / "data" / "positive_scale_normal.json",
+            reference_point=LogDensityPoint("unit", (0.0,), {"sigma": 1.0}),
             points=(
                 LogDensityPoint("tiny", (-2.0,), {"sigma": math.exp(-2.0)}),
                 LogDensityPoint("small", (-0.5,), {"sigma": math.exp(-0.5)}),
-                LogDensityPoint("unit", (0.0,), {"sigma": 1.0}),
                 LogDensityPoint("large", (1.5,), {"sigma": math.exp(1.5)}),
             ),
             build_jaxstan_log_density=_positive_scale_log_density,
-            constant_adjustment=_positive_scale_constant_adjustment,
+        ),
+        LogDensityCase(
+            name="exponential_rate",
+            stan_model=stan_root / "models" / "exponential_rate.stan",
+            stan_data=stan_root / "data" / "exponential_rate.json",
+            reference_point=LogDensityPoint("reference", (math.log(1.5),), {"rate": 1.5}),
+            points=(
+                LogDensityPoint("low", (math.log(0.5),), {"rate": 0.5}),
+                LogDensityPoint("high", (math.log(3.0),), {"rate": 3.0}),
+            ),
+            build_jaxstan_log_density=_exponential_rate_log_density,
+        ),
+        LogDensityCase(
+            name="student_t_location",
+            stan_model=stan_root / "models" / "student_t_location.stan",
+            stan_data=stan_root / "data" / "student_t_location.json",
+            reference_point=LogDensityPoint("center", (0.0,), {"mu": 0.0}),
+            points=(
+                LogDensityPoint("low", (-1.0,), {"mu": -1.0}),
+                LogDensityPoint("high", (2.0,), {"mu": 2.0}),
+            ),
+            build_jaxstan_log_density=_student_t_location_log_density,
+        ),
+        LogDensityCase(
+            name="multivariate_normal_likelihood",
+            stan_model=stan_root / "models" / "multivariate_normal_likelihood.stan",
+            stan_data=stan_root / "data" / "multivariate_normal_likelihood.json",
+            reference_point=LogDensityPoint("zero", (0.0, 0.0, 0.0), {"mu": (0.0, 0.0, 0.0)}),
+            points=(
+                LogDensityPoint("mixed", (1.0, -0.5, 2.0), {"mu": (1.0, -0.5, 2.0)}),
+                LogDensityPoint("negative", (-1.0, 0.5, -0.25), {"mu": (-1.0, 0.5, -0.25)}),
+            ),
+            build_jaxstan_log_density=_multivariate_normal_likelihood_log_density,
+        ),
+        LogDensityCase(
+            name="fixed_kernel_gp",
+            stan_model=stan_root / "models" / "fixed_kernel_gp.stan",
+            stan_data=stan_root / "data" / "fixed_kernel_gp.json",
+            reference_point=LogDensityPoint("zero", (0.0, 0.0, 0.0), {"f": (0.0, 0.0, 0.0)}),
+            points=(
+                LogDensityPoint("smooth", (0.5, 0.25, -0.1), {"f": (0.5, 0.25, -0.1)}),
+                LogDensityPoint("rough", (-0.5, 0.75, 0.25), {"f": (-0.5, 0.75, 0.25)}),
+            ),
+            build_jaxstan_log_density=_fixed_kernel_gp_log_density,
         ),
     )
+
+
+def _stan_log_density(
+    model: StanLogDensityModel,
+    *,
+    point: LogDensityPoint,
+    data_path: Path,
+) -> float:
+    stan_frame = model.log_prob(
+        params=point.stan_parameters,
+        data=str(data_path),
+        jacobian=True,
+        sig_figs=18,
+    )
+    return _as_float(stan_frame["lp__"].iloc[0], name="lp__")
 
 
 def _compare_case(case: LogDensityCase) -> tuple[LogDensityComparison, ...]:
     data = _load_json(case.stan_data)
     jaxstan_log_density = case.build_jaxstan_log_density(data)
-    constant_adjustment = case.constant_adjustment(data)
     stan_model = _cmdstan_model(case.stan_model)
+
+    q_reference = jnp.array(case.reference_point.unconstrained, dtype=jnp.float64)
+    jaxstan_reference = float(jaxstan_log_density(q_reference))
+    stan_reference = _stan_log_density(
+        stan_model,
+        point=case.reference_point,
+        data_path=case.stan_data,
+    )
 
     comparisons: list[LogDensityComparison] = []
     for point in case.points:
         q = jnp.array(point.unconstrained, dtype=jnp.float64)
-        jaxstan_value = float(jaxstan_log_density(q))
-        stan_frame = stan_model.log_prob(
-            params=dict(point.stan_parameters),
-            data=str(case.stan_data),
-            jacobian=True,
-            sig_figs=18,
+        jaxstan_difference = float(jaxstan_log_density(q)) - jaxstan_reference
+        stan_difference = (
+            _stan_log_density(stan_model, point=point, data_path=case.stan_data)
+            - stan_reference
         )
-        stan_value = _as_float(stan_frame["lp__"].iloc[0], name="lp__") + constant_adjustment
         comparisons.append(
             LogDensityComparison(
                 case_name=case.name,
                 point_name=point.name,
-                jaxstan_log_density=jaxstan_value,
-                stan_log_density=stan_value,
-                abs_error=abs(jaxstan_value - stan_value),
+                jaxstan_log_density_difference=jaxstan_difference,
+                stan_log_density_difference=stan_difference,
+                abs_error=abs(jaxstan_difference - stan_difference),
             )
         )
     return tuple(comparisons)
@@ -295,7 +487,7 @@ def _compare_case(case: LogDensityCase) -> tuple[LogDensityComparison, ...]:
 
 def _parse_args() -> LogDensityConfig:
     parser = argparse.ArgumentParser(
-        description="Compare jaxstan log densities against Stan fixed-point references."
+        description="Compare jaxstan log-density differences against Stan fixed-point references."
     )
     parser.add_argument("--tolerance", type=float, default=1e-8)
     args = parser.parse_args()
@@ -317,8 +509,8 @@ def main() -> int:
             status = "PASS" if passed else "FAIL"
             print(
                 f"{status} case={comparison.case_name} point={comparison.point_name} "
-                f"jaxstan={comparison.jaxstan_log_density:.12f} "
-                f"stan={comparison.stan_log_density:.12f} "
+                f"jaxstan_delta={comparison.jaxstan_log_density_difference:.12f} "
+                f"stan_delta={comparison.stan_log_density_difference:.12f} "
                 f"abs_err={comparison.abs_error:.3e}"
             )
 
