@@ -440,8 +440,8 @@ def _cases(root: Path) -> tuple[LogDensityCase, ...]:
 
 def _cmdstan_parameter_value(value: StanParameterValue) -> CmdStanParameterValue:
     """Convert immutable point metadata to CmdStanPy's JSON-like parameter values."""
-    if isinstance(value, float):
-        return value
+    if isinstance(value, int | float):
+        return float(value)
     if len(value) == 0:
         return []
     first = value[0]
