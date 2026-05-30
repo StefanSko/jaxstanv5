@@ -470,8 +470,7 @@ def _compare_case(case: LogDensityCase) -> tuple[LogDensityComparison, ...]:
         q = jnp.array(point.unconstrained, dtype=jnp.float64)
         jaxstan_difference = float(jaxstan_log_density(q)) - jaxstan_reference
         stan_difference = (
-            _stan_log_density(stan_model, point=point, data_path=case.stan_data)
-            - stan_reference
+            _stan_log_density(stan_model, point=point, data_path=case.stan_data) - stan_reference
         )
         comparisons.append(
             LogDensityComparison(

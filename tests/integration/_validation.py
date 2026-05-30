@@ -498,13 +498,11 @@ def assert_vector_mean_matches_reference(
         )
         if summary.rhat > max_rhat:
             raise AssertionError(
-                f"R-hat for {component_parameter} is {summary.rhat:.3f}; "
-                f"expected <= {max_rhat:.3f}"
+                f"R-hat for {component_parameter} is {summary.rhat:.3f}; expected <= {max_rhat:.3f}"
             )
         if summary.ess < min_ess:
             raise AssertionError(
-                f"ESS for {component_parameter} is {summary.ess:.1f}; "
-                f"expected >= {min_ess:.1f}"
+                f"ESS for {component_parameter} is {summary.ess:.1f}; expected >= {min_ess:.1f}"
             )
         scalar_result = standardized_discrepancy(
             parameter=component_parameter,
@@ -531,7 +529,6 @@ def assert_vector_mean_matches_reference(
             )
         )
     return tuple(results)
-
 
 
 def assert_normal_known_scale_matches_reference(

@@ -325,7 +325,6 @@ def _build_exponential_rate_bound(data: Mapping[str, object]) -> BoundModel:
     return cast(BindableModel, ExponentialRateStanReferenceModel).bind(y=y)
 
 
-
 def _build_student_t_location_bound(data: Mapping[str, object]) -> BoundModel:
     from jaxstanv5 import Observed, Param, model
     from jaxstanv5.distributions import Normal, StudentT
@@ -351,7 +350,6 @@ def _build_student_t_location_bound(data: Mapping[str, object]) -> BoundModel:
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
     return cast(BindableModel, StudentTLocationStanReferenceModel).bind(y=y)
-
 
 
 def _build_bound(case: PosteriorCase, data: Mapping[str, object]) -> BoundModel:

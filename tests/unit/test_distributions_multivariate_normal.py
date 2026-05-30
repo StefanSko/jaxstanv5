@@ -27,9 +27,7 @@ def test_multivariate_normal_log_prob_matches_cholesky_formula() -> None:
 
     solved = solve_triangular(chol, value - mean, lower=True)
     expected = (
-        -0.5 * jnp.sum(solved**2)
-        - jnp.sum(jnp.log(jnp.diagonal(chol)))
-        - math.log(2.0 * math.pi)
+        -0.5 * jnp.sum(solved**2) - jnp.sum(jnp.log(jnp.diagonal(chol))) - math.log(2.0 * math.pi)
     )
     assert jnp.allclose(actual, expected)
 

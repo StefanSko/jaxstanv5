@@ -41,7 +41,6 @@ def test_scalar_grid_reference_returns_numerical_posterior() -> None:
     assert reference.sd == pytest.approx(2.0, abs=2e-4)
 
 
-
 def test_positive_scale_grid_reference_returns_numerical_posterior() -> None:
     reference = positive_scale_grid_reference(
         parameter="sigma",
@@ -70,7 +69,6 @@ def test_multivariate_normal_known_covariance_reference_returns_gaussian_posteri
     assert reference.parameter == "mu"
     assert tuple(reference.mean) == pytest.approx((0.8, 1.6))
     assert tuple(reference.marginal_sd) == pytest.approx((0.8944271909999159, 0.8944271909999159))
-
 
 
 def test_hierarchical_normal_known_scale_reference_returns_gaussian_posterior() -> None:

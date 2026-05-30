@@ -35,9 +35,7 @@ class HalfNormal:
         scale = self._scale()
         value = jnp.asarray(x)
         standardized = value / scale
-        log_density = (
-            0.5 * math.log(2.0 / math.pi) - jnp.log(scale) - 0.5 * standardized**2
-        )
+        log_density = 0.5 * math.log(2.0 / math.pi) - jnp.log(scale) - 0.5 * standardized**2
         return jnp.where(value >= 0.0, log_density, -jnp.inf)
 
     def sample(
