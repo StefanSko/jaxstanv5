@@ -8,7 +8,7 @@ stage green at a time without adding runtime API surface.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 
@@ -439,6 +439,41 @@ def standardized_discrepancy(
     )
 
 
+def scalar_grid_reference(
+    *,
+    parameter: str,
+    log_unnormalized: Callable[[jax.Array], jax.Array],
+    grid_min: float,
+    grid_max: float,
+    grid_size: int,
+) -> ScalarReference:
+    """Return a numerical scalar posterior reference from an unnormalized density.
+
+    The density callable receives a one-dimensional grid and must return one
+    log-density value per grid point.  The integral is approximated with a
+    trapezoidal rule on an equally spaced grid.
+    """
+    if grid_max <= grid_min:
+        raise ValueError("grid_max must be greater than grid_min")
+    if grid_size < 2:
+        raise ValueError("grid_size must be at least 2")
+
+    grid = jnp.linspace(grid_min, grid_max, grid_size)
+    log_density = jnp.asarray(log_unnormalized(grid))
+    if log_density.shape != grid.shape:
+        raise ValueError("log_unnormalized must return one value per grid point")
+
+    trapezoid_weights = jnp.ones_like(grid)
+    trapezoid_weights = trapezoid_weights.at[0].set(0.5)
+    trapezoid_weights = trapezoid_weights.at[-1].set(0.5)
+    normalized_weights = jax.nn.softmax(log_density + jnp.log(trapezoid_weights))
+
+    mean = float(jnp.sum(normalized_weights * grid))
+    second_moment = float(jnp.sum(normalized_weights * grid**2))
+    variance = max(second_moment - mean**2, 0.0)
+    return ScalarReference(parameter=parameter, mean=mean, sd=math.sqrt(variance))
+
+
 def positive_scale_grid_reference(
     *,
     parameter: str,
@@ -461,35 +496,24 @@ def positive_scale_grid_reference(
     """
     _require_positive_scale("prior_scale", prior_scale)
     _require_positive_scale("grid_min", grid_min)
-    if grid_max <= grid_min:
-        raise ValueError("grid_max must be greater than grid_min")
-    if grid_size < 2:
-        raise ValueError("grid_size must be at least 2")
 
     y_values = jnp.ravel(jnp.asarray(y))
-    sigma = jnp.linspace(grid_min, grid_max, grid_size)
     log_two_pi = math.log(2.0 * math.pi)
 
-    standardized_prior = (sigma - prior_loc) / prior_scale
-    log_prior = -jnp.log(prior_scale) - 0.5 * log_two_pi - 0.5 * standardized_prior**2
-    log_likelihood_terms = (
-        -jnp.log(sigma) - 0.5 * log_two_pi - 0.5 * (y_values[:, None] / sigma) ** 2
-    )
-    log_likelihood = jnp.sum(log_likelihood_terms, axis=0)
+    def log_unnormalized(sigma: jax.Array) -> jax.Array:
+        standardized_prior = (sigma - prior_loc) / prior_scale
+        log_prior = -jnp.log(prior_scale) - 0.5 * log_two_pi - 0.5 * standardized_prior**2
+        log_likelihood_terms = (
+            -jnp.log(sigma) - 0.5 * log_two_pi - 0.5 * (y_values[:, None] / sigma) ** 2
+        )
+        return log_prior + jnp.sum(log_likelihood_terms, axis=0)
 
-    trapezoid_weights = jnp.ones_like(sigma)
-    trapezoid_weights = trapezoid_weights.at[0].set(0.5)
-    trapezoid_weights = trapezoid_weights.at[-1].set(0.5)
-    log_weights = log_prior + log_likelihood + jnp.log(trapezoid_weights)
-    normalized_weights = jax.nn.softmax(log_weights)
-
-    mean = float(jnp.sum(normalized_weights * sigma))
-    second_moment = float(jnp.sum(normalized_weights * sigma**2))
-    variance = max(second_moment - mean**2, 0.0)
-    return ScalarReference(
+    return scalar_grid_reference(
         parameter=parameter,
-        mean=mean,
-        sd=math.sqrt(variance),
+        log_unnormalized=log_unnormalized,
+        grid_min=grid_min,
+        grid_max=grid_max,
+        grid_size=grid_size,
     )
 
 

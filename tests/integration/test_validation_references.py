@@ -8,6 +8,7 @@ from _validation import (
     hierarchical_normal_known_scale_reference,
     normal_known_scale_reference,
     positive_scale_grid_reference,
+    scalar_grid_reference,
 )
 
 
@@ -23,6 +24,21 @@ def test_normal_known_scale_reference_returns_conjugate_posterior() -> None:
     assert reference.parameter == "mu"
     assert reference.mean == pytest.approx(1.8461538462)
     assert reference.sd == pytest.approx(0.5547001962)
+
+
+def test_scalar_grid_reference_returns_numerical_posterior() -> None:
+    reference = scalar_grid_reference(
+        parameter="x",
+        log_unnormalized=lambda grid: -0.5 * ((grid - 1.0) / 2.0) ** 2,
+        grid_min=-8.0,
+        grid_max=10.0,
+        grid_size=20_000,
+    )
+
+    assert reference.parameter == "x"
+    assert reference.mean == pytest.approx(1.0, abs=1e-5)
+    assert reference.sd == pytest.approx(2.0, abs=2e-4)
+
 
 
 def test_positive_scale_grid_reference_returns_numerical_posterior() -> None:
