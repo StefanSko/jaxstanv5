@@ -35,6 +35,7 @@ logging.getLogger("cmdstanpy").setLevel(logging.WARNING)
 type FloatVector = tuple[float, ...]
 type FloatMatrix = tuple[FloatVector, ...]
 type StanParameterValue = float | FloatVector | FloatMatrix
+type CmdStanParameterValue = float | list[float] | list[list[float]]
 
 
 @dataclass(frozen=True)
@@ -106,7 +107,7 @@ class StanLogDensityModel(Protocol):
 
     def log_prob(
         self,
-        params: Mapping[str, StanParameterValue],
+        params: Mapping[str, CmdStanParameterValue],
         data: str,
         *,
         jacobian: bool,
@@ -437,14 +438,31 @@ def _cases(root: Path) -> tuple[LogDensityCase, ...]:
     )
 
 
+def _cmdstan_parameter_value(value: StanParameterValue) -> CmdStanParameterValue:
+    """Convert immutable point metadata to CmdStanPy's JSON-like parameter values."""
+    if isinstance(value, float):
+        return value
+    if len(value) == 0:
+        return []
+    first = value[0]
+    if isinstance(first, tuple):
+        matrix = cast(FloatMatrix, value)
+        return [list(row) for row in matrix]
+    vector = cast(FloatVector, value)
+    return list(vector)
+
+
 def _stan_log_density(
     model: StanLogDensityModel,
     *,
     point: LogDensityPoint,
     data_path: Path,
 ) -> float:
+    stan_parameters = {
+        name: _cmdstan_parameter_value(value) for name, value in point.stan_parameters.items()
+    }
     stan_frame = model.log_prob(
-        params=point.stan_parameters,
+        params=stan_parameters,
         data=str(data_path),
         jacobian=True,
         sig_figs=18,

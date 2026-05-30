@@ -17,6 +17,10 @@ reference/stan/models/*.hpp
 reference/stan/models/*.o
 reference/stan/models/normal_known_scale
 reference/stan/models/positive_scale_normal
+reference/stan/models/exponential_rate
+reference/stan/models/fixed_kernel_gp
+reference/stan/models/multivariate_normal_likelihood
+reference/stan/models/student_t_location
 
 # OS/editor
 .DS_Store
