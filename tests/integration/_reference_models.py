@@ -228,7 +228,13 @@ def rbf_covariance(x: jax.Array, *, lengthscale: float, amplitude: float) -> jax
     return amplitude**2 * jnp.exp(-0.5 * (diff / lengthscale) ** 2)
 
 
-def fixed_kernel_gp_fixture() -> FixedKernelGpFixture:
+def fixed_kernel_gp_fixture(
+    *,
+    n: int = 30,
+    lengthscale: float = 1.0,
+    amplitude: float = 1.0,
+    obs_sd: float = 0.2,
+) -> FixedKernelGpFixture:
     """Return a fixed-kernel Gaussian-process regression fixture."""
     from jaxstanv5 import Data, Observed, Param, model
     from jaxstanv5.distributions import MultivariateNormal, Normal
@@ -244,14 +250,12 @@ def fixed_kernel_gp_fixture() -> FixedKernelGpFixture:
         f = Param(MultivariateNormal(0.0, chol), size=n)
         y = Observed(Normal(f, obs_sd))
 
-    n = 30
     x = jnp.linspace(-3.0, 3.0, n)
-    covariance = rbf_covariance(x, lengthscale=1.0, amplitude=1.0) + 1e-6 * jnp.eye(n)
+    covariance = rbf_covariance(x, lengthscale=lengthscale, amplitude=amplitude) + 1e-6 * jnp.eye(n)
     chol = jnp.linalg.cholesky(covariance)
     key = jax.random.PRNGKey(17)
     latent_key, noise_key = jax.random.split(key)
     f_true = chol @ jax.random.normal(latent_key, (n,))
-    obs_sd = 0.2
     y = f_true + obs_sd * jax.random.normal(noise_key, (n,))
     return FixedKernelGpFixture(
         bound=bind_model(GaussianProcessRegression, n=n, chol=chol, obs_sd=obs_sd, y=y),
