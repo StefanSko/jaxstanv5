@@ -39,7 +39,7 @@ Core invariants that should remain true as the codebase changes.
 - Final expression trees contain no declaration symbols, raw declarations, or
   deferred syntax tokens.
 - Final expression trees may contain explicit unary math nodes only for supported
-  symbolic helper functions.
+  symbolic helper functions such as `exp` and `sigmoid`.
 - `ModelMeta` contains resolved metadata only.
 - `BoundModel` contains no inference logic.
 

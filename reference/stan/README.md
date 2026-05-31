@@ -21,6 +21,15 @@ Models:
 - `models/hierarchical_poisson_varying_slopes.stan`
   - non-centered varying intercepts and slopes
   - `y ~ poisson_log(alpha[group] + beta[group] * x)`
+- `models/hierarchical_binomial_logistic_varying_slopes.stan`
+  - non-centered varying intercepts and slopes
+  - `y ~ binomial_logit(trials, alpha[group] + beta[group] * x)`
+- `models/hierarchical_beta_binomial_logistic_varying_slopes.stan`
+  - non-centered varying intercepts and slopes with log concentration
+  - `y ~ beta_binomial(trials, p * concentration, (1 - p) * concentration)`
+- `models/hierarchical_negative_binomial_log_rate_varying_slopes.stan`
+  - non-centered varying intercepts and slopes with log overdispersion
+  - `y ~ neg_binomial_2(exp(alpha[group] + beta[group] * x), overdispersion)`
 - `models/multivariate_normal_likelihood.stan`
   - `mu ~ normal(0, prior_scale)`
   - `y ~ multi_normal_cholesky(mu, chol)`
@@ -38,6 +47,9 @@ Run the optional checks from the repository root:
 uv run --script scripts/check_stan_log_density_reference.py
 uv run --script scripts/check_stan_posterior_reference.py
 uv run --script scripts/check_poisson_stan_posterior_reference.py
+uv run --script scripts/check_binomial_stan_posterior_reference.py
+uv run --script scripts/check_beta_binomial_stan_posterior_reference.py
+uv run --script scripts/check_negative_binomial_stan_posterior_reference.py
 uv run --script scripts/check_gp_stan_posterior_reference.py
 uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
@@ -55,11 +67,10 @@ posterior means using the combined Monte Carlo standard error. Scalar cases are
 compared directly. The fixed-kernel GP posterior script compares fixed linear
 projections of the latent vector (`f[0]`, `f[n // 2]`, `mean(f)`, and
 `f[-1] - f[0]`) so vector posterior behavior is checked through calibrated
-scalar summaries. The hierarchical Poisson posterior script compares scalar
+scalar summaries. The hierarchical count posterior scripts compare scalar
 hyperparameters from one shared Stan/jaxstan run. The posterior scripts align
-jaxstan's `target_acceptance_rate`
-with Stan's `adapt_delta`; scalar posterior checks default to `0.95`, while the
-GP projection script defaults to `0.90` for the fixed n=8 geometry. The stress
-script repeats scalar comparisons over configurable seeds and reports NUTS
-diagnostics (divergences, acceptance rates, and integration-step counts) and
-sampling time summaries for both systems.
+jaxstan's `target_acceptance_rate` with Stan's `adapt_delta`; scalar posterior
+checks default to `0.95`, while hierarchical count and GP scripts default to
+`0.90` for their geometries. The stress script repeats scalar comparisons over
+configurable seeds and reports NUTS diagnostics (divergences, acceptance rates,
+and integration-step counts) and sampling time summaries for both systems.

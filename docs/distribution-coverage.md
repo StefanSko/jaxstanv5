@@ -29,6 +29,12 @@ Target model families:
 - **Poisson count likelihood** with symbolic log-rate construction.
 - **Hierarchical Poisson varying slopes** (non-centered group effects with a
   symbolic exponential link).
+- **Hierarchical Binomial logistic varying slopes** (bounded counts with a
+  symbolic sigmoid link).
+- **Hierarchical Beta-binomial logistic varying slopes** (overdispersed bounded
+  counts with symbolic sigmoid and concentration construction).
+- **Hierarchical Negative-binomial varying slopes** (overdispersed unbounded
+  counts with a symbolic log-rate link and log-overdispersion parameter).
 - **Multivariate** (vector-valued likelihood).
 - **Gaussian process** (multivariate-normal latent with a fixed-kernel
   Cholesky factor supplied as data).
@@ -80,6 +86,8 @@ Target model families:
   `f[n // 2]`, `mean(f)`, and `f[-1] - f[0]`) for script-based Stan posterior
   comparison and projected SBC. Each projection is a scalar posterior functional
   and is compared with the same MCSE-calibrated machinery as scalar parameters.
-- Hierarchical Poisson validation has an always-on scalar grid reference, a
-  workflow smoke test for the varying-slopes model, Stan log-density/posterior
-  scripts, and an optional SBC script over scalar hyperparameters.
+- Hierarchical count-model validation follows the same ladder for Poisson,
+  Binomial, Beta-binomial, and Negative-binomial families: an always-on scalar
+  grid reference, a workflow smoke test for the varying-slopes model, Stan
+  log-density/posterior scripts, and optional SBC scripts over scalar
+  hyperparameters.
