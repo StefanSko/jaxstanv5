@@ -12,7 +12,7 @@ from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.constraints import Positive
 from jax.scipy.special import gammaln
 
-from jaxstanv5.distributions import Binomial, Normal, Poisson
+from jaxstanv5.distributions import BetaBinomial, Binomial, Normal, Poisson
 from jaxstanv5.math import exp, sigmoid
 
 
@@ -59,6 +59,20 @@ class BinomialLogisticDensity:
     eta = Param(Normal(0, 1))
     trials = Data()
     y = Observed(Binomial(trials, sigmoid(eta)))
+
+
+@model
+class BetaBinomialLogisticDensity:
+    """Beta-binomial count model using symbolic logistic mean and concentration."""
+
+    eta = Param(Normal(0, 1))
+    log_concentration = Param(Normal(math.log(20.0), 0.5))
+    trials = Data()
+    p = sigmoid(eta)
+    concentration = exp(log_concentration)
+    a = p * concentration
+    b = (1.0 - p) * concentration
+    y = Observed(BetaBinomial(trials, a, b))
 
 
 @model
@@ -151,6 +165,36 @@ def test_compiled_log_density_evaluates_sigmoid_binomial_likelihood_fields() -> 
         - gammaln(trials - y_data + 1.0)
         + y_data * jnp.log(probs)
         + (trials - y_data) * jnp.log1p(-probs)
+    )
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_beta_binomial_likelihood_fields() -> None:
+    trials = jnp.array([4.0, 5.0, 6.0])
+    y_data = jnp.array([1.0, 3.0, 4.0])
+    bound = bind_model(BetaBinomialLogisticDensity, trials=trials, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    eta = jnp.array(0.25)
+    log_concentration = jnp.array(math.log(15.0))
+    lp = log_prob(jnp.array([eta, log_concentration]))
+
+    expected = normal_log_prob(eta, jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(log_concentration, jnp.array(math.log(20.0)), jnp.array(0.5))
+    p = 1.0 / (1.0 + jnp.exp(-eta))
+    concentration = jnp.exp(log_concentration)
+    a = p * concentration
+    b = (1.0 - p) * concentration
+    expected += jnp.sum(
+        gammaln(trials + 1.0)
+        - gammaln(y_data + 1.0)
+        - gammaln(trials - y_data + 1.0)
+        + gammaln(y_data + a)
+        + gammaln(trials - y_data + b)
+        - gammaln(trials + a + b)
+        - gammaln(a)
+        - gammaln(b)
+        + gammaln(a + b)
     )
     assert jnp.allclose(lp, expected, atol=1e-6)
 
