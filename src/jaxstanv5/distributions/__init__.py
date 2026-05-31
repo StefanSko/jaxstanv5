@@ -12,6 +12,7 @@ from jaxstanv5.distributions.core import (
 from jaxstanv5.distributions.exponential import Exponential
 from jaxstanv5.distributions.half_normal import HalfNormal
 from jaxstanv5.distributions.multivariate_normal import MultivariateNormal
+from jaxstanv5.distributions.negative_binomial import NegativeBinomial
 from jaxstanv5.distributions.normal import Normal
 from jaxstanv5.distributions.poisson import Poisson
 from jaxstanv5.distributions.student_t import StudentT
@@ -28,6 +29,7 @@ __all__ = [
     "HalfNormal",
     "LogProbability",
     "MultivariateNormal",
+    "NegativeBinomial",
     "Normal",
     "Poisson",
     "StudentT",
