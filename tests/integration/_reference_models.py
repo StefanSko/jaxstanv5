@@ -116,6 +116,17 @@ class HierarchicalBetaBinomialFixture:
 
 
 @dataclass(frozen=True)
+class HierarchicalNegativeBinomialFixture:
+    """Bound non-centered hierarchical Negative-binomial varying-slopes model."""
+
+    bound: BoundModel
+    y: jax.Array
+    x: jax.Array
+    group_idx: jax.Array
+    n_groups: int
+
+
+@dataclass(frozen=True)
 class MultivariateNormalLikelihoodFixture:
     """Bound single-observation multivariate-normal likelihood model."""
 
@@ -503,6 +514,67 @@ def hierarchical_beta_binomial_logistic_varying_slopes_fixture() -> Hierarchical
         ),
         y=y,
         trials=trials,
+        x=x,
+        group_idx=group_idx,
+        n_groups=n_groups,
+    )
+
+
+def hierarchical_negative_binomial_log_rate_varying_slopes_fixture() -> (
+    HierarchicalNegativeBinomialFixture
+):
+    """Return a hierarchical Negative-binomial log-rate varying-slopes smoke fixture."""
+    from math import log
+
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.constraints import Positive
+    from jaxstanv5.distributions import HalfNormal, NegativeBinomial, Normal
+    from jaxstanv5.math import exp
+
+    @model
+    class HierarchicalNegativeBinomialLogRateVaryingSlopes:
+        """Non-centered overdispersed count model with varying intercepts and slopes."""
+
+        n_groups = Data()
+        group_idx = Data()
+        x = Data()
+
+        alpha_pop = Param(Normal(0.0, 0.5))
+        beta_pop = Param(Normal(0.0, 0.5))
+        sigma_alpha = Param(HalfNormal(0.4), constraint=Positive())
+        sigma_beta = Param(HalfNormal(0.4), constraint=Positive())
+        log_overdispersion = Param(Normal(log(5.0), 0.5))
+
+        z_alpha = Param(Normal(0.0, 1.0), size=n_groups)
+        z_beta = Param(Normal(0.0, 1.0), size=n_groups)
+
+        alpha = alpha_pop + sigma_alpha * z_alpha
+        beta = beta_pop + sigma_beta * z_beta
+        eta = alpha[group_idx] + beta[group_idx] * x
+        mean = exp(eta)
+        overdispersion = exp(log_overdispersion)
+        y = Observed(NegativeBinomial(mean, overdispersion))
+
+    n_groups = 4
+    observations_per_group = 10
+    group_idx = jnp.repeat(jnp.arange(n_groups), observations_per_group)
+    x = jnp.tile(jnp.linspace(-1.0, 1.0, observations_per_group), n_groups)
+    alpha_true = jnp.array([-0.25, 0.05, 0.35, -0.1])
+    beta_true = jnp.array([0.25, -0.2, 0.3, 0.05])
+    mean = jnp.exp(alpha_true[group_idx] + beta_true[group_idx] * x)
+    overdispersion = 5.0
+    gamma_key, poisson_key = jax.random.split(jax.random.PRNGKey(47))
+    rate = jax.random.gamma(gamma_key, overdispersion, shape=mean.shape) * mean / overdispersion
+    y = jax.random.poisson(poisson_key, rate)
+    return HierarchicalNegativeBinomialFixture(
+        bound=bind_model(
+            HierarchicalNegativeBinomialLogRateVaryingSlopes,
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            y=y,
+        ),
+        y=y,
         x=x,
         group_idx=group_idx,
         n_groups=n_groups,
