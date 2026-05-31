@@ -6,11 +6,16 @@ import jax.numpy as jnp
 import pytest
 from _validation import (
     VALIDATION_PLAN,
+    ProjectionSpec,
     SbcValidationResult,
     ValidationStage,
     ValidationStageStatus,
     assert_sbc_rank_uniformity,
+    project_vector_draws,
+    project_vector_truth,
+    projected_sbc_rank,
     scalar_sbc_rank,
+    summarize_projected_draws,
     summarize_sbc_rank_uniformity,
 )
 
@@ -19,6 +24,57 @@ def test_validation_plan_marks_sbc_reference_completed() -> None:
     statuses = {item.stage: item.status for item in VALIDATION_PLAN}
 
     assert statuses[ValidationStage.SBC_REFERENCE] is ValidationStageStatus.COMPLETED
+
+
+def test_project_vector_draws_returns_scalar_draw_array() -> None:
+    samples = {"f": jnp.asarray([[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]])}
+    projection = ProjectionSpec(name="f_sum", parameter="f", weights=jnp.asarray([1.0, 1.0]))
+
+    projected = project_vector_draws(samples, projection=projection)
+
+    assert projected.shape == (2, 2)
+    assert jnp.allclose(projected, jnp.asarray([[3.0, 7.0], [11.0, 15.0]]))
+
+
+def test_project_vector_truth_returns_scalar_value() -> None:
+    projection = ProjectionSpec(name="f_contrast", parameter="f", weights=jnp.asarray([-1.0, 1.0]))
+
+    projected = project_vector_truth(jnp.asarray([2.0, 5.0]), projection=projection)
+
+    assert projected == 3.0
+
+
+def test_projected_sbc_rank_counts_projected_draws_below_projected_truth() -> None:
+    samples = {"f": jnp.asarray([[[0.0, 1.0], [1.0, 2.0]], [[2.0, 3.0], [3.0, 4.0]]])}
+    projection = ProjectionSpec(name="f_first", parameter="f", weights=jnp.asarray([1.0, 0.0]))
+
+    rank = projected_sbc_rank(samples, projection=projection, true_value=jnp.asarray([1.5, 0.0]))
+
+    assert rank == 2
+
+
+def test_summarize_projected_draws_uses_projection_name() -> None:
+    samples = {"f": jnp.asarray([[[0.0, 1.0], [1.0, 2.0]], [[2.0, 3.0], [3.0, 4.0]]])}
+    projection = ProjectionSpec(name="f_first", parameter="f", weights=jnp.asarray([1.0, 0.0]))
+
+    summary = summarize_projected_draws(samples, projection=projection)
+
+    assert summary.parameter == "f_first"
+    assert summary.mean == 1.5
+
+
+def test_project_vector_draws_rejects_missing_parameter() -> None:
+    projection = ProjectionSpec(name="f_first", parameter="f", weights=jnp.asarray([1.0]))
+
+    with pytest.raises(ValueError, match="Missing samples"):
+        project_vector_draws({"theta": jnp.zeros((1, 1, 1))}, projection=projection)
+
+
+def test_project_vector_draws_rejects_dimension_mismatch() -> None:
+    projection = ProjectionSpec(name="f_first", parameter="f", weights=jnp.asarray([1.0, 0.0]))
+
+    with pytest.raises(ValueError, match="Projection weights"):
+        project_vector_draws({"f": jnp.zeros((1, 1, 3))}, projection=projection)
 
 
 def test_scalar_sbc_rank_counts_draws_below_true_value() -> None:

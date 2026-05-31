@@ -178,6 +178,15 @@ class VectorValidationResult:
 
 
 @dataclass(frozen=True)
+class ProjectionSpec:
+    """Fixed linear projection of a vector-valued parameter."""
+
+    name: str
+    parameter: str
+    weights: jax.Array
+
+
+@dataclass(frozen=True)
 class SbcValidationResult:
     """Simulation-based calibration ranks for one scalar parameter."""
 
@@ -713,6 +722,69 @@ def compare_against_stan_reference(
         results.append(result)
 
     return tuple(results)
+
+
+def project_vector_draws(
+    samples: Mapping[str, jax.Array],
+    *,
+    projection: ProjectionSpec,
+) -> jax.Array:
+    """Project vector posterior draws to scalar draws with shape ``(chains, samples)``."""
+    if projection.parameter not in samples:
+        raise ValueError(f"Missing samples for parameter: {projection.parameter}")
+
+    draws = jnp.asarray(samples[projection.parameter])
+    weights = jnp.asarray(projection.weights)
+    if draws.ndim != 3:
+        raise ValueError(
+            "Projected vector draw arrays must have shape (num_chains, num_samples, n)"
+        )
+    if weights.ndim != 1:
+        raise ValueError("Projection weights must be one-dimensional")
+    if draws.shape[-1] != weights.shape[0]:
+        raise ValueError("Projection weights must match the vector parameter dimension")
+    return jnp.einsum("csn,n->cs", draws, weights)
+
+
+def project_vector_truth(
+    truth: jax.Array,
+    *,
+    projection: ProjectionSpec,
+) -> float:
+    """Project one true vector value to a scalar truth."""
+    value = jnp.asarray(truth)
+    weights = jnp.asarray(projection.weights)
+    if value.ndim != 1:
+        raise ValueError("Projected true values must be one-dimensional")
+    if weights.ndim != 1:
+        raise ValueError("Projection weights must be one-dimensional")
+    if value.shape[0] != weights.shape[0]:
+        raise ValueError("Projection weights must match the true vector dimension")
+    return float(jnp.dot(value, weights))
+
+
+def projected_sbc_rank(
+    samples: Mapping[str, jax.Array],
+    *,
+    projection: ProjectionSpec,
+    true_value: jax.Array,
+) -> int:
+    """Return the SBC rank of a projected true vector among projected posterior draws."""
+    projected_draws = project_vector_draws(samples, projection=projection)
+    projected_truth = project_vector_truth(true_value, projection=projection)
+    return scalar_sbc_rank(
+        {projection.name: projected_draws}, parameter=projection.name, true_value=projected_truth
+    )
+
+
+def summarize_projected_draws(
+    samples: Mapping[str, jax.Array],
+    *,
+    projection: ProjectionSpec,
+) -> ScalarDrawSummary:
+    """Summarize a projected vector parameter as scalar posterior draws."""
+    projected_draws = project_vector_draws(samples, projection=projection)
+    return summarize_scalar_draws({projection.name: projected_draws}, parameter=projection.name)
 
 
 def scalar_sbc_rank(
