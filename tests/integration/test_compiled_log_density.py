@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import math
 
+import jax
 import jax.numpy as jnp
 from _helpers import bind_model
 from jax.scipy.special import gammaln
 
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.compiler.core import compile_log_density
-from jaxstanv5.constraints import Positive
+from jaxstanv5.constraints import Interval, Positive
 from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
 from jaxstanv5.math import exp, sigmoid
 
@@ -29,6 +30,13 @@ class ConstrainedNormal:
 
     sigma = Param(Normal(0, 1), constraint=Positive())
     y = Observed(Normal(0, sigma))
+
+
+@model
+class IntervalConstrainedNormal:
+    """Scalar normal prior constrained to a finite interval."""
+
+    x = Param(Normal(0, 1), constraint=Interval(-2.0, 3.0))
 
 
 @model
@@ -138,6 +146,22 @@ def test_compiled_log_density_for_constrained_model_includes_jacobian() -> None:
     expected_prior = normal_log_prob(sigma_constrained, jnp.array(0.0), jnp.array(1.0))
     expected_obs = normal_log_prob(jnp.array(3.0), jnp.array(0.0), sigma_constrained)
     expected = expected_prior + expected_obs + q[0]
+
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_for_interval_constrained_model_includes_jacobian() -> None:
+    bound = bind_model(IntervalConstrainedNormal)
+    log_prob = compile_log_density(bound)
+
+    q = jnp.array([0.4])
+    lp = log_prob(q)
+
+    width = jnp.array(5.0)
+    constrained = -2.0 + width * jax.nn.sigmoid(q[0])
+    expected_prior = normal_log_prob(constrained, jnp.array(0.0), jnp.array(1.0))
+    expected_log_jacobian = jnp.log(width) - jax.nn.softplus(-q[0]) - jax.nn.softplus(q[0])
+    expected = expected_prior + expected_log_jacobian
 
     assert jnp.allclose(lp, expected, atol=1e-6)
 
