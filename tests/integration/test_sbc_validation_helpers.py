@@ -5,11 +5,8 @@ from __future__ import annotations
 import jax.numpy as jnp
 import pytest
 from _validation import (
-    VALIDATION_PLAN,
     ProjectionSpec,
     SbcValidationResult,
-    ValidationStage,
-    ValidationStageStatus,
     assert_sbc_rank_uniformity,
     project_vector_draws,
     project_vector_truth,
@@ -18,12 +15,6 @@ from _validation import (
     summarize_projected_draws,
     summarize_sbc_rank_uniformity,
 )
-
-
-def test_validation_plan_marks_sbc_reference_completed() -> None:
-    statuses = {item.stage: item.status for item in VALIDATION_PLAN}
-
-    assert statuses[ValidationStage.SBC_REFERENCE] is ValidationStageStatus.COMPLETED
 
 
 def test_project_vector_draws_returns_scalar_draw_array() -> None:

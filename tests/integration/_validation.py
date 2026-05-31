@@ -1,16 +1,10 @@
-"""Planned posterior-validation harness for integration tests.
-
-This module is private test infrastructure.  It records the staged validation
-plan before the implementation exists, so future distribution work can turn one
-stage green at a time without adding runtime API surface.
-"""
+"""Private posterior-validation helpers for integration tests and reference scripts."""
 
 from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
 
 import jax
 import jax.numpy as jnp
@@ -19,85 +13,6 @@ from jaxstanv5.diagnostics import ess as effective_sample_size
 from jaxstanv5.diagnostics import rhat as potential_scale_reduction
 from jaxstanv5.inference import sample
 from jaxstanv5.model.bound import BoundModel
-
-
-class ValidationStage(Enum):
-    """Ordered stages for the Normal-path validation harness."""
-
-    ANALYTIC_SCALAR_NORMAL_REFERENCE = "analytic_scalar_normal_reference"
-    ANALYTIC_HIERARCHICAL_NORMAL_REFERENCE = "analytic_hierarchical_normal_reference"
-    PRIVATE_HELPERS = "private_helpers"
-    PUBLIC_MULTI_CHAIN_DRAWS = "public_multi_chain_draws"
-    ALWAYS_ON_NORMAL_TEST = "always_on_normal_test"
-    STANDARDIZED_DISCREPANCIES = "standardized_discrepancies"
-    CONSTRAINED_NORMAL_REFERENCE = "constrained_normal_reference"
-    STAN_REFERENCE = "stan_reference"
-    SBC_REFERENCE = "sbc_reference"
-
-
-class ValidationStageStatus(Enum):
-    """Completion status for one validation-plan item."""
-
-    COMPLETED = "completed"
-    PLANNED = "planned"
-
-
-@dataclass(frozen=True)
-class ValidationPlanItem:
-    """One planned validation stage."""
-
-    stage: ValidationStage
-    status: ValidationStageStatus
-    description: str
-
-
-VALIDATION_PLAN: tuple[ValidationPlanItem, ...] = (
-    ValidationPlanItem(
-        stage=ValidationStage.ANALYTIC_SCALAR_NORMAL_REFERENCE,
-        status=ValidationStageStatus.COMPLETED,
-        description="Analytic posterior reference for scalar Normal known-scale models.",
-    ),
-    ValidationPlanItem(
-        stage=ValidationStage.ANALYTIC_HIERARCHICAL_NORMAL_REFERENCE,
-        status=ValidationStageStatus.COMPLETED,
-        description="Analytic posterior reference for hierarchical Normal known-scale models.",
-    ),
-    ValidationPlanItem(
-        stage=ValidationStage.PRIVATE_HELPERS,
-        status=ValidationStageStatus.COMPLETED,
-        description="Typed private helpers for references, draw summaries, and assertions.",
-    ),
-    ValidationPlanItem(
-        stage=ValidationStage.PUBLIC_MULTI_CHAIN_DRAWS,
-        status=ValidationStageStatus.COMPLETED,
-        description="Use the public num_chains sampling API to obtain validation draws.",
-    ),
-    ValidationPlanItem(
-        stage=ValidationStage.ALWAYS_ON_NORMAL_TEST,
-        status=ValidationStageStatus.COMPLETED,
-        description="Fast CI test for analytic Normal posterior mean, sd, ESS, and R-hat.",
-    ),
-    ValidationPlanItem(
-        stage=ValidationStage.STANDARDIZED_DISCREPANCIES,
-        status=ValidationStageStatus.COMPLETED,
-        description="Record signed z-scores and k_min values for posterior summaries.",
-    ),
-    ValidationPlanItem(
-        stage=ValidationStage.CONSTRAINED_NORMAL_REFERENCE,
-        status=ValidationStageStatus.COMPLETED,
-        description="Numerical reference for a positive-scale Normal model.",
-    ),
-    ValidationPlanItem(
-        stage=ValidationStage.STAN_REFERENCE,
-        status=ValidationStageStatus.COMPLETED,
-        description="Slow fixed-data log-density and posterior-summary comparisons against Stan.",
-    ),
-    ValidationPlanItem(
-        stage=ValidationStage.SBC_REFERENCE,
-        status=ValidationStageStatus.COMPLETED,
-        description="Simulation-based calibration rank checks over generated datasets.",
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -214,10 +129,6 @@ class SbcRankUniformitySummary:
     expected_bin_count: float
     max_abs_bin_z: float
     mean_rank_z: float
-
-
-def _not_implemented(stage: ValidationStage) -> NotImplementedError:
-    return NotImplementedError(f"Validation stage is not implemented yet: {stage.value}")
 
 
 def _require_positive_scale(name: str, value: float) -> None:
