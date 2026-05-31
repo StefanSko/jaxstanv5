@@ -12,7 +12,7 @@ from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.constraints import Positive
 from jax.scipy.special import gammaln
 
-from jaxstanv5.distributions import BetaBinomial, Binomial, Normal, Poisson
+from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
 from jaxstanv5.math import exp, sigmoid
 
 
@@ -73,6 +73,17 @@ class BetaBinomialLogisticDensity:
     a = p * concentration
     b = (1.0 - p) * concentration
     y = Observed(BetaBinomial(trials, a, b))
+
+
+@model
+class NegativeBinomialLogRateDensity:
+    """Negative-binomial count model using symbolic mean and overdispersion."""
+
+    eta = Param(Normal(0, 1))
+    log_overdispersion = Param(Normal(math.log(5.0), 0.5))
+    mean = exp(eta)
+    overdispersion = exp(log_overdispersion)
+    y = Observed(NegativeBinomial(mean, overdispersion))
 
 
 @model
@@ -195,6 +206,30 @@ def test_compiled_log_density_evaluates_beta_binomial_likelihood_fields() -> Non
         - gammaln(a)
         - gammaln(b)
         + gammaln(a + b)
+    )
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_negative_binomial_likelihood_fields() -> None:
+    y_data = jnp.array([0.0, 2.0, 3.0])
+    bound = bind_model(NegativeBinomialLogRateDensity, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    eta = jnp.array(0.25)
+    log_overdispersion = jnp.array(math.log(4.0))
+    lp = log_prob(jnp.array([eta, log_overdispersion]))
+
+    expected = normal_log_prob(eta, jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(log_overdispersion, jnp.array(math.log(5.0)), jnp.array(0.5))
+    mean = jnp.exp(eta)
+    overdispersion = jnp.exp(log_overdispersion)
+    total = mean + overdispersion
+    expected += jnp.sum(
+        gammaln(y_data + overdispersion)
+        - gammaln(overdispersion)
+        - gammaln(y_data + 1.0)
+        + overdispersion * jnp.log(overdispersion / total)
+        + y_data * jnp.log(mean / total)
     )
     assert jnp.allclose(lp, expected, atol=1e-6)
 
