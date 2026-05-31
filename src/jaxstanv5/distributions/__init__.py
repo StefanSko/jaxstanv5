@@ -1,5 +1,6 @@
 """Probability distributions used in model declarations."""
 
+from jaxstanv5.distributions.beta import Beta
 from jaxstanv5.distributions.beta_binomial import BetaBinomial
 from jaxstanv5.distributions.binomial import Binomial
 from jaxstanv5.distributions.core import (
@@ -19,6 +20,7 @@ from jaxstanv5.distributions.student_t import StudentT
 from jaxstanv5.distributions.uniform import Uniform
 
 __all__ = [
+    "Beta",
     "BetaBinomial",
     "Binomial",
     "DiscreteDistribution",
