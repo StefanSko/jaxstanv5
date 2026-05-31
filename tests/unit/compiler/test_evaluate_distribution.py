@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 
 from jaxstanv5.compiler.core import _evaluate_distribution
-from jaxstanv5.distributions import Normal, Poisson
+from jaxstanv5.distributions import Binomial, Normal, Poisson
 from jaxstanv5.distributions.core import _concrete_parameter
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ParamRef, UnaryOp
 
@@ -73,6 +74,17 @@ def test_unary_function_fields() -> None:
 
     expected_rate = jnp.exp(1.0 + jnp.array([0.0, 1.0]))
     assert jnp.allclose(_concrete_parameter(result.rate), expected_rate)
+
+
+def test_sigmoid_unary_function_fields() -> None:
+    """Sigmoid UnaryOp fields are recursively evaluated."""
+    probs_expr = UnaryOp("sigmoid", BinOp("+", ParamRef("alpha"), DataRef("x")))
+    dist = Binomial(total_count=10.0, probs=probs_expr)
+    values = {"alpha": jnp.array(1.0), "x": jnp.array([0.0, 1.0])}
+    result = _evaluate_distribution(dist, values)
+
+    expected_probs = jax.nn.sigmoid(1.0 + jnp.array([0.0, 1.0]))
+    assert jnp.allclose(_concrete_parameter(result.probs), expected_probs)
 
 
 def test_log_prob_works_on_evaluated_distribution() -> None:

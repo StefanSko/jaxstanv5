@@ -8,9 +8,10 @@ from typing import Protocol, cast
 import pytest
 
 from jaxstanv5.distributions.core import DistributionParameter
+from jaxstanv5.distributions.binomial import Binomial
 from jaxstanv5.distributions.normal import Normal
 from jaxstanv5.distributions.poisson import Poisson
-from jaxstanv5.math import exp
+from jaxstanv5.math import exp, sigmoid
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.decorator import (
     _collect_declaration_symbols,
@@ -31,6 +32,11 @@ class PoissonFields(Protocol):
     rate: object
 
 
+class BinomialFields(Protocol):
+    total_count: object
+    probs: object
+
+
 def dist_param(value: object) -> DistributionParameter:
     return cast(DistributionParameter, value)
 
@@ -43,6 +49,11 @@ def normal_fields(value: object) -> NormalFields:
 def poisson_fields(value: object) -> PoissonFields:
     assert isinstance(value, Poisson)
     return cast(PoissonFields, value)
+
+
+def binomial_fields(value: object) -> BinomialFields:
+    assert isinstance(value, Binomial)
+    return cast(BinomialFields, value)
 
 
 @dataclass(frozen=True)
@@ -165,6 +176,19 @@ def test_distribution_resolution_handles_symbolic_unary_function_fields() -> Non
     )
 
     assert resolved_dist.rate == UnaryOp("exp", BinOp("+", ParamRef("alpha"), DataRef("x")))
+
+
+def test_distribution_resolution_handles_symbolic_sigmoid_fields() -> None:
+    alpha = Param(Normal(0.0, 1.0))
+    x = Data()
+    resolved_dist = binomial_fields(
+        _resolve_declaration_distribution(
+            Binomial(10.0, dist_param(sigmoid(alpha + x))),
+            {alpha.symbol: "alpha", x.symbol: "x"},
+        )
+    )
+
+    assert resolved_dist.probs == UnaryOp("sigmoid", BinOp("+", ParamRef("alpha"), DataRef("x")))
 
 
 def test_distribution_resolution_rejects_final_expr_fields() -> None:
