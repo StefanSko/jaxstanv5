@@ -22,11 +22,9 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by out-of-band scrip
 
 @dataclass(frozen=True)
 class EightSchoolsFixture:
-    """Bound non-centered eight-schools model and its observed data."""
+    """Bound non-centered eight-schools model."""
 
     bound: BoundModel
-    y: jax.Array
-    sigma: jax.Array
 
 
 @dataclass(frozen=True)
@@ -37,7 +35,6 @@ class ExponentialRateFixture:
     parameter: str
     y: jax.Array
     prior_scale: float
-    true_rate: float
 
 
 @dataclass(frozen=True)
@@ -45,9 +42,6 @@ class RobustRegressionFixture:
     """Bound robust linear regression with Student-t likelihood."""
 
     bound: BoundModel
-    x: jax.Array
-    y: jax.Array
-    nu: float
 
 
 @dataclass(frozen=True)
@@ -60,7 +54,6 @@ class MultivariateNormalLikelihoodFixture:
     prior_mean: jax.Array
     prior_scale: float
     covariance: jax.Array
-    chol: jax.Array
 
 
 @dataclass(frozen=True)
@@ -69,11 +62,8 @@ class FixedKernelGpFixture:
 
     bound: BoundModel
     parameter: str
-    x: jax.Array
     y: jax.Array
-    f_true: jax.Array
     covariance: jax.Array
-    chol: jax.Array
     obs_sd: float
 
 
@@ -125,8 +115,6 @@ def eight_schools_fixture() -> EightSchoolsFixture:
     sigma = jnp.array([15.0, 10.0, 16.0, 11.0, 9.0, 11.0, 10.0, 18.0])
     return EightSchoolsFixture(
         bound=bind_model(EightSchoolsNonCentered, n_schools=8, sigma=sigma, y=y),
-        y=y,
-        sigma=sigma,
     )
 
 
@@ -155,7 +143,6 @@ def exponential_rate_fixture(
         parameter="rate",
         y=y,
         prior_scale=prior_scale,
-        true_rate=true_rate,
     )
 
 
@@ -187,9 +174,6 @@ def robust_regression_fixture() -> RobustRegressionFixture:
     nu = 4.0
     return RobustRegressionFixture(
         bound=bind_model(RobustLinearRegression, nu=nu, x=x, y=y),
-        x=x,
-        y=y,
-        nu=nu,
     )
 
 
@@ -218,7 +202,6 @@ def multivariate_normal_likelihood_fixture() -> MultivariateNormalLikelihoodFixt
         prior_mean=jnp.zeros((3,)),
         prior_scale=10.0,
         covariance=covariance,
-        chol=chol,
     )
 
 
@@ -260,11 +243,8 @@ def fixed_kernel_gp_fixture(
     return FixedKernelGpFixture(
         bound=bind_model(GaussianProcessRegression, n=n, chol=chol, obs_sd=obs_sd, y=y),
         parameter="f",
-        x=x,
         y=y,
-        f_true=f_true,
         covariance=covariance,
-        chol=chol,
         obs_sd=obs_sd,
     )
 
