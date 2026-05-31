@@ -6,12 +6,11 @@ import math
 
 import jax.numpy as jnp
 from _helpers import bind_model
+from jax.scipy.special import gammaln
 
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.constraints import Positive
-from jax.scipy.special import gammaln
-
 from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
 from jaxstanv5.math import exp, sigmoid
 
