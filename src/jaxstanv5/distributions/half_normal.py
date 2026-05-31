@@ -30,6 +30,10 @@ class HalfNormal:
         """Return broadcasted non-sample dimensions for Half-Normal parameters."""
         return self._scale().shape
 
+    def event_shape(self) -> tuple[int, ...]:
+        """Return scalar-event shape for element-wise Half-Normal draws."""
+        return ()
+
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise Half-Normal log-density for ``x``."""
         scale = self._scale()

@@ -28,6 +28,10 @@ class Exponential:
         """Return broadcasted non-sample dimensions for Exponential parameters."""
         return self._rate().shape
 
+    def event_shape(self) -> tuple[int, ...]:
+        """Return scalar-event shape for element-wise Exponential draws."""
+        return ()
+
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise Exponential log-density for ``x``."""
         rate = self._rate()

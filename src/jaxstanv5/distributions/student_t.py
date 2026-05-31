@@ -37,6 +37,10 @@ class StudentT:
         df, loc, scale = self._params()
         return jnp.broadcast_shapes(df.shape, loc.shape, scale.shape)
 
+    def event_shape(self) -> tuple[int, ...]:
+        """Return scalar-event shape for element-wise Student-t draws."""
+        return ()
+
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise Student-t log-density for ``x``."""
         df, loc, scale = self._params()

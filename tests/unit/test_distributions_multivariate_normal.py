@@ -2,6 +2,7 @@
 
 import math
 
+import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import solve_triangular
 
@@ -56,3 +57,21 @@ def test_multivariate_normal_event_shape_matches_cholesky_dimension() -> None:
     dist = MultivariateNormal(0.0, jnp.eye(4))
 
     assert dist.event_shape() == (4,)
+
+
+def test_multivariate_normal_sample_draws_one_event_vector() -> None:
+    dist = MultivariateNormal(0.0, jnp.eye(3))
+
+    sample = dist.sample(jax.random.PRNGKey(123))
+
+    assert sample.shape == (3,)
+    assert jnp.all(jnp.isfinite(sample))
+
+
+def test_multivariate_normal_sample_draws_leading_iid_vectors() -> None:
+    dist = MultivariateNormal(0.0, jnp.eye(3))
+
+    samples = dist.sample(jax.random.PRNGKey(456), sample_shape=(5,))
+
+    assert samples.shape == (5, 3)
+    assert jnp.all(jnp.isfinite(samples))

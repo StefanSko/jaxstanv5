@@ -39,13 +39,38 @@ class PriorPredictiveResult:
     data: Mapping[str, jax.Array]
 
 
+def _leading_sample_shape(
+    *,
+    target_shape: tuple[int, ...],
+    batch_shape: tuple[int, ...],
+    event_shape: tuple[int, ...],
+) -> tuple[int, ...]:
+    """Return iid sample dimensions from a full target value shape."""
+    suffix = batch_shape + event_shape
+    if suffix == ():
+        return target_shape
+    if len(target_shape) < len(suffix) or target_shape[-len(suffix) :] != suffix:
+        raise ValueError(
+            "Target shape must end with distribution batch_shape + event_shape: "
+            f"target_shape={target_shape}, batch_shape={batch_shape}, event_shape={event_shape}"
+        )
+    return target_shape[: -len(suffix)]
+
+
 def _sample_interval_restricted(
     key: jax.Array,
     distribution: InverseCdfDistribution,
     domain: ScalarIntervalDomain,
     *,
-    sample_shape: tuple[int, ...],
+    target_shape: tuple[int, ...],
 ) -> jax.Array:
+    if distribution.event_shape() != ():
+        raise TypeError("Interval-constrained prior simulation requires scalar-event distributions")
+    sample_shape = _leading_sample_shape(
+        target_shape=target_shape,
+        batch_shape=distribution.batch_shape(),
+        event_shape=distribution.event_shape(),
+    )
     lower_probability = jnp.asarray(0.0) if domain.lower is None else distribution.cdf(domain.lower)
     upper_probability = jnp.asarray(1.0) if domain.upper is None else distribution.cdf(domain.upper)
     uniform = jax.random.uniform(
@@ -62,13 +87,18 @@ def _sample_prior_value(
     distribution: Distribution,
     *,
     constraint: Constraint | None,
-    sample_shape: tuple[int, ...],
+    target_shape: tuple[int, ...],
 ) -> jax.Array:
     """Sample one parameter value from its constrained-space prior."""
     domain = prior_domain_for_constraint(constraint)
 
     if isinstance(domain, UnconstrainedDomain):
         if isinstance(distribution, SampleableDistribution):
+            sample_shape = _leading_sample_shape(
+                target_shape=target_shape,
+                batch_shape=distribution.batch_shape(),
+                event_shape=distribution.event_shape(),
+            )
             return distribution.sample(key, sample_shape=sample_shape)
         raise TypeError(f"Unsupported prior distribution: {type(distribution).__name__}")
 
@@ -78,7 +108,7 @@ def _sample_prior_value(
                 key,
                 distribution,
                 domain,
-                sample_shape=sample_shape,
+                target_shape=target_shape,
             )
         raise TypeError(
             f"Unsupported interval-constrained prior distribution: {type(distribution).__name__}"
@@ -115,21 +145,22 @@ def _resolve_param_shapes(
 def _validate_observed_shapes(
     meta: ModelMeta,
     observed_shapes: Mapping[str, tuple[int, ...]] | None,
-) -> dict[str, tuple[int, ...]]:
+) -> dict[str, tuple[int, ...] | None]:
     raw_shapes: Mapping[str, tuple[int, ...]] = {} if observed_shapes is None else observed_shapes
     observed_names = {observed.name for observed in meta.observed_nodes}
     extra = set(raw_shapes) - observed_names
     if extra:
         raise ValueError(f"Unexpected observed shapes: {sorted(extra)}")
 
-    result: dict[str, tuple[int, ...]] = {}
+    result: dict[str, tuple[int, ...] | None] = {}
     for observed in meta.observed_nodes:
-        shape = raw_shapes.get(observed.name, ())
-        for dim in shape:
-            if isinstance(dim, bool):
-                raise TypeError("Observed shape dimensions must be integers, not bool")
-            if dim < 0:
-                raise ValueError("Observed shape dimensions must be non-negative")
+        shape = raw_shapes.get(observed.name)
+        if shape is not None:
+            for dim in shape:
+                if isinstance(dim, bool):
+                    raise TypeError("Observed shape dimensions must be integers, not bool")
+                if dim < 0:
+                    raise ValueError("Observed shape dimensions must be non-negative")
         result[observed.name] = shape
     return result
 
@@ -140,7 +171,7 @@ def _simulate_one(
     meta: ModelMeta,
     data: dict[str, jax.Array],
     param_shapes: dict[str, tuple[int, ...]],
-    observed_shapes: dict[str, tuple[int, ...]],
+    observed_shapes: dict[str, tuple[int, ...] | None],
 ) -> tuple[dict[str, jax.Array], dict[str, jax.Array]]:
     keys = jax.random.split(key, len(meta.params) + len(meta.observed_nodes))
     key_index = 0
@@ -153,7 +184,7 @@ def _simulate_one(
             keys[key_index],
             distribution,
             constraint=param.constraint,
-            sample_shape=param_shapes[name],
+            target_shape=param_shapes[name],
         )
         parameters[name] = value
         values[name] = value
@@ -162,11 +193,16 @@ def _simulate_one(
     observed_values: dict[str, jax.Array] = {}
     for observed in meta.observed_nodes:
         distribution = _evaluate_distribution(observed.distribution, values)
+        observed_target_shape = observed_shapes[observed.name]
+        if observed_target_shape is None:
+            if not isinstance(distribution, SampleableDistribution):
+                raise TypeError(f"Unsupported prior distribution: {type(distribution).__name__}")
+            observed_target_shape = distribution.batch_shape() + distribution.event_shape()
         observed_value = _sample_prior_value(
             keys[key_index],
             distribution,
             constraint=None,
-            sample_shape=observed_shapes[observed.name],
+            target_shape=observed_target_shape,
         )
         observed_values[observed.name] = observed_value
         key_index += 1

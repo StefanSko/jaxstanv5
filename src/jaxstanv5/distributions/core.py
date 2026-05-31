@@ -32,6 +32,14 @@ class Distribution(Protocol):
 class SampleableDistribution(Distribution, Protocol):
     """Probability distribution that can draw prior-predictive samples."""
 
+    def batch_shape(self) -> tuple[int, ...]:
+        """Return broadcasted non-sample, non-event dimensions."""
+        ...
+
+    def event_shape(self) -> tuple[int, ...]:
+        """Return per-draw event dimensions."""
+        ...
+
     def sample(
         self,
         key: jax.Array,
@@ -45,10 +53,6 @@ class SampleableDistribution(Distribution, Protocol):
 @runtime_checkable
 class InverseCdfDistribution(SampleableDistribution, Protocol):
     """Scalar distribution supporting inverse-CDF restricted sampling."""
-
-    def batch_shape(self) -> tuple[int, ...]:
-        """Return broadcasted non-sample dimensions for distribution parameters."""
-        ...
 
     def cdf(self, x: DistributionValue) -> jax.Array:
         """Return element-wise cumulative probability at ``x``."""

@@ -35,6 +35,10 @@ class Normal:
         loc, scale = self._loc_scale()
         return jnp.broadcast_shapes(loc.shape, scale.shape)
 
+    def event_shape(self) -> tuple[int, ...]:
+        """Return scalar-event shape for element-wise Normal draws."""
+        return ()
+
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise normal log-density for ``x``."""
         loc, scale = self._loc_scale()

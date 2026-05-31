@@ -33,6 +33,10 @@ class Uniform:
         low, high = self._low_high()
         return jnp.broadcast_shapes(low.shape, high.shape)
 
+    def event_shape(self) -> tuple[int, ...]:
+        """Return scalar-event shape for element-wise Uniform draws."""
+        return ()
+
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise uniform log-density for ``x``."""
         low, high = self._low_high()

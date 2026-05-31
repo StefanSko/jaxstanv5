@@ -7,7 +7,7 @@ import pytest
 
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal, Uniform
+from jaxstanv5.distributions import MultivariateNormal, Normal, Uniform
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation import simulate_prior_predictive
 
@@ -54,6 +54,15 @@ class DataSizedPrior:
 
     n = Data()
     theta = Param(Normal(0.0, 1.0), size=n)
+
+
+@model
+class MultivariateNormalPrior:
+    """Event-shaped multivariate Normal prior."""
+
+    n = Data()
+    chol = Data()
+    f = Param(MultivariateNormal(0.0, chol), size=n)
 
 
 @model
@@ -112,6 +121,18 @@ def test_simulate_prior_predictive_resolves_data_dependent_parameter_shape() -> 
 
     assert result.parameters["theta"].shape == (6, 4)
     assert result.data["n"].shape == ()
+
+
+def test_simulate_prior_predictive_draws_multivariate_normal_prior_event() -> None:
+    result = simulate_prior_predictive(
+        MultivariateNormalPrior,
+        seed=41,
+        num_samples=5,
+        data={"n": 3, "chol": jnp.eye(3)},
+    )
+
+    assert result.parameters["f"].shape == (5, 3)
+    assert jnp.all(jnp.isfinite(result.parameters["f"]))
 
 
 def test_simulate_prior_predictive_rejects_missing_data() -> None:

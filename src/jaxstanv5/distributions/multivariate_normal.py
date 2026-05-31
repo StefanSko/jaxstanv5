@@ -21,9 +21,7 @@ from jaxstanv5.distributions.core import (
 class MultivariateNormal:
     """Event-wise multivariate Normal with a lower Cholesky scale factor.
 
-    This distribution intentionally exposes only ``log_prob`` for now. Prior
-    simulation needs explicit event-shape support before MVN sampling can be
-    wired safely.
+    Samples have shape ``sample_shape + batch_shape + event_shape``.
     """
 
     mean: DistributionParameter
@@ -35,10 +33,31 @@ class MultivariateNormal:
             jnp.asarray(_concrete_parameter(self.scale_tril)),
         )
 
+    def batch_shape(self) -> tuple[int, ...]:
+        """Return broadcasted non-event dimensions for MVN parameters."""
+        mean, scale_tril = self._mean_tril()
+        mean_batch_shape = () if mean.ndim == 0 else mean.shape[:-1]
+        scale_batch_shape = scale_tril.shape[:-2]
+        return jnp.broadcast_shapes(mean_batch_shape, scale_batch_shape)
+
     def event_shape(self) -> tuple[int, ...]:
         """Return the vector event shape."""
         _, scale_tril = self._mean_tril()
         return (scale_tril.shape[-1],)
+
+    def sample(
+        self,
+        key: jax.Array,
+        *,
+        sample_shape: tuple[int, ...] = (),
+    ) -> jax.Array:
+        """Draw MVN samples with leading ``sample_shape`` dimensions."""
+        mean, scale_tril = self._mean_tril()
+        standard = jax.random.normal(
+            key, shape=sample_shape + self.batch_shape() + self.event_shape()
+        )
+        shifted = jnp.einsum("...ij,...j->...i", scale_tril, standard)
+        return mean + shifted
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return event-wise multivariate Normal log-density for ``x``."""
