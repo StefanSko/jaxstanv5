@@ -91,6 +91,18 @@ class HierarchicalBinomialFixture:
 
 
 @dataclass(frozen=True)
+class HierarchicalBetaBinomialFixture:
+    """Bound non-centered hierarchical Beta-binomial varying-slopes model."""
+
+    bound: BoundModel
+    y: jax.Array
+    trials: jax.Array
+    x: jax.Array
+    group_idx: jax.Array
+    n_groups: int
+
+
+@dataclass(frozen=True)
 class MultivariateNormalLikelihoodFixture:
     """Bound single-observation multivariate-normal likelihood model."""
 
@@ -370,6 +382,71 @@ def hierarchical_binomial_logistic_varying_slopes_fixture() -> HierarchicalBinom
     return HierarchicalBinomialFixture(
         bound=bind_model(
             HierarchicalBinomialLogisticVaryingSlopes,
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            trials=trials,
+            y=y,
+        ),
+        y=y,
+        trials=trials,
+        x=x,
+        group_idx=group_idx,
+        n_groups=n_groups,
+    )
+
+
+def hierarchical_beta_binomial_logistic_varying_slopes_fixture() -> HierarchicalBetaBinomialFixture:
+    """Return a hierarchical Beta-binomial logistic varying-slopes smoke fixture."""
+    from math import log
+
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.constraints import Positive
+    from jaxstanv5.distributions import BetaBinomial, HalfNormal, Normal
+    from jaxstanv5.math import exp, sigmoid
+
+    @model
+    class HierarchicalBetaBinomialLogisticVaryingSlopes:
+        """Non-centered overdispersed Binomial model with varying slopes."""
+
+        n_groups = Data()
+        group_idx = Data()
+        x = Data()
+        trials = Data()
+
+        alpha_pop = Param(Normal(0.0, 1.0))
+        beta_pop = Param(Normal(0.0, 1.0))
+        sigma_alpha = Param(HalfNormal(0.5), constraint=Positive())
+        sigma_beta = Param(HalfNormal(0.5), constraint=Positive())
+        log_concentration = Param(Normal(log(20.0), 0.5))
+
+        z_alpha = Param(Normal(0.0, 1.0), size=n_groups)
+        z_beta = Param(Normal(0.0, 1.0), size=n_groups)
+
+        alpha = alpha_pop + sigma_alpha * z_alpha
+        beta = beta_pop + sigma_beta * z_beta
+        eta = alpha[group_idx] + beta[group_idx] * x
+        p = sigmoid(eta)
+        concentration = exp(log_concentration)
+        a = p * concentration
+        b = (1.0 - p) * concentration
+        y = Observed(BetaBinomial(trials, a, b))
+
+    n_groups = 4
+    observations_per_group = 12
+    group_idx = jnp.repeat(jnp.arange(n_groups), observations_per_group)
+    x = jnp.tile(jnp.linspace(-1.25, 1.25, observations_per_group), n_groups)
+    trials = 10 + (jnp.arange(n_groups * observations_per_group) % 4)
+    alpha_true = jnp.array([-0.8, -0.25, 0.4, 0.85])
+    beta_true = jnp.array([0.75, -0.35, 0.2, -0.6])
+    concentration_true = 18.0
+    p = jax.nn.sigmoid(alpha_true[group_idx] + beta_true[group_idx] * x)
+    beta_key, count_key = jax.random.split(jax.random.PRNGKey(41))
+    latent_p = jax.random.beta(beta_key, p * concentration_true, (1.0 - p) * concentration_true)
+    y = jax.random.binomial(count_key, n=trials, p=latent_p)
+    return HierarchicalBetaBinomialFixture(
+        bound=bind_model(
+            HierarchicalBetaBinomialLogisticVaryingSlopes,
             n_groups=n_groups,
             group_idx=group_idx,
             x=x,

@@ -17,6 +17,7 @@ from _reference_models import (
     eight_schools_fixture,
     exponential_rate_fixture,
     fixed_kernel_gp_fixture,
+    hierarchical_beta_binomial_logistic_varying_slopes_fixture,
     hierarchical_binomial_logistic_varying_slopes_fixture,
     hierarchical_poisson_varying_slopes_fixture,
     multivariate_normal_likelihood_fixture,
@@ -96,6 +97,27 @@ def test_hierarchical_binomial_logistic_varying_slopes_workflow_smoke() -> None:
 
     rhat_vals = rhat(result.samples)
     for name in ("alpha_pop", "beta_pop", "sigma_alpha", "sigma_beta"):
+        assert rhat_vals[name] < 1.12, f"R-hat too high for {name}"
+    assert ess(result.samples)["alpha_pop"] > 150
+    assert jnp.all(jnp.isfinite(result.samples["alpha_pop"]))
+    assert jnp.all(result.samples["sigma_alpha"] > 0.0)
+    assert jnp.all(result.samples["sigma_beta"] > 0.0)
+
+
+def test_hierarchical_beta_binomial_logistic_varying_slopes_workflow_smoke() -> None:
+    fixture = hierarchical_beta_binomial_logistic_varying_slopes_fixture()
+
+    result = sample(
+        fixture.bound,
+        seed=43,
+        num_chains=4,
+        num_warmup=800,
+        num_samples=1000,
+        target_acceptance_rate=0.9,
+    )
+
+    rhat_vals = rhat(result.samples)
+    for name in ("alpha_pop", "beta_pop", "sigma_alpha", "sigma_beta", "log_concentration"):
         assert rhat_vals[name] < 1.12, f"R-hat too high for {name}"
     assert ess(result.samples)["alpha_pop"] > 150
     assert jnp.all(jnp.isfinite(result.samples["alpha_pop"]))
