@@ -40,6 +40,33 @@ class UnitIntervalDistribution:
         return jnp.asarray(p)
 
 
+class EventVectorInverseCdfDistribution:
+    """Vector-event inverse-CDF distribution used to test explicit rejection."""
+
+    def batch_shape(self) -> tuple[int, ...]:
+        return ()
+
+    def event_shape(self) -> tuple[int, ...]:
+        return (2,)
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return jnp.zeros(jnp.asarray(x).shape[:-1])
+
+    def sample(
+        self,
+        key: jax.Array,
+        *,
+        sample_shape: tuple[int, ...] = (),
+    ) -> jax.Array:
+        return jax.random.uniform(key, shape=sample_shape + self.event_shape())
+
+    def cdf(self, x: DistributionValue) -> jax.Array:
+        return jnp.asarray(x)
+
+    def icdf(self, p: DistributionValue) -> jax.Array:
+        return jnp.asarray(p)
+
+
 class UnsupportedConstraint:
     """Constraint shape used to verify explicit unsupported-state failures."""
 
@@ -121,6 +148,16 @@ def test_sample_prior_value_uses_inverse_cdf_distribution_for_positive_constrain
     assert value.shape == (20,)
     assert jnp.all(value >= 0.0)
     assert jnp.all(value <= 1.0)
+
+
+def test_sample_prior_value_rejects_interval_constrained_vector_event_distribution() -> None:
+    with pytest.raises(TypeError, match="scalar-event distributions"):
+        _sample_prior_value(
+            jax.random.PRNGKey(15),
+            EventVectorInverseCdfDistribution(),
+            constraint=Positive(),
+            target_shape=(2,),
+        )
 
 
 def test_sample_prior_value_rejects_unsupported_constraint() -> None:
