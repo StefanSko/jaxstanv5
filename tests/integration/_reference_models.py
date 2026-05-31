@@ -38,10 +38,32 @@ class ExponentialRateFixture:
 
 
 @dataclass(frozen=True)
+class PoissonLogRateFixture:
+    """Bound scalar log-rate Poisson model and data needed for references."""
+
+    bound: BoundModel
+    parameter: str
+    y: jax.Array
+    prior_loc: float
+    prior_scale: float
+
+
+@dataclass(frozen=True)
 class RobustRegressionFixture:
     """Bound robust linear regression with Student-t likelihood."""
 
     bound: BoundModel
+
+
+@dataclass(frozen=True)
+class HierarchicalPoissonFixture:
+    """Bound non-centered hierarchical Poisson varying-slopes model."""
+
+    bound: BoundModel
+    y: jax.Array
+    x: jax.Array
+    group_idx: jax.Array
+    n_groups: int
 
 
 @dataclass(frozen=True)
@@ -146,6 +168,32 @@ def exponential_rate_fixture(
     )
 
 
+def poisson_log_rate_fixture() -> PoissonLogRateFixture:
+    """Return a scalar log-rate Poisson fixture for grid validation."""
+    from jaxstanv5 import Observed, Param, model
+    from jaxstanv5.distributions import Normal, Poisson
+    from jaxstanv5.math import exp
+
+    prior_loc = 0.0
+    prior_scale = 1.0
+
+    @model
+    class PoissonLogRate:
+        """Scalar log-rate Poisson observations."""
+
+        eta = Param(Normal(prior_loc, prior_scale))
+        y = Observed(Poisson(exp(eta)))
+
+    y = jnp.array([0.0, 1.0, 3.0, 2.0, 4.0, 1.0, 2.0, 3.0])
+    return PoissonLogRateFixture(
+        bound=bind_model(PoissonLogRate, y=y),
+        parameter="eta",
+        y=y,
+        prior_loc=prior_loc,
+        prior_scale=prior_scale,
+    )
+
+
 def robust_regression_fixture() -> RobustRegressionFixture:
     """Return a robust linear-regression smoke fixture."""
     from jaxstanv5 import Data, Observed, Param, model
@@ -174,6 +222,57 @@ def robust_regression_fixture() -> RobustRegressionFixture:
     nu = 4.0
     return RobustRegressionFixture(
         bound=bind_model(RobustLinearRegression, nu=nu, x=x, y=y),
+    )
+
+
+def hierarchical_poisson_varying_slopes_fixture() -> HierarchicalPoissonFixture:
+    """Return a hierarchical Poisson varying-slopes smoke fixture."""
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.constraints import Positive
+    from jaxstanv5.distributions import HalfNormal, Normal, Poisson
+    from jaxstanv5.math import exp
+
+    @model
+    class HierarchicalPoissonVaryingSlopes:
+        """Non-centered Poisson log-rate model with varying intercepts and slopes."""
+
+        n_groups = Data()
+        group_idx = Data()
+        x = Data()
+
+        alpha_pop = Param(Normal(0.0, 0.5))
+        beta_pop = Param(Normal(0.0, 0.5))
+        sigma_alpha = Param(HalfNormal(0.4), constraint=Positive())
+        sigma_beta = Param(HalfNormal(0.4), constraint=Positive())
+
+        z_alpha = Param(Normal(0.0, 1.0), size=n_groups)
+        z_beta = Param(Normal(0.0, 1.0), size=n_groups)
+
+        alpha = alpha_pop + sigma_alpha * z_alpha
+        beta = beta_pop + sigma_beta * z_beta
+        eta = alpha[group_idx] + beta[group_idx] * x
+        y = Observed(Poisson(exp(eta)))
+
+    n_groups = 4
+    observations_per_group = 10
+    group_idx = jnp.repeat(jnp.arange(n_groups), observations_per_group)
+    x = jnp.tile(jnp.linspace(-1.0, 1.0, observations_per_group), n_groups)
+    alpha_true = jnp.array([-0.25, 0.05, 0.35, -0.1])
+    beta_true = jnp.array([0.25, -0.2, 0.3, 0.05])
+    rate = jnp.exp(alpha_true[group_idx] + beta_true[group_idx] * x)
+    y = jax.random.poisson(jax.random.PRNGKey(23), rate)
+    return HierarchicalPoissonFixture(
+        bound=bind_model(
+            HierarchicalPoissonVaryingSlopes,
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            y=y,
+        ),
+        y=y,
+        x=x,
+        group_idx=group_idx,
+        n_groups=n_groups,
     )
 
 
