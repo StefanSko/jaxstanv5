@@ -10,7 +10,8 @@ from _helpers import bind_model
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import Normal, Poisson
+from jaxstanv5.math import exp
 
 
 @model
@@ -38,6 +39,15 @@ class LinearPredictor:
     x = Data()
     mu = alpha + beta * x
     y = Observed(Normal(mu, 1))
+
+
+@model
+class PoissonLogDensity:
+    """Poisson count model using symbolic exponential rate."""
+
+    eta = Param(Normal(0, 1))
+    rate = exp(eta)
+    y = Observed(Poisson(rate))
 
 
 @model
@@ -94,6 +104,22 @@ def test_compiled_log_density_for_constrained_model_includes_jacobian() -> None:
     expected_obs = normal_log_prob(jnp.array(3.0), jnp.array(0.0), sigma_constrained)
     expected = expected_prior + expected_obs + q[0]
 
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_unary_expression_likelihood_fields() -> None:
+    y_data = jnp.array([0.0, 2.0, 3.0])
+    bound = bind_model(PoissonLogDensity, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    eta = jnp.array(0.4)
+    lp = log_prob(jnp.array([eta]))
+
+    expected = normal_log_prob(eta, jnp.array(0.0), jnp.array(1.0))
+    rate = jnp.exp(eta)
+    expected += jnp.sum(
+        y_data * jnp.log(rate) - rate - jnp.asarray([0.0, math.log(2.0), math.log(6.0)])
+    )
     assert jnp.allclose(lp, expected, atol=1e-6)
 
 

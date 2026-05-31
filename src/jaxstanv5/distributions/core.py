@@ -10,6 +10,10 @@ class SymbolicDistributionParameter:
     """Marker for declaration-time symbolic distribution fields."""
 
 
+class DiscreteDistribution:
+    """Marker for discrete distributions, which cannot be latent NUTS parameters."""
+
+
 type DistributionValue = ArrayLike
 type DistributionParameter = ArrayLike | SymbolicDistributionParameter
 type LogProbability = jax.Array

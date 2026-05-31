@@ -5,9 +5,9 @@ from __future__ import annotations
 import jax.numpy as jnp
 
 from jaxstanv5.compiler.core import _evaluate_distribution
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import Normal, Poisson
 from jaxstanv5.distributions.core import _concrete_parameter
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ParamRef
+from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ParamRef, UnaryOp
 
 
 def test_scalar_fields_pass_through() -> None:
@@ -62,6 +62,17 @@ def test_binop_fields() -> None:
     expected_loc = 2.0 + 0.5 * jnp.array([1.0, 2.0])
     assert jnp.allclose(_concrete_parameter(result.loc), expected_loc)
     assert jnp.allclose(_concrete_parameter(result.scale), jnp.array(1.0))
+
+
+def test_unary_function_fields() -> None:
+    """UnaryOp fields are recursively evaluated."""
+    rate_expr = UnaryOp("exp", BinOp("+", ParamRef("alpha"), DataRef("x")))
+    dist = Poisson(rate=rate_expr)
+    values = {"alpha": jnp.array(1.0), "x": jnp.array([0.0, 1.0])}
+    result = _evaluate_distribution(dist, values)
+
+    expected_rate = jnp.exp(1.0 + jnp.array([0.0, 1.0]))
+    assert jnp.allclose(_concrete_parameter(result.rate), expected_rate)
 
 
 def test_log_prob_works_on_evaluated_distribution() -> None:

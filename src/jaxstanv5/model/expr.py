@@ -7,8 +7,9 @@ from typing import Protocol
 
 from jaxstanv5.distributions.core import SymbolicDistributionParameter
 
-type ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp
+type ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp
 type BinaryOperator = str
+type UnaryFunction = str
 
 
 class Expression(Protocol):
@@ -164,6 +165,41 @@ class BinOp(SymbolicDistributionParameter):
 
 
 @dataclass(frozen=True)
+class UnaryOp(SymbolicDistributionParameter):
+    """Unary function applied to one expression node."""
+
+    function: UnaryFunction
+    operand: ExprNode
+
+    def __add__(self, other: object) -> BinOp:
+        return BinOp("+", self, _to_expr(other))
+
+    def __radd__(self, other: object) -> BinOp:
+        return BinOp("+", _to_expr(other), self)
+
+    def __sub__(self, other: object) -> BinOp:
+        return BinOp("-", self, _to_expr(other))
+
+    def __rsub__(self, other: object) -> BinOp:
+        return BinOp("-", _to_expr(other), self)
+
+    def __mul__(self, other: object) -> BinOp:
+        return BinOp("*", self, _to_expr(other))
+
+    def __rmul__(self, other: object) -> BinOp:
+        return BinOp("*", _to_expr(other), self)
+
+    def __truediv__(self, other: object) -> BinOp:
+        return BinOp("/", self, _to_expr(other))
+
+    def __rtruediv__(self, other: object) -> BinOp:
+        return BinOp("/", _to_expr(other), self)
+
+    def __getitem__(self, index: object) -> IndexOp:
+        return IndexOp(self, _to_expr(index))
+
+
+@dataclass(frozen=True)
 class IndexOp(SymbolicDistributionParameter):
     """Indexing operation over a base expression."""
 
@@ -200,7 +236,7 @@ class IndexOp(SymbolicDistributionParameter):
 
 def _to_expr(value: object) -> ExprNode:
     """Convert supported Python values to expression nodes."""
-    if isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp):
+    if isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp):
         return value
     if isinstance(value, int | float):
         return ConstNode(value)

@@ -11,8 +11,9 @@ from dataclasses import dataclass
 
 from jaxstanv5.distributions.core import SymbolicDistributionParameter
 
-type DeferredExpr = DeferredBinOp | DeferredIndexOp
+type DeferredExpr = DeferredBinOp | DeferredIndexOp | DeferredUnaryOp
 type DeferredBinaryOperator = str
+type DeferredUnaryFunction = str
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,41 @@ class DeferredBinOp(SymbolicDistributionParameter):
     op: DeferredBinaryOperator
     left: object
     right: object
+
+    def __add__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("+", self, other)
+
+    def __radd__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("+", other, self)
+
+    def __sub__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("-", self, other)
+
+    def __rsub__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("-", other, self)
+
+    def __mul__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("*", self, other)
+
+    def __rmul__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("*", other, self)
+
+    def __truediv__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("/", self, other)
+
+    def __rtruediv__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("/", other, self)
+
+    def __getitem__(self, index: object) -> DeferredIndexOp:
+        return DeferredIndexOp(self, index)
+
+
+@dataclass(frozen=True)
+class DeferredUnaryOp(SymbolicDistributionParameter):
+    """Deferred unary function call from class-body syntax."""
+
+    function: DeferredUnaryFunction
+    operand: object
 
     def __add__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("+", self, other)
@@ -95,4 +131,4 @@ class DeferredIndexOp(SymbolicDistributionParameter):
 
 def is_deferred_expr(value: object) -> bool:
     """Return whether ``value`` is captured class-body syntax."""
-    return isinstance(value, DeferredBinOp | DeferredIndexOp)
+    return isinstance(value, DeferredBinOp | DeferredIndexOp | DeferredUnaryOp)

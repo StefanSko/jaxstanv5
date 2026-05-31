@@ -12,13 +12,17 @@ import jax.numpy as jnp
 from jaxstanv5.distributions.core import Distribution
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef
+from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef, UnaryOp
 
 _BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
     "+": jnp.add,
     "-": jnp.subtract,
     "*": jnp.multiply,
     "/": jnp.divide,
+}
+
+_UNARY_FUNCTIONS: dict[str, Callable[[jax.Array], jax.Array]] = {
+    "exp": jnp.exp,
 }
 
 
@@ -37,6 +41,12 @@ def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
         if op_fn is None:
             raise ValueError(f"Unknown binary operator: {node.op!r}")
         return op_fn(left, right)
+    if isinstance(node, UnaryOp):
+        operand = _evaluate_expr(node.operand, values)
+        function = _UNARY_FUNCTIONS.get(node.function)
+        if function is None:
+            raise ValueError(f"Unknown unary function: {node.function!r}")
+        return function(operand)
     if isinstance(node, IndexOp):
         base = _evaluate_expr(node.base, values)
         index = _evaluate_expr(node.index, values)
@@ -46,7 +56,7 @@ def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
 
 def _is_expr_node(value: object) -> bool:
     """Return whether ``value`` is a final expression IR node."""
-    return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp)
+    return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp)
 
 
 def _evaluate_distribution[DistributionT: Distribution](

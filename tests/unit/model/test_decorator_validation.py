@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 from jaxstanv5.distributions.normal import Normal
+from jaxstanv5.distributions.poisson import Poisson
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.decorator import _resolve_model_declaration
 
@@ -43,6 +44,14 @@ def test_private_model_declaration_resolution_accepts_multiple_observed_declarat
     meta = _resolve_model_declaration(MultipleObserved)
 
     assert tuple(node.name for node in meta.observed_nodes) == ("y", "z")
+
+
+def test_private_model_declaration_resolution_rejects_discrete_parameter_priors() -> None:
+    class DiscreteLatent:
+        count = Param(Poisson(1.0))
+
+    with pytest.raises(TypeError, match="Discrete distributions cannot be used as Param priors"):
+        _resolve_model_declaration(DiscreteLatent)
 
 
 def test_private_model_declaration_resolution_keeps_observed_name_out_of_data_slots() -> None:

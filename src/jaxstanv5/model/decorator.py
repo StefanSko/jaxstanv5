@@ -10,15 +10,16 @@ import jax
 import jax.numpy as jnp
 
 from jaxstanv5.constraints.core import Constraint
-from jaxstanv5.distributions.core import Distribution
+from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
 from jaxstanv5.model._deferred import (
     DeclarationSymbol,
     DeferredBinOp,
     DeferredIndexOp,
+    DeferredUnaryOp,
     is_deferred_expr,
 )
 from jaxstanv5.model.core import Data, Observed, Param
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef
+from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef, UnaryOp
 
 type ModelClass = type[object]
 type SymbolTable = dict[DeclarationSymbol, str]
@@ -99,8 +100,14 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
 
     for name, value in cls.__dict__.items():
         if isinstance(value, Param):
+            distribution = _resolve_declaration_distribution(value.distribution, symbols)
+            if isinstance(distribution, DiscreteDistribution):
+                raise TypeError(
+                    "Discrete distributions cannot be used as Param priors; "
+                    "use them for Observed likelihoods or marginalize discrete latents"
+                )
             params[name] = ResolvedParam(
-                distribution=_resolve_declaration_distribution(value.distribution, symbols),
+                distribution=distribution,
                 constraint=value.constraint,
                 size=_resolve_declaration_size(value.size, symbols),
             )
@@ -260,6 +267,11 @@ def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
             _resolve_declaration_expr(value.left, symbols),
             _resolve_declaration_expr(value.right, symbols),
         )
+    if isinstance(value, DeferredUnaryOp):
+        return UnaryOp(
+            value.function,
+            _resolve_declaration_expr(value.operand, symbols),
+        )
     if isinstance(value, DeferredIndexOp):
         return IndexOp(
             _resolve_declaration_expr(value.base, symbols),
@@ -270,12 +282,14 @@ def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
 
 def _is_declaration_expr(value: object) -> bool:
     """Return whether ``value`` can resolve to final expression IR."""
-    return isinstance(value, Param | Data | DeferredBinOp | DeferredIndexOp | int | float)
+    return isinstance(
+        value, Param | Data | DeferredBinOp | DeferredIndexOp | DeferredUnaryOp | int | float
+    )
 
 
 def _is_final_expr_node(value: object) -> bool:
     """Return whether ``value`` is already resolved final expression IR."""
-    return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp)
+    return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp)
 
 
 def _resolve_symbol(symbol: DeclarationSymbol, symbols: SymbolTable) -> str:

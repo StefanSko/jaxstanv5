@@ -9,6 +9,8 @@ import pytest
 
 from jaxstanv5.distributions.core import DistributionParameter
 from jaxstanv5.distributions.normal import Normal
+from jaxstanv5.distributions.poisson import Poisson
+from jaxstanv5.math import exp
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.decorator import (
     _collect_declaration_symbols,
@@ -17,12 +19,16 @@ from jaxstanv5.model.decorator import (
     _resolve_declaration_size,
     _resolve_declarations,
 )
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef
+from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
 
 
 class NormalFields(Protocol):
     loc: object
     scale: object
+
+
+class PoissonFields(Protocol):
+    rate: object
 
 
 def dist_param(value: object) -> DistributionParameter:
@@ -32,6 +38,11 @@ def dist_param(value: object) -> DistributionParameter:
 def normal_fields(value: object) -> NormalFields:
     assert isinstance(value, Normal)
     return cast(NormalFields, value)
+
+
+def poisson_fields(value: object) -> PoissonFields:
+    assert isinstance(value, Poisson)
+    return cast(PoissonFields, value)
 
 
 @dataclass(frozen=True)
@@ -141,6 +152,19 @@ def test_distribution_resolution_handles_symbolic_fields() -> None:
 
     assert resolved_dist.loc == BinOp("+", ParamRef("alpha"), DataRef("x"))
     assert resolved_dist.scale == ConstNode(2.0)
+
+
+def test_distribution_resolution_handles_symbolic_unary_function_fields() -> None:
+    alpha = Param(Normal(0.0, 1.0))
+    x = Data()
+    resolved_dist = poisson_fields(
+        _resolve_declaration_distribution(
+            Poisson(dist_param(exp(alpha + x))),
+            {alpha.symbol: "alpha", x.symbol: "x"},
+        )
+    )
+
+    assert resolved_dist.rate == UnaryOp("exp", BinOp("+", ParamRef("alpha"), DataRef("x")))
 
 
 def test_distribution_resolution_rejects_final_expr_fields() -> None:
