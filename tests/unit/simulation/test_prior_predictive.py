@@ -66,6 +66,35 @@ class MultivariateNormalPrior:
 
 
 @model
+class BatchedNormalPrior:
+    """Scalar-event prior with distribution batch shape matching parameter shape."""
+
+    loc = Data()
+    theta = Param(Normal(loc, 1.0), size=3)
+
+
+@model
+class MultivariateNormalObserved:
+    """Event-shaped multivariate Normal prior and observed site."""
+
+    n = Data()
+    chol = Data()
+    mu = Param(MultivariateNormal(0.0, chol), size=n)
+    y = Observed(MultivariateNormal(mu, chol))
+
+
+@model
+class FixedKernelGpPriorPredictive:
+    """Fixed-kernel GP prior predictive model."""
+
+    n = Data()
+    chol = Data()
+    obs_sd = Data()
+    f = Param(MultivariateNormal(0.0, chol), size=n)
+    y = Observed(Normal(f, obs_sd))
+
+
+@model
 class UnsupportedPrior:
     """Prior using an unsupported distribution."""
 
@@ -133,6 +162,41 @@ def test_simulate_prior_predictive_draws_multivariate_normal_prior_event() -> No
 
     assert result.parameters["f"].shape == (5, 3)
     assert jnp.all(jnp.isfinite(result.parameters["f"]))
+
+
+def test_simulate_prior_predictive_does_not_double_distribution_batch_shape() -> None:
+    result = simulate_prior_predictive(
+        BatchedNormalPrior,
+        seed=42,
+        num_samples=5,
+        data={"loc": jnp.array([0.0, 1.0, 2.0])},
+    )
+
+    assert result.parameters["theta"].shape == (5, 3)
+
+
+def test_simulate_prior_predictive_draws_multivariate_normal_observed_event() -> None:
+    result = simulate_prior_predictive(
+        MultivariateNormalObserved,
+        seed=43,
+        num_samples=5,
+        data={"n": 3, "chol": jnp.eye(3)},
+    )
+
+    assert result.parameters["mu"].shape == (5, 3)
+    assert result.observed["y"].shape == (5, 3)
+
+
+def test_simulate_prior_predictive_draws_fixed_kernel_gp_shapes() -> None:
+    result = simulate_prior_predictive(
+        FixedKernelGpPriorPredictive,
+        seed=44,
+        num_samples=5,
+        data={"n": 3, "chol": jnp.eye(3), "obs_sd": 0.2},
+    )
+
+    assert result.parameters["f"].shape == (5, 3)
+    assert result.observed["y"].shape == (5, 3)
 
 
 def test_simulate_prior_predictive_rejects_missing_data() -> None:
