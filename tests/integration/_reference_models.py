@@ -67,6 +67,18 @@ class HierarchicalPoissonFixture:
 
 
 @dataclass(frozen=True)
+class HierarchicalBinomialFixture:
+    """Bound non-centered hierarchical Binomial varying-slopes model."""
+
+    bound: BoundModel
+    y: jax.Array
+    trials: jax.Array
+    x: jax.Array
+    group_idx: jax.Array
+    n_groups: int
+
+
+@dataclass(frozen=True)
 class MultivariateNormalLikelihoodFixture:
     """Bound single-observation multivariate-normal likelihood model."""
 
@@ -270,6 +282,61 @@ def hierarchical_poisson_varying_slopes_fixture() -> HierarchicalPoissonFixture:
             y=y,
         ),
         y=y,
+        x=x,
+        group_idx=group_idx,
+        n_groups=n_groups,
+    )
+
+
+def hierarchical_binomial_logistic_varying_slopes_fixture() -> HierarchicalBinomialFixture:
+    """Return a hierarchical Binomial logistic varying-slopes smoke fixture."""
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.constraints import Positive
+    from jaxstanv5.distributions import Binomial, HalfNormal, Normal
+    from jaxstanv5.math import sigmoid
+
+    @model
+    class HierarchicalBinomialLogisticVaryingSlopes:
+        """Non-centered Binomial logit-probability model with varying slopes."""
+
+        n_groups = Data()
+        group_idx = Data()
+        x = Data()
+        trials = Data()
+
+        alpha_pop = Param(Normal(0.0, 1.0))
+        beta_pop = Param(Normal(0.0, 1.0))
+        sigma_alpha = Param(HalfNormal(0.5), constraint=Positive())
+        sigma_beta = Param(HalfNormal(0.5), constraint=Positive())
+
+        z_alpha = Param(Normal(0.0, 1.0), size=n_groups)
+        z_beta = Param(Normal(0.0, 1.0), size=n_groups)
+
+        alpha = alpha_pop + sigma_alpha * z_alpha
+        beta = beta_pop + sigma_beta * z_beta
+        eta = alpha[group_idx] + beta[group_idx] * x
+        y = Observed(Binomial(trials, sigmoid(eta)))
+
+    n_groups = 4
+    observations_per_group = 12
+    group_idx = jnp.repeat(jnp.arange(n_groups), observations_per_group)
+    x = jnp.tile(jnp.linspace(-1.25, 1.25, observations_per_group), n_groups)
+    trials = 10 + (jnp.arange(n_groups * observations_per_group) % 4)
+    alpha_true = jnp.array([-0.8, -0.25, 0.4, 0.85])
+    beta_true = jnp.array([0.75, -0.35, 0.2, -0.6])
+    probs = jax.nn.sigmoid(alpha_true[group_idx] + beta_true[group_idx] * x)
+    y = jax.random.binomial(jax.random.PRNGKey(31), n=trials, p=probs)
+    return HierarchicalBinomialFixture(
+        bound=bind_model(
+            HierarchicalBinomialLogisticVaryingSlopes,
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            trials=trials,
+            y=y,
+        ),
+        y=y,
+        trials=trials,
         x=x,
         group_idx=group_idx,
         n_groups=n_groups,
