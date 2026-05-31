@@ -49,3 +49,17 @@ Core invariants that should remain true as the codebase changes.
 - NUTS diagnostics are recorded separately for warmup and post-warmup sampling.
 - Diagnostic arrays have shape `(num_chains, num_steps)`, where `num_steps` is
   `num_warmup` for warmup diagnostics and `num_samples` for sampling diagnostics.
+
+## Simulation
+
+- Prior and prior-predictive simulation distinguish iid sample dimensions,
+  distribution batch dimensions, and event dimensions.
+- Distribution samples have shape `iid_sample_shape + batch_shape + event_shape`.
+- A model parameter's resolved `param_shape` is the full constrained value shape,
+  not necessarily the iid sample shape passed to a distribution.
+- Prior simulation derives iid sample shape by removing the distribution's
+  `batch_shape + event_shape` suffix from the resolved model value shape.
+- Event-shaped priors, such as `MultivariateNormal`, are valid when their event
+  shape is part of the resolved model value shape.
+- Interval-constrained prior simulation is limited to scalar-event inverse-CDF
+  distributions unless explicit multivariate constrained simulation is added.

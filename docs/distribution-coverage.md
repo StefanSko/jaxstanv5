@@ -38,10 +38,11 @@ Target model families:
   one log-density per event vector.
 - The compiler aggregates every site as `jnp.sum(dist.log_prob(value))`. This
   holds for element-wise distributions and for a single event-wise vector.
-- An element-wise distribution used as a prior for an unconstrained parameter
-  must implement `sample` (it is `SampleableDistribution`). Event-wise prior
-  sampling, such as `MultivariateNormal`, is deferred until prior simulation has
-  explicit event-shape support.
+- A distribution used as a prior for an unconstrained parameter must implement
+  `sample`, `batch_shape`, and `event_shape` (it is `SampleableDistribution`).
+  Prior simulation distinguishes iid sample dimensions, distribution batch
+  dimensions, and event dimensions; event-wise priors such as
+  `MultivariateNormal` are supported.
 - A distribution used as a prior for an interval-constrained parameter must also
   implement `cdf` and `icdf` (it is `InverseCdfDistribution`), because prior
   simulation uses inverse-CDF restricted sampling.
@@ -53,12 +54,11 @@ Target model families:
 - NUTS sampling depends only on the compiled log-density and a zero
   initialization; it does not require prior sampling. Multivariate and GP models
   therefore sample without changes to prior simulation.
-- Prior simulation (`simulation/core.py`) currently assumes
-  `sample_shape == param_shape` (independent element-wise draws). Event-wise
-  distributions such as `MultivariateNormal` do not satisfy this, so SBC for
-  multivariate models is deferred until simulation distinguishes event
-  dimensions from sample dimensions. Until then, multivariate models are
-  validated by analytic references and out-of-band Stan checks.
+- Prior simulation (`simulation/core.py`) treats a model parameter's resolved
+  shape as the full constrained value shape. It derives the iid sample shape by
+  removing the distribution's `batch_shape + event_shape` suffix before calling
+  `sample`. This keeps vector scalar-event priors and single vector-event priors
+  distinct even when their final value shapes are identical.
 
 ## Validation invariants
 
