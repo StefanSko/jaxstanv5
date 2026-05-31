@@ -78,7 +78,21 @@ mu = alpha + beta * x
 ```
 
 These expressions are symbolic during declaration and are evaluated by the
-compiler after concrete data and parameter values are available.
+compiler after concrete data and parameter values are available. A small
+symbolic math namespace is available for supported nonlinear declarations:
+
+```python
+from jaxstanv5.distributions import Poisson
+from jaxstanv5.math import exp
+
+rate = exp(alpha + beta * x)
+y = Observed(Poisson(rate))
+```
+
+Use `jaxstanv5.math` helpers in model declarations, not raw `jax.numpy`
+functions. Discrete distributions such as `Poisson` are valid observed
+likelihoods, but not latent `Param(...)` priors because NUTS samples continuous
+parameters only.
 
 ## Hierarchical parameters
 
@@ -158,6 +172,7 @@ Run fixed-data Stan comparisons with:
 ```bash
 uv run --script scripts/check_stan_log_density_reference.py
 uv run --script scripts/check_stan_posterior_reference.py
+uv run --script scripts/check_poisson_stan_posterior_reference.py
 uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
 
@@ -174,6 +189,7 @@ and check posterior ranks:
 
 ```bash
 uv run --script scripts/check_sbc_reference.py --case all
+uv run --script scripts/check_poisson_sbc_reference.py
 ```
 
 A restricted raw-model adapter is also available for supported Normal models:

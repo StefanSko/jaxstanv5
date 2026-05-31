@@ -26,6 +26,9 @@ Target model families:
 - **Hierarchical with learned scales** (positive-scale hyperpriors).
 - **Robust regression** (Student-t likelihood).
 - **Exponential likelihood** (positive-support observations).
+- **Poisson count likelihood** with symbolic log-rate construction.
+- **Hierarchical Poisson varying slopes** (non-centered group effects with a
+  symbolic exponential link).
 - **Multivariate** (vector-valued likelihood).
 - **Gaussian process** (multivariate-normal latent with a fixed-kernel
   Cholesky factor supplied as data).
@@ -34,8 +37,8 @@ Target model families:
 ## Distribution invariants
 
 - Every distribution implements `log_prob`. Element-wise distributions return
-  one log-density per element; `MultivariateNormal` is event-wise and returns
-  one log-density per event vector.
+  one log-density/log-mass per element; `MultivariateNormal` is event-wise and
+  returns one log-density per event vector.
 - The compiler aggregates every site as `jnp.sum(dist.log_prob(value))`. This
   holds for element-wise distributions and for a single event-wise vector.
 - A distribution used as a prior for an unconstrained parameter must implement
@@ -48,12 +51,16 @@ Target model families:
   simulation uses inverse-CDF restricted sampling.
 - A distribution used only as a likelihood, or only as an unconstrained prior,
   is not required to implement `cdf`/`icdf`.
+- Discrete distributions are valid for `Observed(...)` likelihoods and
+  prior-predictive observed simulation, but not for latent `Param(...)` priors
+  because NUTS samples continuous parameters only.
 
 ## Sampling vs. simulation
 
 - NUTS sampling depends only on the compiled log-density and a zero
-  initialization; it does not require prior sampling. Multivariate and GP models
-  therefore sample without changes to prior simulation.
+  initialization; it does not require prior sampling. Multivariate, GP, and
+  observed-count models therefore sample without changes to latent prior
+  simulation.
 - Prior simulation (`simulation/core.py`) treats a model parameter's resolved
   shape as the full constrained value shape. It derives the iid sample shape by
   removing the distribution's `batch_shape + event_shape` suffix before calling
@@ -73,3 +80,6 @@ Target model families:
   `f[n // 2]`, `mean(f)`, and `f[-1] - f[0]`) for script-based Stan posterior
   comparison and projected SBC. Each projection is a scalar posterior functional
   and is compared with the same MCSE-calibrated machinery as scalar parameters.
+- Hierarchical Poisson validation has an always-on scalar grid reference, a
+  workflow smoke test for the varying-slopes model, Stan log-density/posterior
+  scripts, and an optional SBC script over scalar hyperparameters.

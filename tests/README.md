@@ -16,8 +16,11 @@ typed summaries, public multi-chain draws, standardized discrepancies,
 constrained references, Stan comparisons, and separate SBC checks. Public
 sampler results also expose NUTS diagnostics, including divergences, for warmup
 and post-warmup sampling. Stan fixtures live in `reference/stan/`, and optional
-SBC references live in `scripts/check_sbc_reference.py` and
-`scripts/check_gp_sbc_reference.py`; both are exercised by standalone scripts
-rather than the default pytest suite. The fixed-kernel GP also has a projected
-Stan posterior script, `scripts/check_gp_stan_posterior_reference.py`, which
-compares calibrated scalar projections of the latent vector.
+SBC references live in `scripts/check_sbc_reference.py`,
+`scripts/check_gp_sbc_reference.py`, and `scripts/check_poisson_sbc_reference.py`;
+they are exercised by standalone scripts rather than the default pytest suite.
+The fixed-kernel GP also has a projected Stan posterior script,
+`scripts/check_gp_stan_posterior_reference.py`, which compares calibrated scalar
+projections of the latent vector. The hierarchical Poisson model has
+`scripts/check_poisson_stan_posterior_reference.py`, which compares scalar
+hyperparameters from one shared Stan/jaxstan run.

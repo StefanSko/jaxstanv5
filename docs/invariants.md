@@ -22,8 +22,11 @@ Core invariants that should remain true as the codebase changes.
 ## Phase boundaries
 
 - Class-body syntax capture and resolved model metadata are separate phases.
-- Class-body arithmetic creates private deferred syntax, never final expression
-  IR.
+- Class-body arithmetic, indexing, and supported `jaxstanv5.math` helpers create
+  private deferred syntax, never final expression IR.
+- Raw JAX/NumPy functions are not declaration-language operations; supported
+  symbolic math functions cross the declaration boundary through explicit helper
+  nodes.
 - `_resolve_model_declaration(...)` is the only transition from declaration
   symbols to named references.
 - `bind(...)` is the transition from resolved model class to `BoundModel`.
@@ -35,6 +38,8 @@ Core invariants that should remain true as the codebase changes.
 - `expr.py` is resolved/final IR only.
 - Final expression trees contain no declaration symbols, raw declarations, or
   deferred syntax tokens.
+- Final expression trees may contain explicit unary math nodes only for supported
+  symbolic helper functions.
 - `ModelMeta` contains resolved metadata only.
 - `BoundModel` contains no inference logic.
 
@@ -44,6 +49,9 @@ Core invariants that should remain true as the codebase changes.
   `Distribution.log_prob(...)`.
 - Log density = constraint Jacobians + parameter priors + all observed
   likelihood terms.
+- Discrete distributions are observed-likelihood distributions only; NUTS
+  parameters are continuous and discrete latent `Param(...)` declarations are
+  rejected.
 - Sampling returns constrained parameter values.
 - Sampling result arrays have shape `(num_chains, num_samples, *param_shape)`.
 - NUTS diagnostics are recorded separately for warmup and post-warmup sampling.
@@ -55,6 +63,8 @@ Core invariants that should remain true as the codebase changes.
 - Prior and prior-predictive simulation distinguish iid sample dimensions,
   distribution batch dimensions, and event dimensions.
 - Distribution samples have shape `iid_sample_shape + batch_shape + event_shape`.
+- Discrete observed distributions may be sampled for prior-predictive
+  simulation, but discrete latent parameters remain unsupported.
 - A model parameter's resolved `param_shape` is the full constrained value shape,
   not necessarily the iid sample shape passed to a distribution.
 - Prior simulation derives iid sample shape by removing the distribution's
