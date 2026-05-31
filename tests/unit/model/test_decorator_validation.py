@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from jaxstanv5.distributions.binomial import Binomial
 from jaxstanv5.distributions.normal import Normal
 from jaxstanv5.distributions.poisson import Poisson
 from jaxstanv5.model.core import Data, Observed, Param
@@ -49,6 +50,14 @@ def test_private_model_declaration_resolution_accepts_multiple_observed_declarat
 def test_private_model_declaration_resolution_rejects_discrete_parameter_priors() -> None:
     class DiscreteLatent:
         count = Param(Poisson(1.0))
+
+    with pytest.raises(TypeError, match="Discrete distributions cannot be used as Param priors"):
+        _resolve_model_declaration(DiscreteLatent)
+
+
+def test_private_model_declaration_resolution_rejects_binomial_parameter_priors() -> None:
+    class DiscreteLatent:
+        count = Param(Binomial(10.0, 0.5))
 
     with pytest.raises(TypeError, match="Discrete distributions cannot be used as Param priors"):
         _resolve_model_declaration(DiscreteLatent)

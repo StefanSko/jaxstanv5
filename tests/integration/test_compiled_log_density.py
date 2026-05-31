@@ -10,8 +10,10 @@ from _helpers import bind_model
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal, Poisson
-from jaxstanv5.math import exp
+from jax.scipy.special import gammaln
+
+from jaxstanv5.distributions import Binomial, Normal, Poisson
+from jaxstanv5.math import exp, sigmoid
 
 
 @model
@@ -48,6 +50,15 @@ class PoissonLogDensity:
     eta = Param(Normal(0, 1))
     rate = exp(eta)
     y = Observed(Poisson(rate))
+
+
+@model
+class BinomialLogisticDensity:
+    """Binomial count model using symbolic logistic success probabilities."""
+
+    eta = Param(Normal(0, 1))
+    trials = Data()
+    y = Observed(Binomial(trials, sigmoid(eta)))
 
 
 @model
@@ -119,6 +130,27 @@ def test_compiled_log_density_evaluates_unary_expression_likelihood_fields() -> 
     rate = jnp.exp(eta)
     expected += jnp.sum(
         y_data * jnp.log(rate) - rate - jnp.asarray([0.0, math.log(2.0), math.log(6.0)])
+    )
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_sigmoid_binomial_likelihood_fields() -> None:
+    trials = jnp.array([4.0, 5.0, 6.0])
+    y_data = jnp.array([1.0, 3.0, 4.0])
+    bound = bind_model(BinomialLogisticDensity, trials=trials, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    eta = jnp.array(0.25)
+    lp = log_prob(jnp.array([eta]))
+
+    expected = normal_log_prob(eta, jnp.array(0.0), jnp.array(1.0))
+    probs = 1.0 / (1.0 + jnp.exp(-eta))
+    expected += jnp.sum(
+        gammaln(trials + 1.0)
+        - gammaln(y_data + 1.0)
+        - gammaln(trials - y_data + 1.0)
+        + y_data * jnp.log(probs)
+        + (trials - y_data) * jnp.log1p(-probs)
     )
     assert jnp.allclose(lp, expected, atol=1e-6)
 
