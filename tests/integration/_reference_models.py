@@ -61,6 +61,19 @@ class BinomialLogisticFixture:
 
 
 @dataclass(frozen=True)
+class BetaBinomialLogisticFixture:
+    """Bound scalar logistic Beta-binomial model and data needed for references."""
+
+    bound: BoundModel
+    parameter: str
+    y: jax.Array
+    trials: jax.Array
+    concentration: float
+    prior_loc: float
+    prior_scale: float
+
+
+@dataclass(frozen=True)
 class RobustRegressionFixture:
     """Bound robust linear regression with Student-t likelihood."""
 
@@ -254,6 +267,41 @@ def binomial_logistic_fixture() -> BinomialLogisticFixture:
         parameter="eta",
         y=y,
         trials=trials,
+        prior_loc=prior_loc,
+        prior_scale=prior_scale,
+    )
+
+
+def beta_binomial_logistic_fixture() -> BetaBinomialLogisticFixture:
+    """Return a scalar logistic Beta-binomial fixture for grid validation."""
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.distributions import BetaBinomial, Normal
+    from jaxstanv5.math import sigmoid
+
+    prior_loc = 0.0
+    prior_scale = 1.0
+    concentration = 12.0
+
+    @model
+    class BetaBinomialLogistic:
+        """Scalar logistic Beta-binomial observations with fixed concentration."""
+
+        eta = Param(Normal(prior_loc, prior_scale))
+        trials = Data()
+        concentration = Data()
+        p = sigmoid(eta)
+        a = p * concentration
+        b = (1.0 - p) * concentration
+        y = Observed(BetaBinomial(trials, a, b))
+
+    trials = jnp.array([5.0, 8.0, 10.0, 12.0, 7.0, 9.0])
+    y = jnp.array([1.0, 4.0, 5.0, 9.0, 1.0, 7.0])
+    return BetaBinomialLogisticFixture(
+        bound=bind_model(BetaBinomialLogistic, trials=trials, concentration=concentration, y=y),
+        parameter="eta",
+        y=y,
+        trials=trials,
+        concentration=concentration,
         prior_loc=prior_loc,
         prior_scale=prior_scale,
     )
