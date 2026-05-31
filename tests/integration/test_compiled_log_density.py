@@ -11,8 +11,8 @@ from jax.scipy.special import gammaln
 
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.compiler.core import compile_log_density
-from jaxstanv5.constraints import Interval, Positive
-from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
+from jaxstanv5.distributions import Beta, BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
 from jaxstanv5.math import exp, sigmoid
 
 
@@ -37,6 +37,13 @@ class IntervalConstrainedNormal:
     """Scalar normal prior constrained to a finite interval."""
 
     x = Param(Normal(0, 1), constraint=Interval(-2.0, 3.0))
+
+
+@model
+class UnitIntervalConstrainedBeta:
+    """Scalar Beta prior constrained to the unit interval."""
+
+    theta = Param(Beta(2.0, 3.0), constraint=UnitInterval())
 
 
 @model
@@ -83,6 +90,19 @@ class BetaBinomialLogisticDensity:
 
 
 @model
+class BetaLogisticDensity:
+    """Beta model using symbolic logistic mean and concentration."""
+
+    eta = Param(Normal(0, 1))
+    log_concentration = Param(Normal(math.log(20.0), 0.5))
+    p = sigmoid(eta)
+    concentration = exp(log_concentration)
+    a = p * concentration
+    b = (1.0 - p) * concentration
+    y = Observed(Beta(a, b))
+
+
+@model
 class NegativeBinomialLogRateDensity:
     """Negative-binomial count model using symbolic mean and overdispersion."""
 
@@ -119,6 +139,12 @@ def normal_log_prob(x: jnp.ndarray, loc: jnp.ndarray, scale: jnp.ndarray) -> jnp
     """Element-wise normal log-density matching ``Normal.log_prob``."""
     standardized = (x - loc) / scale
     return -0.5 * standardized**2 - jnp.log(scale) - 0.5 * math.log(2.0 * math.pi)
+
+
+def beta_log_prob(x: jnp.ndarray, alpha: jnp.ndarray, beta: jnp.ndarray) -> jnp.ndarray:
+    """Element-wise Beta log-density matching ``Beta.log_prob``."""
+    log_normalizer = gammaln(alpha) + gammaln(beta) - gammaln(alpha + beta)
+    return (alpha - 1.0) * jnp.log(x) + (beta - 1.0) * jnp.log1p(-x) - log_normalizer
 
 
 def test_compiled_log_density_for_simple_unconstrained_model() -> None:
@@ -161,6 +187,21 @@ def test_compiled_log_density_for_interval_constrained_model_includes_jacobian()
     constrained = -2.0 + width * jax.nn.sigmoid(q[0])
     expected_prior = normal_log_prob(constrained, jnp.array(0.0), jnp.array(1.0))
     expected_log_jacobian = jnp.log(width) - jax.nn.softplus(-q[0]) - jax.nn.softplus(q[0])
+    expected = expected_prior + expected_log_jacobian
+
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_for_unit_interval_beta_includes_jacobian() -> None:
+    bound = bind_model(UnitIntervalConstrainedBeta)
+    log_prob = compile_log_density(bound)
+
+    q = jnp.array([0.4])
+    lp = log_prob(q)
+
+    theta = jax.nn.sigmoid(q[0])
+    expected_prior = beta_log_prob(theta, jnp.array(2.0), jnp.array(3.0))
+    expected_log_jacobian = -jax.nn.softplus(-q[0]) - jax.nn.softplus(q[0])
     expected = expected_prior + expected_log_jacobian
 
     assert jnp.allclose(lp, expected, atol=1e-6)
@@ -230,6 +271,25 @@ def test_compiled_log_density_evaluates_beta_binomial_likelihood_fields() -> Non
         - gammaln(b)
         + gammaln(a + b)
     )
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_beta_likelihood_fields() -> None:
+    y_data = jnp.array([0.2, 0.4, 0.7])
+    bound = bind_model(BetaLogisticDensity, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    eta = jnp.array(0.25)
+    log_concentration = jnp.array(math.log(15.0))
+    lp = log_prob(jnp.array([eta, log_concentration]))
+
+    expected = normal_log_prob(eta, jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(log_concentration, jnp.array(math.log(20.0)), jnp.array(0.5))
+    p = 1.0 / (1.0 + jnp.exp(-eta))
+    concentration = jnp.exp(log_concentration)
+    a = p * concentration
+    b = (1.0 - p) * concentration
+    expected += jnp.sum(beta_log_prob(y_data, a, b))
     assert jnp.allclose(lp, expected, atol=1e-6)
 
 

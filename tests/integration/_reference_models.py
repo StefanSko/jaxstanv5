@@ -74,6 +74,18 @@ class BetaBinomialLogisticFixture:
 
 
 @dataclass(frozen=True)
+class BetaLogisticFixture:
+    """Bound scalar logistic Beta model and data needed for references."""
+
+    bound: BoundModel
+    parameter: str
+    y: jax.Array
+    concentration: float
+    prior_loc: float
+    prior_scale: float
+
+
+@dataclass(frozen=True)
 class NegativeBinomialLogRateFixture:
     """Bound scalar log-rate Negative-binomial model and data needed for references."""
 
@@ -324,6 +336,38 @@ def beta_binomial_logistic_fixture() -> BetaBinomialLogisticFixture:
         parameter="eta",
         y=y,
         trials=trials,
+        concentration=concentration,
+        prior_loc=prior_loc,
+        prior_scale=prior_scale,
+    )
+
+
+def beta_logistic_fixture() -> BetaLogisticFixture:
+    """Return a scalar logistic Beta fixture for grid validation."""
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.distributions import Beta, Normal
+    from jaxstanv5.math import sigmoid
+
+    prior_loc = 0.0
+    prior_scale = 1.0
+    concentration = 14.0
+
+    @model
+    class BetaLogistic:
+        """Scalar logistic Beta observations with fixed concentration."""
+
+        eta = Param(Normal(prior_loc, prior_scale))
+        concentration = Data()
+        p = sigmoid(eta)
+        a = p * concentration
+        b = (1.0 - p) * concentration
+        y = Observed(Beta(a, b))
+
+    y = jnp.array([0.18, 0.31, 0.45, 0.62, 0.79, 0.55])
+    return BetaLogisticFixture(
+        bound=bind_model(BetaLogistic, concentration=concentration, y=y),
+        parameter="eta",
+        y=y,
         concentration=concentration,
         prior_loc=prior_loc,
         prior_scale=prior_scale,
