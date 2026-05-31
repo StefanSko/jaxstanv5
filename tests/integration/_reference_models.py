@@ -140,6 +140,17 @@ class HierarchicalBetaBinomialFixture:
 
 
 @dataclass(frozen=True)
+class HierarchicalBetaRegressionFixture:
+    """Bound non-centered hierarchical Beta-regression varying-slopes model."""
+
+    bound: BoundModel
+    y: jax.Array
+    x: jax.Array
+    group_idx: jax.Array
+    n_groups: int
+
+
+@dataclass(frozen=True)
 class HierarchicalNegativeBinomialFixture:
     """Bound non-centered hierarchical Negative-binomial varying-slopes model."""
 
@@ -599,6 +610,67 @@ def hierarchical_beta_binomial_logistic_varying_slopes_fixture() -> Hierarchical
         ),
         y=y,
         trials=trials,
+        x=x,
+        group_idx=group_idx,
+        n_groups=n_groups,
+    )
+
+
+def hierarchical_beta_regression_logistic_varying_slopes_fixture() -> (
+    HierarchicalBetaRegressionFixture
+):
+    """Return a hierarchical Beta-regression logistic varying-slopes smoke fixture."""
+    from math import log
+
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.constraints import Positive
+    from jaxstanv5.distributions import Beta, HalfNormal, Normal
+    from jaxstanv5.math import exp, sigmoid
+
+    @model
+    class HierarchicalBetaRegressionLogisticVaryingSlopes:
+        """Non-centered Beta-regression model with varying slopes."""
+
+        n_groups = Data()
+        group_idx = Data()
+        x = Data()
+
+        alpha_pop = Param(Normal(0.0, 1.0))
+        beta_pop = Param(Normal(0.0, 1.0))
+        sigma_alpha = Param(HalfNormal(0.5), constraint=Positive())
+        sigma_beta = Param(HalfNormal(0.5), constraint=Positive())
+        log_phi = Param(Normal(log(18.0), 0.5))
+
+        z_alpha = Param(Normal(0.0, 1.0), size=n_groups)
+        z_beta = Param(Normal(0.0, 1.0), size=n_groups)
+
+        alpha = alpha_pop + sigma_alpha * z_alpha
+        beta = beta_pop + sigma_beta * z_beta
+        eta = alpha[group_idx] + beta[group_idx] * x
+        mu = sigmoid(eta)
+        phi = exp(log_phi)
+        a = mu * phi
+        b = (1.0 - mu) * phi
+        y = Observed(Beta(a, b))
+
+    n_groups = 4
+    observations_per_group = 12
+    group_idx = jnp.repeat(jnp.arange(n_groups), observations_per_group)
+    x = jnp.tile(jnp.linspace(-1.25, 1.25, observations_per_group), n_groups)
+    alpha_true = jnp.array([-0.8, -0.25, 0.4, 0.85])
+    beta_true = jnp.array([0.75, -0.35, 0.2, -0.6])
+    phi_true = 18.0
+    mu = jax.nn.sigmoid(alpha_true[group_idx] + beta_true[group_idx] * x)
+    y = jax.random.beta(jax.random.PRNGKey(53), mu * phi_true, (1.0 - mu) * phi_true)
+    return HierarchicalBetaRegressionFixture(
+        bound=bind_model(
+            HierarchicalBetaRegressionLogisticVaryingSlopes,
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            y=y,
+        ),
+        y=y,
         x=x,
         group_idx=group_idx,
         n_groups=n_groups,
