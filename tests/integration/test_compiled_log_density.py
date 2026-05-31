@@ -40,6 +40,28 @@ class LinearPredictor:
     y = Observed(Normal(mu, 1))
 
 
+@model
+class MeasurementErrorLogDensity:
+    """Measurement-error model with latent vectors and two observed sites."""
+
+    n_states = Data()
+    age = Data()
+    marriage_sd = Data()
+    divorce_sd = Data()
+
+    alpha = Param(Normal(0, 1))
+    b_age = Param(Normal(0, 1))
+    b_marriage = Param(Normal(0, 1))
+    sigma = Param(Normal(0, 1), constraint=Positive())
+
+    marriage_true = Param(Normal(0, 1), size=n_states)
+    divorce_mu = alpha + b_age * age + b_marriage * marriage_true
+    divorce_true = Param(Normal(divorce_mu, sigma), size=n_states)
+
+    marriage_obs = Observed(Normal(marriage_true, marriage_sd))
+    divorce_obs = Observed(Normal(divorce_true, divorce_sd))
+
+
 def normal_log_prob(x: jnp.ndarray, loc: jnp.ndarray, scale: jnp.ndarray) -> jnp.ndarray:
     """Element-wise normal log-density matching ``Normal.log_prob``."""
     standardized = (x - loc) / scale
@@ -71,6 +93,52 @@ def test_compiled_log_density_for_constrained_model_includes_jacobian() -> None:
     expected_prior = normal_log_prob(sigma_constrained, jnp.array(0.0), jnp.array(1.0))
     expected_obs = normal_log_prob(jnp.array(3.0), jnp.array(0.0), sigma_constrained)
     expected = expected_prior + expected_obs + q[0]
+
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_includes_measurement_error_observed_sites() -> None:
+    age = jnp.array([-1.0, 1.0])
+    marriage_sd = jnp.array([0.1, 0.2])
+    divorce_sd = jnp.array([0.3, 0.4])
+    marriage_obs = jnp.array([0.25, -0.75])
+    divorce_obs = jnp.array([0.1, -0.2])
+    bound = bind_model(
+        MeasurementErrorLogDensity,
+        n_states=2,
+        age=age,
+        marriage_sd=marriage_sd,
+        divorce_sd=divorce_sd,
+        marriage_obs=marriage_obs,
+        divorce_obs=divorce_obs,
+    )
+    log_prob = compile_log_density(bound)
+
+    alpha = jnp.array(0.2)
+    b_age = jnp.array(-0.4)
+    b_marriage = jnp.array(0.3)
+    log_sigma = jnp.array(-0.2)
+    sigma = jnp.exp(log_sigma)
+    marriage_true = jnp.array([0.4, -0.6])
+    divorce_true = jnp.array([0.05, -0.35])
+    q = jnp.concatenate(
+        (
+            jnp.array([alpha, b_age, b_marriage, log_sigma]),
+            marriage_true,
+            divorce_true,
+        )
+    )
+    lp = log_prob(q)
+
+    divorce_mu = alpha + b_age * age + b_marriage * marriage_true
+    expected = normal_log_prob(alpha, jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(b_age, jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(b_marriage, jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(sigma, jnp.array(0.0), jnp.array(1.0)) + log_sigma
+    expected += jnp.sum(normal_log_prob(marriage_true, jnp.array(0.0), jnp.array(1.0)))
+    expected += jnp.sum(normal_log_prob(divorce_true, divorce_mu, sigma))
+    expected += jnp.sum(normal_log_prob(marriage_obs, marriage_true, marriage_sd))
+    expected += jnp.sum(normal_log_prob(divorce_obs, divorce_true, divorce_sd))
 
     assert jnp.allclose(lp, expected, atol=1e-6)
 
