@@ -44,7 +44,7 @@ Favor designs that make invalid states hard to represent and public behavior eas
 
 - The public story is: define model -> bind data -> sample with NUTS.
 - BlackJAX must remain an internal detail.
-- `mcmc-ref` must remain a dev/test validation dependency, not a runtime concept.
+- External reference samplers and validators must remain dev/test validation tools, not runtime concepts.
 - Do not reintroduce workflow/reporting/product layers into core.
 - Keep all distributions, but keep architecture minimal.
 - Treat hierarchical models as first-class; symbolic distribution parameters are core declaration metadata, not one-off exceptions.

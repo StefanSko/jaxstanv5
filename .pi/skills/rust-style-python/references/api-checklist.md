@@ -60,7 +60,7 @@ Use this checklist before adding or revising public APIs, internal boundaries, o
 ## Validation impact
 
 - How will this be unit tested?
-- How will this be tested against `mcmc-ref` if relevant?
+- How will this be tested against analytic/grid, Stan, or SBC references if relevant?
 - Does this change require running a targeted reference subset?
 - Would repeated-seed robustness on sentinel models be affected?
 
