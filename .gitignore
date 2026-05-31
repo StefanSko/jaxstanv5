@@ -19,6 +19,7 @@ reference/stan/models/normal_known_scale
 reference/stan/models/positive_scale_normal
 reference/stan/models/exponential_rate
 reference/stan/models/fixed_kernel_gp
+reference/stan/models/hierarchical_poisson_varying_slopes
 reference/stan/models/multivariate_normal_likelihood
 reference/stan/models/student_t_location
 
