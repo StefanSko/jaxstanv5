@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from jaxstanv5.distributions.normal import Normal
+from jaxstanv5.distributions import Normal
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import (
     ModelMeta,

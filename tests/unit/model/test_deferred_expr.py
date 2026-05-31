@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from jaxstanv5.distributions.normal import Normal
+from jaxstanv5.distributions import Normal
 from jaxstanv5.model._deferred import DeferredBinOp, DeferredExpr, DeferredIndexOp
 from jaxstanv5.model.core import Data, Param
 from jaxstanv5.model.decorator import _resolve_declaration_expr

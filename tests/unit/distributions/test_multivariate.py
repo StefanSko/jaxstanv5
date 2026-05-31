@@ -1,4 +1,4 @@
-"""Tests for MultivariateNormal distribution."""
+"""Tests for multivariate distributions."""
 
 import math
 

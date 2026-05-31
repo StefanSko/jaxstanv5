@@ -1,4 +1,4 @@
-"""Multivariate Normal distribution."""
+"""Multivariate probability distributions."""
 
 from __future__ import annotations
 

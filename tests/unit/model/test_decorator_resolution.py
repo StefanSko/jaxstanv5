@@ -7,10 +7,8 @@ from typing import Protocol, cast
 
 import pytest
 
-from jaxstanv5.distributions.binomial import Binomial
+from jaxstanv5.distributions import Binomial, Normal, Poisson
 from jaxstanv5.distributions.core import DistributionParameter
-from jaxstanv5.distributions.normal import Normal
-from jaxstanv5.distributions.poisson import Poisson
 from jaxstanv5.math import exp, sigmoid
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.decorator import (

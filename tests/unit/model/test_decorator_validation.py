@@ -6,11 +6,7 @@ from typing import cast
 
 import pytest
 
-from jaxstanv5.distributions.beta_binomial import BetaBinomial
-from jaxstanv5.distributions.binomial import Binomial
-from jaxstanv5.distributions.negative_binomial import NegativeBinomial
-from jaxstanv5.distributions.normal import Normal
-from jaxstanv5.distributions.poisson import Poisson
+from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.decorator import _resolve_model_declaration
 
