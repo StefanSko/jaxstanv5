@@ -40,9 +40,10 @@ class Binomial(DiscreteDistribution):
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise Binomial log-probability mass for ``x``."""
-        total_count = self._total_count()
         probs = self._probs()
-        value = jnp.asarray(x)
+        dtype = jnp.result_type(probs, 1.0)
+        total_count = jnp.asarray(_concrete_parameter(self.total_count), dtype=dtype)
+        value = jnp.asarray(x, dtype=dtype)
         integer_value = value == jnp.floor(value)
         integer_count = total_count == jnp.floor(total_count)
         support = (
