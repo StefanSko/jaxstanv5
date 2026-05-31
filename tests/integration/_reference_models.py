@@ -49,6 +49,18 @@ class PoissonLogRateFixture:
 
 
 @dataclass(frozen=True)
+class BinomialLogisticFixture:
+    """Bound scalar logistic Binomial model and data needed for references."""
+
+    bound: BoundModel
+    parameter: str
+    y: jax.Array
+    trials: jax.Array
+    prior_loc: float
+    prior_scale: float
+
+
+@dataclass(frozen=True)
 class RobustRegressionFixture:
     """Bound robust linear regression with Student-t likelihood."""
 
@@ -201,6 +213,35 @@ def poisson_log_rate_fixture() -> PoissonLogRateFixture:
         bound=bind_model(PoissonLogRate, y=y),
         parameter="eta",
         y=y,
+        prior_loc=prior_loc,
+        prior_scale=prior_scale,
+    )
+
+
+def binomial_logistic_fixture() -> BinomialLogisticFixture:
+    """Return a scalar logistic Binomial fixture for grid validation."""
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.distributions import Binomial, Normal
+    from jaxstanv5.math import sigmoid
+
+    prior_loc = 0.0
+    prior_scale = 1.0
+
+    @model
+    class BinomialLogistic:
+        """Scalar logistic Binomial observations."""
+
+        eta = Param(Normal(prior_loc, prior_scale))
+        trials = Data()
+        y = Observed(Binomial(trials, sigmoid(eta)))
+
+    trials = jnp.array([5.0, 8.0, 10.0, 12.0, 7.0, 9.0])
+    y = jnp.array([1.0, 3.0, 5.0, 8.0, 2.0, 6.0])
+    return BinomialLogisticFixture(
+        bound=bind_model(BinomialLogistic, trials=trials, y=y),
+        parameter="eta",
+        y=y,
+        trials=trials,
         prior_loc=prior_loc,
         prior_scale=prior_scale,
     )
