@@ -69,3 +69,7 @@ Target model families:
   out-of-band (slow), consistent with the existing validation plan.
 - Standardized discrepancies (signed z / k_min) compare posterior summaries to
   references within Monte Carlo standard error.
+- Vector-valued GP validation uses fixed linear projections (`f[0]`,
+  `f[n // 2]`, `mean(f)`, and `f[-1] - f[0]`) for script-based Stan posterior
+  comparison and projected SBC. Each projection is a scalar posterior functional
+  and is compared with the same MCSE-calibrated machinery as scalar parameters.

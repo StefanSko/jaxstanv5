@@ -26,13 +26,15 @@ Models:
   - `y ~ normal(f, obs_sd)`
 
 Data fixtures live in `data/` and are shared by the Stan log-density and
-posterior-summary scripts where applicable.
+posterior-summary scripts where applicable. `data/fixed_kernel_gp_n8.json` is a
+larger fixed-kernel GP posterior fixture used by projected Stan comparisons.
 
 Run the optional checks from the repository root:
 
 ```bash
 uv run --script scripts/check_stan_log_density_reference.py
 uv run --script scripts/check_stan_posterior_reference.py
+uv run --script scripts/check_gp_stan_posterior_reference.py
 uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
 
@@ -44,9 +46,14 @@ constrained parameters, CmdStan receives constrained values while jaxstan
 receives the corresponding unconstrained values; both include the Jacobian
 adjustment.
 
-The posterior check runs Stan and jaxstan on the same fixed data and compares
-posterior means using the combined Monte Carlo standard error. The posterior
-scripts align jaxstan's `target_acceptance_rate` with Stan's `adapt_delta` and
-default to `0.95`. The stress script repeats this comparison over configurable
-seeds and reports NUTS diagnostics (divergences, acceptance rates, and
-integration-step counts) and sampling time summaries for both systems.
+The posterior checks run Stan and jaxstan on the same fixed data and compare
+posterior means using the combined Monte Carlo standard error. Scalar cases are
+compared directly. The fixed-kernel GP posterior script compares fixed linear
+projections of the latent vector (`f[0]`, `f[n // 2]`, `mean(f)`, and
+`f[-1] - f[0]`) so vector posterior behavior is checked through calibrated
+scalar summaries. The posterior scripts align jaxstan's `target_acceptance_rate`
+with Stan's `adapt_delta`; scalar posterior checks default to `0.95`, while the
+GP projection script defaults to `0.90` for the fixed n=8 geometry. The stress
+script repeats scalar comparisons over configurable seeds and reports NUTS
+diagnostics (divergences, acceptance rates, and integration-step counts) and
+sampling time summaries for both systems.
