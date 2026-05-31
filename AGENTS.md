@@ -69,7 +69,10 @@ current agreed state; not every task starts at step 1.
 Typical flow:
 
 1. If no public workflow target exists yet, add or update a red integration test
-   for the intended behavior.
+   for the intended behavior. For new distributions or other conceptual modeling
+   surfaces, start with a north-star fixture in
+   `tests/integration/_reference_models.py` and coverage in
+   `tests/integration/test_distribution_coverage.py`.
 2. If the integration test is too broad or noisy, add a focused red seam test for
    the first architectural path that should work.
 3. Drive the path with red/green unit tests for each primitive.

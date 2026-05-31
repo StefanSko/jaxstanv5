@@ -1,18 +1,18 @@
 ---
 name: rust-style-python
-description: Rust-inspired Python architecture and API design rules for immutable data, explicit state transitions, narrow public interfaces, predictable module boundaries, and type-driven refactors. Use when designing jaxstanv4 APIs, refactoring internals, reviewing abstractions, or deciding whether code belongs in core.
+description: Rust-inspired Python architecture and API design rules for immutable data, explicit state transitions, narrow public interfaces, predictable module boundaries, and type-driven refactors. Use when designing jaxstanv5 APIs, refactoring internals, reviewing abstractions, or deciding whether code belongs in core.
 ---
 
 # Rust Style Python
 
-Use this skill for architecture work in `jaxstanv4`, especially when:
+Use this skill for architecture work in `jaxstanv5`, especially when:
 - designing or revising public APIs
 - refactoring internal boundaries
 - deciding whether an abstraction belongs in core
 - reviewing state handling, mutability, and type surfaces
 - simplifying modules without weakening correctness
 
-This skill is meant to preserve the design discipline used in earlier jaxstan work while fitting the smaller v4 scope.
+This skill is meant to preserve the design discipline used in earlier jaxstan work while fitting the current minimal project scope.
 
 ## Primary goal
 
@@ -40,7 +40,7 @@ Favor designs that make invalid states hard to represent and public behavior eas
 11. Keep loose Python input at public boundaries and normalize quickly into explicit internal types.
 12. Avoid duck typing for core semantics unless it is deliberately isolated and tested at an interoperability boundary.
 
-## Project-specific rules for jaxstanv4
+## Project-specific rules for jaxstanv5
 
 - The public story is: define model -> bind data -> sample with NUTS.
 - BlackJAX must remain an internal detail.
@@ -56,8 +56,8 @@ Favor designs that make invalid states hard to represent and public behavior eas
 Before making a substantial architecture or API change, read:
 - `references/principles.md`
 - `references/api-checklist.md`
-- `../../../v4spec.md`
 - `../../../AGENTS.md`
+- `../../../docs/invariants.md`
 
 ## Working method
 

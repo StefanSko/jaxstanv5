@@ -5,8 +5,8 @@ Use this checklist before adding or revising public APIs, internal boundaries, o
 ## Scope fit
 
 - Does this directly help users define a model, express a hierarchical model, compile a model, run NUTS, or inspect NUTS results safely?
-- If not, does it belong in `jaxstanv4` core at all?
-- Does it conflict with `v4spec.md` non-goals?
+- If not, does it belong in `jaxstanv5` core at all?
+- Does it conflict with `AGENTS.md` or `docs/invariants.md` non-goals?
 
 ## Public vs internal
 

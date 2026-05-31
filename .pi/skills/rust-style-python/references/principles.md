@@ -1,6 +1,6 @@
 # Rust-Style Python Principles
 
-These principles are intended for `jaxstanv4`: a small library with a narrow public story and strong correctness constraints.
+These principles are intended for `jaxstanv5`: a small library with a narrow public story and strong correctness constraints.
 
 ## 1. Make invalid states hard to represent
 
@@ -13,7 +13,7 @@ Examples:
 
 If two states have different invariants, they probably deserve different types or at least different explicit representations.
 
-For `jaxstanv4`, this includes symbolic-vs-numeric distribution arguments,
+For `jaxstanv5`, this includes symbolic-vs-numeric distribution arguments,
 static-vs-data-dependent shape dimensions, declared-vs-bound model state, and
 backend-neutral-vs-BlackJAX sampler state.
 
@@ -51,7 +51,7 @@ Ask:
 Public API should expose stable concepts.
 Internal code may change freely.
 
-For `jaxstanv4`:
+For `jaxstanv5`:
 - public: models, distributions, constraints, compile, sample, results, diagnostics
 - internal: BlackJAX adapter, warmup logic, packing/layout details, benchmark harness details
 
@@ -80,7 +80,7 @@ Some complexity is real, especially around transforms, packing, and NUTS integra
 
 ## 8. Delete speculative architecture
 
-Do not keep generic layers around for features explicitly out of scope for v4.
+Do not keep generic layers around for features explicitly out of project scope.
 If the only reason an abstraction exists is “maybe we add five inference engines later,” it probably should not exist now.
 
 ## 9. Favor boring names and direct modules
