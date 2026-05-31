@@ -74,6 +74,18 @@ class BetaBinomialLogisticFixture:
 
 
 @dataclass(frozen=True)
+class NegativeBinomialLogRateFixture:
+    """Bound scalar log-rate Negative-binomial model and data needed for references."""
+
+    bound: BoundModel
+    parameter: str
+    y: jax.Array
+    overdispersion: float
+    prior_loc: float
+    prior_scale: float
+
+
+@dataclass(frozen=True)
 class RobustRegressionFixture:
     """Bound robust linear regression with Student-t likelihood."""
 
@@ -313,6 +325,35 @@ def beta_binomial_logistic_fixture() -> BetaBinomialLogisticFixture:
         y=y,
         trials=trials,
         concentration=concentration,
+        prior_loc=prior_loc,
+        prior_scale=prior_scale,
+    )
+
+
+def negative_binomial_log_rate_fixture() -> NegativeBinomialLogRateFixture:
+    """Return a scalar log-rate Negative-binomial fixture for grid validation."""
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.distributions import NegativeBinomial, Normal
+    from jaxstanv5.math import exp
+
+    prior_loc = 0.0
+    prior_scale = 1.0
+    overdispersion = 4.0
+
+    @model
+    class NegativeBinomialLogRate:
+        """Scalar log-rate Negative-binomial observations with fixed overdispersion."""
+
+        eta = Param(Normal(prior_loc, prior_scale))
+        overdispersion = Data()
+        y = Observed(NegativeBinomial(exp(eta), overdispersion))
+
+    y = jnp.array([0.0, 1.0, 4.0, 2.0, 6.0, 1.0, 3.0, 2.0])
+    return NegativeBinomialLogRateFixture(
+        bound=bind_model(NegativeBinomialLogRate, overdispersion=overdispersion, y=y),
+        parameter="eta",
+        y=y,
+        overdispersion=overdispersion,
         prior_loc=prior_loc,
         prior_scale=prior_scale,
     )
