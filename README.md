@@ -82,7 +82,7 @@ compiler after concrete data and parameter values are available. A small
 symbolic math namespace is available for supported nonlinear declarations:
 
 ```python
-from jaxstanv5.distributions import Binomial, Poisson
+from jaxstanv5.distributions import Beta, Binomial, Poisson
 from jaxstanv5.math import exp, sigmoid
 
 rate = exp(alpha + beta * x)
@@ -90,12 +90,15 @@ y_count = Observed(Poisson(rate))
 
 probability = sigmoid(alpha + beta * x)
 y_successes = Observed(Binomial(trials, probability))
+y_proportion = Observed(Beta(probability * concentration, (1.0 - probability) * concentration))
 ```
 
 Use `jaxstanv5.math` helpers in model declarations, not raw `jax.numpy`
 functions. Discrete distributions such as `Poisson`, `Binomial`,
 `BetaBinomial`, and `NegativeBinomial` are valid observed likelihoods, but not
 latent `Param(...)` priors because NUTS samples continuous parameters only.
+Continuous bounded latent parameters can use `Interval(lower, upper)` or
+`UnitInterval()` constraints.
 
 ## Hierarchical parameters
 
@@ -178,6 +181,7 @@ uv run --script scripts/check_stan_posterior_reference.py
 uv run --script scripts/check_poisson_stan_posterior_reference.py
 uv run --script scripts/check_binomial_stan_posterior_reference.py
 uv run --script scripts/check_beta_binomial_stan_posterior_reference.py
+uv run --script scripts/check_beta_regression_stan_posterior_reference.py
 uv run --script scripts/check_negative_binomial_stan_posterior_reference.py
 uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
@@ -198,6 +202,7 @@ uv run --script scripts/check_sbc_reference.py --case all
 uv run --script scripts/check_poisson_sbc_reference.py
 uv run --script scripts/check_binomial_sbc_reference.py
 uv run --script scripts/check_beta_binomial_sbc_reference.py
+uv run --script scripts/check_beta_regression_sbc_reference.py
 uv run --script scripts/check_negative_binomial_sbc_reference.py
 ```
 

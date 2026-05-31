@@ -20,6 +20,7 @@ reference/stan/models/positive_scale_normal
 reference/stan/models/exponential_rate
 reference/stan/models/fixed_kernel_gp
 reference/stan/models/hierarchical_beta_binomial_logistic_varying_slopes
+reference/stan/models/hierarchical_beta_regression_logistic_varying_slopes
 reference/stan/models/hierarchical_binomial_logistic_varying_slopes
 reference/stan/models/hierarchical_negative_binomial_log_rate_varying_slopes
 reference/stan/models/hierarchical_poisson_varying_slopes

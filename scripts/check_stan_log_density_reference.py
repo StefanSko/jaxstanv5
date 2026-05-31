@@ -510,6 +510,63 @@ def _hierarchical_beta_binomial_logistic_log_density(
     return compile_log_density(bound)
 
 
+def _hierarchical_beta_regression_log_density(
+    data: Mapping[str, object],
+) -> Callable[[jax.Array], jax.Array]:
+    from math import log
+
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.compiler.core import compile_log_density
+    from jaxstanv5.constraints import Positive
+    from jaxstanv5.distributions import Beta, HalfNormal, Normal
+    from jaxstanv5.math import exp, sigmoid
+    from jaxstanv5.model.bound import BoundModel
+
+    class BindableModel(Protocol):
+        """Runtime model class with decorator-attached bind method."""
+
+        def bind(self, **values: object) -> BoundModel:
+            """Bind concrete model data."""
+            ...
+
+    @model
+    class HierarchicalBetaRegressionStanReferenceModel:
+        """Hierarchical Beta-regression model matching the Stan fixture."""
+
+        n_groups = Data()
+        group_idx = Data()
+        x = Data()
+
+        alpha_pop = Param(Normal(0.0, 1.0))
+        beta_pop = Param(Normal(0.0, 1.0))
+        sigma_alpha = Param(HalfNormal(0.5), constraint=Positive())
+        sigma_beta = Param(HalfNormal(0.5), constraint=Positive())
+        log_phi = Param(Normal(log(18.0), 0.5))
+        z_alpha = Param(Normal(0.0, 1.0), size=n_groups)
+        z_beta = Param(Normal(0.0, 1.0), size=n_groups)
+
+        alpha = alpha_pop + sigma_alpha * z_alpha
+        beta = beta_pop + sigma_beta * z_beta
+        eta = alpha[group_idx] + beta[group_idx] * x
+        mu = sigmoid(eta)
+        phi = exp(log_phi)
+        a = mu * phi
+        b = (1.0 - mu) * phi
+        y = Observed(Beta(a, b))
+
+    n_groups = _as_int(data["G"], name="G")
+    group_idx = jnp.array(_int_sequence(data["group_idx"], name="group_idx"), dtype=jnp.int32) - 1
+    x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
+    y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
+    bound = cast(BindableModel, HierarchicalBetaRegressionStanReferenceModel).bind(
+        n_groups=n_groups,
+        group_idx=group_idx,
+        x=x,
+        y=y,
+    )
+    return compile_log_density(bound)
+
+
 def _hierarchical_negative_binomial_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
@@ -878,6 +935,99 @@ def _cases(root: Path) -> tuple[LogDensityCase, ...]:
                 ),
             ),
             build_jaxstan_log_density=_hierarchical_beta_binomial_logistic_log_density,
+        ),
+        LogDensityCase(
+            name="hierarchical_beta_regression_logistic_varying_slopes",
+            stan_model=stan_root
+            / "models"
+            / "hierarchical_beta_regression_logistic_varying_slopes.stan",
+            stan_data=stan_root
+            / "data"
+            / "hierarchical_beta_regression_logistic_varying_slopes.json",
+            reference_point=LogDensityPoint(
+                "reference",
+                (
+                    0.0,
+                    0.0,
+                    math.log(0.5),
+                    math.log(0.5),
+                    math.log(18.0),
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ),
+                {
+                    "alpha_pop": 0.0,
+                    "beta_pop": 0.0,
+                    "sigma_alpha": 0.5,
+                    "sigma_beta": 0.5,
+                    "log_phi": math.log(18.0),
+                    "z_alpha": (0.0, 0.0, 0.0, 0.0),
+                    "z_beta": (0.0, 0.0, 0.0, 0.0),
+                },
+            ),
+            points=(
+                LogDensityPoint(
+                    "mixed",
+                    (
+                        0.2,
+                        -0.3,
+                        math.log(0.4),
+                        math.log(0.7),
+                        math.log(14.0),
+                        -0.5,
+                        0.25,
+                        0.75,
+                        -0.1,
+                        0.2,
+                        -0.4,
+                        0.1,
+                        0.5,
+                    ),
+                    {
+                        "alpha_pop": 0.2,
+                        "beta_pop": -0.3,
+                        "sigma_alpha": 0.4,
+                        "sigma_beta": 0.7,
+                        "log_phi": math.log(14.0),
+                        "z_alpha": (-0.5, 0.25, 0.75, -0.1),
+                        "z_beta": (0.2, -0.4, 0.1, 0.5),
+                    },
+                ),
+                LogDensityPoint(
+                    "wide",
+                    (
+                        -0.4,
+                        0.2,
+                        math.log(0.8),
+                        math.log(0.3),
+                        math.log(30.0),
+                        0.3,
+                        -0.2,
+                        0.1,
+                        -0.4,
+                        -0.1,
+                        0.2,
+                        -0.3,
+                        0.4,
+                    ),
+                    {
+                        "alpha_pop": -0.4,
+                        "beta_pop": 0.2,
+                        "sigma_alpha": 0.8,
+                        "sigma_beta": 0.3,
+                        "log_phi": math.log(30.0),
+                        "z_alpha": (0.3, -0.2, 0.1, -0.4),
+                        "z_beta": (-0.1, 0.2, -0.3, 0.4),
+                    },
+                ),
+            ),
+            build_jaxstan_log_density=_hierarchical_beta_regression_log_density,
         ),
         LogDensityCase(
             name="hierarchical_negative_binomial_log_rate_varying_slopes",

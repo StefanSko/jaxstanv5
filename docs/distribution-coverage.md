@@ -33,6 +33,8 @@ Target model families:
   symbolic sigmoid link).
 - **Hierarchical Beta-binomial logistic varying slopes** (overdispersed bounded
   counts with symbolic sigmoid and concentration construction).
+- **Hierarchical Beta regression logistic varying slopes** (continuous
+  proportions with symbolic sigmoid and precision construction).
 - **Hierarchical Negative-binomial varying slopes** (overdispersed unbounded
   counts with a symbolic log-rate link and log-overdispersion parameter).
 - **Multivariate** (vector-valued likelihood).
@@ -52,6 +54,10 @@ Target model families:
   Prior simulation distinguishes iid sample dimensions, distribution batch
   dimensions, and event dimensions; event-wise priors such as
   `MultivariateNormal` are supported.
+- `Interval(lower, upper)` and `UnitInterval()` use finite open-interval logit
+  transforms and include the inverse-transform Jacobian in compiled log
+  densities. Bounds are static finite floats; data-dependent bounds are not part
+  of the current public API.
 - A distribution used as a prior for an interval-constrained parameter must also
   implement `cdf` and `icdf` (it is `InverseCdfDistribution`), because prior
   simulation uses inverse-CDF restricted sampling.
@@ -86,8 +92,8 @@ Target model families:
   `f[n // 2]`, `mean(f)`, and `f[-1] - f[0]`) for script-based Stan posterior
   comparison and projected SBC. Each projection is a scalar posterior functional
   and is compared with the same MCSE-calibrated machinery as scalar parameters.
-- Hierarchical count-model validation follows the same ladder for Poisson,
-  Binomial, Beta-binomial, and Negative-binomial families: an always-on scalar
-  grid reference, a workflow smoke test for the varying-slopes model, Stan
-  log-density/posterior scripts, and optional SBC scripts over scalar
-  hyperparameters.
+- Hierarchical count/proportion validation follows the same ladder for Poisson,
+  Binomial, Beta-binomial, Negative-binomial, and Beta-regression families: an
+  always-on scalar grid reference, a workflow smoke test for the varying-slopes
+  model, Stan log-density/posterior scripts, and optional SBC scripts over
+  scalar hyperparameters.

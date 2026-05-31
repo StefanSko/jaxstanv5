@@ -71,5 +71,8 @@ Core invariants that should remain true as the codebase changes.
   `batch_shape + event_shape` suffix from the resolved model value shape.
 - Event-shaped priors, such as `MultivariateNormal`, are valid when their event
   shape is part of the resolved model value shape.
+- `Interval(lower, upper)` and `UnitInterval()` represent finite open intervals
+  only. Their transforms are explicit logit/scaled-logit bijections and their
+  inverse-transform Jacobians are part of compiled latent log densities.
 - Interval-constrained prior simulation is limited to scalar-event inverse-CDF
   distributions unless explicit multivariate constrained simulation is added.
