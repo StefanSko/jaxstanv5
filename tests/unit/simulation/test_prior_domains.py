@@ -5,7 +5,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import pytest
 
-from jaxstanv5.constraints import Positive
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import (
     ConstrainedValue,
     LogAbsDetJacobian,
@@ -39,6 +39,20 @@ def test_prior_domain_for_positive_is_lower_bounded_interval() -> None:
     assert prior_domain_for_constraint(Positive()) == ScalarIntervalDomain(
         lower=0.0,
         upper=None,
+    )
+
+
+def test_prior_domain_for_interval_is_bounded_interval() -> None:
+    assert prior_domain_for_constraint(Interval(-2.0, 3.0)) == ScalarIntervalDomain(
+        lower=-2.0,
+        upper=3.0,
+    )
+
+
+def test_prior_domain_for_unit_interval_is_bounded_interval() -> None:
+    assert prior_domain_for_constraint(UnitInterval()) == ScalarIntervalDomain(
+        lower=0.0,
+        upper=1.0,
     )
 
 
