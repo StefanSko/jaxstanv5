@@ -107,5 +107,6 @@ Target model families:
 - Ordinal logistic validation compares Stan log-density differences and fixed-data
   posterior summaries with Stan-native one-based labels at the fixture boundary,
   while jaxstan's public `OrderedLogistic` API remains zero-based. Optional SBC
-  draws ordered cutpoint truths by sorting iid Normal prior draws, matching the
-  normalized prior on Stan's ordered constrained space.
+  uses public prior-predictive simulation; ordered cutpoint truths are drawn by
+  sorting iid scalar prior draws, matching the normalized prior on Stan's ordered
+  constrained space.

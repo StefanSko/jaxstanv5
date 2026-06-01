@@ -76,3 +76,7 @@ Core invariants that should remain true as the codebase changes.
   inverse-transform Jacobians are part of compiled latent log densities.
 - Interval-constrained prior simulation is limited to scalar-event inverse-CDF
   distributions unless explicit multivariate constrained simulation is added.
+- Ordered-vector prior simulation is limited to iid scalar-event priors. It samples
+  constrained values by sorting iid prior draws along the last axis; it does not
+  use the ordered unconstraining transform or a Jacobian because simulation draws
+  directly from the normalized constrained prior.
