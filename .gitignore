@@ -16,6 +16,7 @@ dist/
 reference/stan/models/*.hpp
 reference/stan/models/*.o
 reference/stan/models/normal_known_scale
+reference/stan/models/ordinal_logistic_regression
 reference/stan/models/positive_scale_normal
 reference/stan/models/exponential_rate
 reference/stan/models/fixed_kernel_gp

@@ -33,6 +33,10 @@ Models:
 - `models/hierarchical_negative_binomial_log_rate_varying_slopes.stan`
   - non-centered varying intercepts and slopes with log overdispersion
   - `y ~ neg_binomial_2(exp(alpha[group] + beta[group] * x), overdispersion)`
+- `models/ordinal_logistic_regression.stan`
+  - scalar slope and ordered cutpoints
+  - `y ~ ordered_logistic(beta * x, cutpoints)` with Stan-native one-based labels;
+    jaxstan validation subtracts one at the reference boundary
 - `models/multivariate_normal_likelihood.stan`
   - `mu ~ normal(0, prior_scale)`
   - `y ~ multi_normal_cholesky(mu, chol)`
@@ -54,6 +58,7 @@ uv run --script scripts/check_binomial_stan_posterior_reference.py
 uv run --script scripts/check_beta_binomial_stan_posterior_reference.py
 uv run --script scripts/check_beta_regression_stan_posterior_reference.py
 uv run --script scripts/check_negative_binomial_stan_posterior_reference.py
+uv run --script scripts/check_ordinal_stan_posterior_reference.py
 uv run --script scripts/check_gp_stan_posterior_reference.py
 uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
@@ -72,9 +77,10 @@ compared directly. The fixed-kernel GP posterior script compares fixed linear
 projections of the latent vector (`f[0]`, `f[n // 2]`, `mean(f)`, and
 `f[-1] - f[0]`) so vector posterior behavior is checked through calibrated
 scalar summaries. The hierarchical count/proportion posterior scripts compare
-scalar hyperparameters from one shared Stan/jaxstan run. The posterior scripts align
+scalar hyperparameters from one shared Stan/jaxstan run. The ordinal posterior
+script compares `beta`, both cutpoints, and the cutpoint gap. The posterior scripts align
 jaxstan's `target_acceptance_rate` with Stan's `adapt_delta`; scalar posterior
-checks default to `0.95`, while hierarchical count and GP scripts default to
+checks default to `0.95`, while hierarchical count, ordinal, and GP scripts default to
 `0.90` for their geometries. The stress script repeats scalar comparisons over
 configurable seeds and reports NUTS diagnostics (divergences, acceptance rates,
 and integration-step counts) and sampling time summaries for both systems.

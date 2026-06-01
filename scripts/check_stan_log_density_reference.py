@@ -622,6 +622,46 @@ def _hierarchical_negative_binomial_log_density(
     return compile_log_density(bound)
 
 
+def _ordinal_logistic_regression_log_density(
+    data: Mapping[str, object],
+) -> Callable[[jax.Array], jax.Array]:
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.compiler.core import compile_log_density
+    from jaxstanv5.constraints import Ordered
+    from jaxstanv5.distributions import Normal, OrderedLogistic
+    from jaxstanv5.model.bound import BoundModel
+
+    class BindableModel(Protocol):
+        """Runtime model class with decorator-attached bind method."""
+
+        def bind(self, **values: object) -> BoundModel:
+            """Bind concrete model data."""
+            ...
+
+    @model
+    class OrdinalLogisticStanReferenceModel:
+        """Ordinal logistic model matching the Stan fixture with zero-based labels."""
+
+        n_cutpoints = Data()
+        x = Data()
+
+        beta = Param(Normal(0.0, 1.0))
+        cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())
+
+        eta = beta * x
+        y = Observed(OrderedLogistic(eta, cutpoints))
+
+    n_cutpoints = _as_int(data["K"], name="K")
+    x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
+    y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32) - 1
+    bound = cast(BindableModel, OrdinalLogisticStanReferenceModel).bind(
+        n_cutpoints=n_cutpoints,
+        x=x,
+        y=y,
+    )
+    return compile_log_density(bound)
+
+
 def _fixed_kernel_gp_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
     from jaxstanv5 import Data, Observed, Param, model
     from jaxstanv5.compiler.core import compile_log_density
@@ -653,6 +693,11 @@ def _fixed_kernel_gp_log_density(data: Mapping[str, object]) -> Callable[[jax.Ar
         n=y.shape[0], chol=chol, obs_sd=obs_sd, y=y
     )
     return compile_log_density(bound)
+
+
+def _ordered_pair(raw_first: float, raw_increment: float) -> tuple[float, float]:
+    """Return constrained ordered cutpoints for a two-vector unconstrained point."""
+    return (raw_first, raw_first + math.exp(raw_increment))
 
 
 def _cases(root: Path) -> tuple[LogDensityCase, ...]:
@@ -1121,6 +1166,29 @@ def _cases(root: Path) -> tuple[LogDensityCase, ...]:
                 ),
             ),
             build_jaxstan_log_density=_hierarchical_negative_binomial_log_density,
+        ),
+        LogDensityCase(
+            name="ordinal_logistic_regression",
+            stan_model=stan_root / "models" / "ordinal_logistic_regression.stan",
+            stan_data=stan_root / "data" / "ordinal_logistic_regression.json",
+            reference_point=LogDensityPoint(
+                "reference",
+                (0.0, -0.4, 0.2),
+                {"beta": 0.0, "cutpoints": _ordered_pair(-0.4, 0.2)},
+            ),
+            points=(
+                LogDensityPoint(
+                    "positive_slope",
+                    (0.75, -0.8, 0.1),
+                    {"beta": 0.75, "cutpoints": _ordered_pair(-0.8, 0.1)},
+                ),
+                LogDensityPoint(
+                    "negative_slope",
+                    (-0.35, -0.2, 0.6),
+                    {"beta": -0.35, "cutpoints": _ordered_pair(-0.2, 0.6)},
+                ),
+            ),
+            build_jaxstan_log_density=_ordinal_logistic_regression_log_density,
         ),
         LogDensityCase(
             name="multivariate_normal_likelihood",
