@@ -7,6 +7,7 @@ from jaxstanv5.constraints.core import (
     UnconstrainedValue,
 )
 from jaxstanv5.constraints.interval import Interval, UnitInterval
+from jaxstanv5.constraints.ordered import Ordered
 from jaxstanv5.constraints.positive import Positive
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "ConstrainedValue",
     "Interval",
     "LogAbsDetJacobian",
+    "Ordered",
     "Positive",
     "UnitInterval",
     "UnconstrainedValue",
