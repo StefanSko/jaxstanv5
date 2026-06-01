@@ -53,6 +53,42 @@ def test_multivariate_normal_log_prob_batches_over_leading_vector_dimensions() -
     assert jnp.allclose(actual, expected)
 
 
+def test_multivariate_normal_log_prob_batches_over_scale_tril() -> None:
+    dist = MultivariateNormal(
+        mean=jnp.zeros((2, 2)),
+        scale_tril=jnp.stack([jnp.eye(2), 2.0 * jnp.eye(2)]),
+    )
+
+    actual = dist.log_prob(jnp.zeros((2, 2)))
+
+    expected = jnp.asarray(
+        [
+            -math.log(2.0 * math.pi),
+            -2.0 * math.log(2.0) - math.log(2.0 * math.pi),
+        ]
+    )
+    assert actual.shape == (2,)
+    assert jnp.allclose(actual, expected)
+
+
+def test_multivariate_normal_log_prob_broadcasts_value_over_batched_scale_tril() -> None:
+    dist = MultivariateNormal(
+        mean=jnp.zeros((2,)),
+        scale_tril=jnp.stack([jnp.eye(2), 2.0 * jnp.eye(2)]),
+    )
+
+    actual = dist.log_prob(jnp.asarray([0.0, 0.0]))
+
+    expected = jnp.asarray(
+        [
+            -math.log(2.0 * math.pi),
+            -2.0 * math.log(2.0) - math.log(2.0 * math.pi),
+        ]
+    )
+    assert actual.shape == (2,)
+    assert jnp.allclose(actual, expected)
+
+
 def test_multivariate_normal_event_shape_matches_cholesky_dimension() -> None:
     dist = MultivariateNormal(0.0, jnp.eye(4))
 

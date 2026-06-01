@@ -17,6 +17,20 @@ from jaxstanv5.distributions.core import (
 )
 
 
+def _event_value(value: jax.Array, event_size: int) -> jax.Array:
+    """Return ``value`` with an explicit trailing event dimension."""
+    if value.ndim == 0:
+        if event_size == 1:
+            return jnp.reshape(value, (1,))
+        raise ValueError("MultivariateNormal values must have a trailing event dimension")
+    if value.shape[-1] != event_size:
+        raise ValueError(
+            "MultivariateNormal values must have trailing dimension "
+            f"{event_size}, got {value.shape[-1]}"
+        )
+    return value
+
+
 @dataclass(frozen=True)
 class MultivariateNormal:
     """Event-wise multivariate Normal with a lower Cholesky scale factor.
@@ -62,13 +76,25 @@ class MultivariateNormal:
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return event-wise multivariate Normal log-density for ``x``."""
         mean, scale_tril = self._mean_tril()
-        value = jnp.asarray(x)
-        delta = value - mean
         event_size = scale_tril.shape[-1]
+        value = _event_value(jnp.asarray(x), event_size)
+        delta = value - mean
+        batch_shape = jnp.broadcast_shapes(delta.shape[:-1], scale_tril.shape[:-2])
+
+        delta = jnp.broadcast_to(delta, batch_shape + (event_size,))
+        scale_tril = jnp.broadcast_to(scale_tril, batch_shape + (event_size, event_size))
+
         flat_delta = delta.reshape((-1, event_size))
-        solved = jax.vmap(lambda row: solve_triangular(scale_tril, row, lower=True))(flat_delta)
-        solved = solved.reshape(delta.shape)
+        flat_scale_tril = scale_tril.reshape((-1, event_size, event_size))
+        solved = jax.vmap(lambda tril, row: solve_triangular(tril, row, lower=True))(
+            flat_scale_tril,
+            flat_delta,
+        )
+        solved = solved.reshape(batch_shape + (event_size,))
         quadratic = jnp.sum(solved**2, axis=-1)
-        log_det = jnp.sum(jnp.log(jnp.diagonal(scale_tril, axis1=-2, axis2=-1)))
+        log_det = jnp.sum(
+            jnp.log(jnp.diagonal(scale_tril, axis1=-2, axis2=-1)),
+            axis=-1,
+        )
         log_prob = -0.5 * quadratic - log_det - 0.5 * event_size * math.log(2.0 * math.pi)
-        return jnp.reshape(log_prob, delta.shape[:-1])
+        return jnp.reshape(log_prob, batch_shape)
