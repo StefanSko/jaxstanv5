@@ -104,3 +104,8 @@ Target model families:
   always-on scalar grid reference, a workflow smoke test for the varying-slopes
   model, Stan log-density/posterior scripts, and optional SBC scripts over
   scalar hyperparameters.
+- Ordinal logistic validation compares Stan log-density differences and fixed-data
+  posterior summaries with Stan-native one-based labels at the fixture boundary,
+  while jaxstan's public `OrderedLogistic` API remains zero-based. Optional SBC
+  draws ordered cutpoint truths by sorting iid Normal prior draws, matching the
+  normalized prior on Stan's ordered constrained space.
