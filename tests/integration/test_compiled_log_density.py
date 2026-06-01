@@ -11,8 +11,16 @@ from jax.scipy.special import gammaln
 
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.compiler.core import compile_log_density
-from jaxstanv5.constraints import Interval, Positive, UnitInterval
-from jaxstanv5.distributions import Beta, BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
+from jaxstanv5.constraints import Interval, Ordered, Positive, UnitInterval
+from jaxstanv5.distributions import (
+    Beta,
+    BetaBinomial,
+    Binomial,
+    NegativeBinomial,
+    Normal,
+    OrderedLogistic,
+    Poisson,
+)
 from jaxstanv5.math import exp, sigmoid
 
 
@@ -114,6 +122,20 @@ class NegativeBinomialLogRateDensity:
 
 
 @model
+class OrderedLogisticDensity:
+    """Ordinal model using ordered cutpoints and zero-based labels."""
+
+    n_cutpoints = Data()
+    x = Data()
+
+    beta = Param(Normal(0.0, 1.0))
+    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())
+
+    eta = beta * x
+    y = Observed(OrderedLogistic(eta, cutpoints))
+
+
+@model
 class MeasurementErrorLogDensity:
     """Measurement-error model with latent vectors and two observed sites."""
 
@@ -145,6 +167,25 @@ def beta_log_prob(x: jnp.ndarray, alpha: jnp.ndarray, beta: jnp.ndarray) -> jnp.
     """Element-wise Beta log-density matching ``Beta.log_prob``."""
     log_normalizer = gammaln(alpha) + gammaln(beta) - gammaln(alpha + beta)
     return (alpha - 1.0) * jnp.log(x) + (beta - 1.0) * jnp.log1p(-x) - log_normalizer
+
+
+def ordered_logistic_log_prob(
+    y: jnp.ndarray,
+    eta: jnp.ndarray,
+    cutpoints: jnp.ndarray,
+) -> jnp.ndarray:
+    """Element-wise zero-based ordered-logistic log mass."""
+    cumulative = jax.nn.sigmoid(cutpoints[:, None] - eta[None, :])
+    probabilities = jnp.stack(
+        (
+            cumulative[0],
+            cumulative[1] - cumulative[0],
+            1.0 - cumulative[1],
+        ),
+        axis=-1,
+    )
+    selected = jnp.take_along_axis(probabilities, y[:, None], axis=-1)[..., 0]
+    return jnp.log(selected)
 
 
 def test_compiled_log_density_for_simple_unconstrained_model() -> None:
@@ -290,6 +331,26 @@ def test_compiled_log_density_evaluates_beta_likelihood_fields() -> None:
     a = p * concentration
     b = (1.0 - p) * concentration
     expected += jnp.sum(beta_log_prob(y_data, a, b))
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_includes_ordered_constraint_jacobian_and_likelihood() -> None:
+    x_data = jnp.asarray([-1.0, 0.0, 1.0])
+    y_data = jnp.asarray([0, 1, 2])
+    bound = bind_model(OrderedLogisticDensity, n_cutpoints=2, x=x_data, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    beta = jnp.asarray(0.5)
+    raw_cutpoints = jnp.asarray([-0.4, 0.3])
+    constrained_cutpoints = jnp.asarray(Ordered().inverse_transform(raw_cutpoints))
+    q = jnp.concatenate((jnp.asarray([beta]), raw_cutpoints))
+
+    lp = log_prob(q)
+
+    expected = normal_log_prob(beta, jnp.asarray(0.0), jnp.asarray(1.0))
+    expected += jnp.sum(normal_log_prob(constrained_cutpoints, jnp.asarray(0.0), jnp.asarray(2.0)))
+    expected += jnp.sum(ordered_logistic_log_prob(y_data, beta * x_data, constrained_cutpoints))
+    expected += raw_cutpoints[1]
     assert jnp.allclose(lp, expected, atol=1e-6)
 
 

@@ -23,6 +23,7 @@ from _reference_models import (
     hierarchical_negative_binomial_log_rate_varying_slopes_fixture,
     hierarchical_poisson_varying_slopes_fixture,
     multivariate_normal_likelihood_fixture,
+    ordinal_logistic_regression_fixture,
     robust_regression_fixture,
 )
 
@@ -176,6 +177,25 @@ def test_multivariate_normal_likelihood_workflow_smoke() -> None:
 
     assert rhat(result.samples)["mu"] < 1.1
     assert jnp.all(jnp.isfinite(result.samples["mu"]))
+
+
+def test_ordinal_logistic_regression_workflow_smoke() -> None:
+    fixture = ordinal_logistic_regression_fixture()
+
+    result = sample(
+        fixture.bound,
+        seed=67,
+        num_chains=4,
+        num_warmup=800,
+        num_samples=1000,
+        target_acceptance_rate=0.9,
+    )
+
+    rhat_vals = rhat(result.samples)
+    assert rhat_vals["beta"] < 1.12
+    assert rhat_vals["cutpoints"] < 1.12
+    assert jnp.all(jnp.isfinite(result.samples["beta"]))
+    assert jnp.all(result.samples["cutpoints"][..., 1:] > result.samples["cutpoints"][..., :-1])
 
 
 def test_gaussian_process_workflow_smoke() -> None:

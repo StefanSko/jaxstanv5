@@ -98,7 +98,9 @@ functions. Discrete distributions such as `Poisson`, `Binomial`,
 `BetaBinomial`, and `NegativeBinomial` are valid observed likelihoods, but not
 latent `Param(...)` priors because NUTS samples continuous parameters only.
 Continuous bounded latent parameters can use `Interval(lower, upper)` or
-`UnitInterval()` constraints.
+`UnitInterval()` constraints. Ordered vector parameters can use `Ordered()`, for
+example ordinal-logistic cutpoints. `OrderedLogistic(eta, cutpoints)` uses
+zero-based observed labels: with `K` cutpoints, valid categories are `0..K`.
 
 ## Hierarchical parameters
 

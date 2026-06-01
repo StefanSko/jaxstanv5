@@ -37,6 +37,8 @@ Target model families:
   proportions with symbolic sigmoid and precision construction).
 - **Hierarchical Negative-binomial varying slopes** (overdispersed unbounded
   counts with a symbolic log-rate link and log-overdispersion parameter).
+- **Ordinal logistic regression** (ordered cutpoints with zero-based ordinal
+  category labels).
 - **Multivariate** (vector-valued likelihood).
 - **Gaussian process** (multivariate-normal latent with a fixed-kernel
   Cholesky factor supplied as data).
@@ -58,6 +60,11 @@ Target model families:
   transforms and include the inverse-transform Jacobian in compiled log
   densities. Bounds are static finite floats; data-dependent bounds are not part
   of the current public API.
+- `Ordered()` maps same-length unconstrained vectors to strictly increasing
+  constrained vectors along the last axis and includes the inverse-transform
+  Jacobian in compiled log densities. `OrderedLogistic` uses Python-native
+  zero-based observed category labels `0..n_cutpoints`; Stan references must add
+  one to observed labels at the reference boundary.
 - A distribution used as a prior for an interval-constrained parameter must also
   implement `cdf` and `icdf` (it is `InverseCdfDistribution`), because prior
   simulation uses inverse-CDF restricted sampling.

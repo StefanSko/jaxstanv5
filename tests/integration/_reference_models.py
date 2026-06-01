@@ -174,6 +174,16 @@ class MultivariateNormalLikelihoodFixture:
 
 
 @dataclass(frozen=True)
+class OrdinalLogisticFixture:
+    """Bound ordinal-logistic regression fixture."""
+
+    bound: BoundModel
+    y: jax.Array
+    x: jax.Array
+    n_cutpoints: int
+
+
+@dataclass(frozen=True)
 class FixedKernelGpFixture:
     """Bound fixed-kernel GP regression fixture."""
 
@@ -763,6 +773,49 @@ def multivariate_normal_likelihood_fixture() -> MultivariateNormalLikelihoodFixt
         prior_mean=jnp.zeros((3,)),
         prior_scale=10.0,
         covariance=covariance,
+    )
+
+
+def ordinal_logistic_regression_fixture() -> OrdinalLogisticFixture:
+    """Return an ordinal-logistic regression smoke fixture with zero-based categories."""
+    from jaxstanv5 import Data, Observed, Param, model
+    from jaxstanv5.constraints import Ordered
+    from jaxstanv5.distributions import Normal, OrderedLogistic
+
+    @model
+    class OrdinalLogisticRegression:
+        """Ordinal regression with ordered cutpoints and zero-based observed labels."""
+
+        n_cutpoints = Data()
+        x = Data()
+
+        beta = Param(Normal(0.0, 1.0))
+        cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())
+
+        eta = beta * x
+        y = Observed(OrderedLogistic(eta, cutpoints))
+
+    n = 80
+    n_cutpoints = 2
+    x = jnp.linspace(-1.5, 1.5, n)
+    beta_true = 1.0
+    cutpoints_true = jnp.asarray([-0.7, 0.8])
+    eta = beta_true * x
+    cumulative = jax.nn.sigmoid(cutpoints_true[:, None] - eta[None, :])
+    probabilities = jnp.stack(
+        (
+            cumulative[0],
+            cumulative[1] - cumulative[0],
+            1.0 - cumulative[1],
+        ),
+        axis=-1,
+    )
+    y = jax.random.categorical(jax.random.PRNGKey(61), jnp.log(probabilities), axis=-1)
+    return OrdinalLogisticFixture(
+        bound=bind_model(OrdinalLogisticRegression, n_cutpoints=n_cutpoints, x=x, y=y),
+        y=y,
+        x=x,
+        n_cutpoints=n_cutpoints,
     )
 
 
