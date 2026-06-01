@@ -8,11 +8,11 @@ import jax
 import jax.numpy as jnp
 
 from jaxstanv5.compiler.core import compile_log_density
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import Bernoulli, Binomial, Normal
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
-from jaxstanv5.model.expr import ConstNode, ParamRef
+from jaxstanv5.model.expr import ConstNode, ParamRef, UnaryOp
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,42 @@ def test_scalar_unconstrained() -> None:
     expected = std_normal.log_prob(jnp.array(0.5)) + Normal(0.5, 1.0).log_prob(jnp.array(2.0))
 
     assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_bernoulli_sigmoid_likelihood_matches_binomial_one_trial() -> None:
+    bernoulli_meta = ModelMeta(
+        params={"eta": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
+        data_slots=[],
+        observed_nodes=(ResolvedObserved("y", Bernoulli(UnaryOp("sigmoid", ParamRef("eta")))),),
+        expressions={},
+    )
+    binomial_meta = ModelMeta(
+        params={"eta": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
+        data_slots=[],
+        observed_nodes=(
+            ResolvedObserved("y", Binomial(ConstNode(1.0), UnaryOp("sigmoid", ParamRef("eta")))),
+        ),
+        expressions={},
+    )
+    y = jnp.asarray([0.0, 1.0, 1.0, 0.0])
+    param_shapes: dict[str, tuple[int, ...]] = {"eta": ()}
+    bernoulli_bound = BoundModel(
+        meta=bernoulli_meta,
+        data={"y": y},
+        param_shapes=param_shapes,
+        n_params=1,
+    )
+    binomial_bound = BoundModel(
+        meta=binomial_meta,
+        data={"y": y},
+        param_shapes=param_shapes,
+        n_params=1,
+    )
+
+    actual = compile_log_density(bernoulli_bound)(jnp.array([0.2]))
+    expected = compile_log_density(binomial_bound)(jnp.array([0.2]))
+
+    assert jnp.allclose(actual, expected, atol=1e-6)
 
 
 def test_multiple_observed_nodes_contribute_to_log_density() -> None:
