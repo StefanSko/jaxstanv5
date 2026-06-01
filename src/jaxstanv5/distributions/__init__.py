@@ -15,10 +15,17 @@ from jaxstanv5.distributions.core import (
     DistributionValue,
     LogProbability,
 )
-from jaxstanv5.distributions.counts import BetaBinomial, Binomial, NegativeBinomial, Poisson
+from jaxstanv5.distributions.counts import (
+    Bernoulli,
+    BetaBinomial,
+    Binomial,
+    NegativeBinomial,
+    Poisson,
+)
 from jaxstanv5.distributions.multivariate import MultivariateNormal
 
 __all__ = [
+    "Bernoulli",
     "Beta",
     "BetaBinomial",
     "Binomial",

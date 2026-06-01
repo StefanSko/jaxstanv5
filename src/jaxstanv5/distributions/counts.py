@@ -18,6 +18,48 @@ from jaxstanv5.distributions.core import (
 
 
 @dataclass(frozen=True)
+class Bernoulli(DiscreteDistribution):
+    """Bernoulli distribution parameterized by success probability."""
+
+    probs: DistributionParameter
+
+    def _probs(self) -> jax.Array:
+        return jnp.asarray(_concrete_parameter(self.probs))
+
+    def batch_shape(self) -> tuple[int, ...]:
+        """Return non-sample dimensions for Bernoulli probabilities."""
+        return self._probs().shape
+
+    def event_shape(self) -> tuple[int, ...]:
+        """Return scalar-event shape for element-wise Bernoulli draws."""
+        return ()
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        """Return element-wise Bernoulli log-probability mass for ``x``."""
+        probs = self._probs()
+        dtype = jnp.result_type(probs, 1.0)
+        probability = jnp.asarray(_concrete_parameter(self.probs), dtype=dtype)
+        value = jnp.asarray(x, dtype=dtype)
+        integer_value = value == jnp.floor(value)
+        support = integer_value & (value >= 0.0) & (value <= 1.0) & (probs >= 0.0) & (probs <= 1.0)
+        log_mass = xlogy(value, probability) + xlogy(1.0 - value, 1.0 - probability)
+        return jnp.where(support, log_mass, -jnp.inf)
+
+    def sample(
+        self,
+        key: jax.Array,
+        *,
+        sample_shape: tuple[int, ...] = (),
+    ) -> jax.Array:
+        """Draw Bernoulli samples with leading ``sample_shape`` dimensions."""
+        return jax.random.bernoulli(
+            key,
+            p=self._probs(),
+            shape=sample_shape + self.batch_shape(),
+        ).astype(jnp.int32)
+
+
+@dataclass(frozen=True)
 class Poisson(DiscreteDistribution):
     """Poisson distribution parameterized by positive rate."""
 

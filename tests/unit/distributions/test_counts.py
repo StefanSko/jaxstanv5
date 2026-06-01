@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.special import gammaln
 
-from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Poisson
+from jaxstanv5.distributions import Bernoulli, BetaBinomial, Binomial, NegativeBinomial, Poisson
 
 
 def beta_log_function(a: jax.Array, b: jax.Array) -> jax.Array:
@@ -70,6 +70,94 @@ def test_poisson_sample_broadcasts_distribution_shape_after_sample_shape() -> No
 
     assert samples.shape == (2, 3)
     assert jnp.all(samples >= 0)
+
+
+def test_bernoulli_log_prob_matches_expected_values() -> None:
+    dist = Bernoulli(0.25)
+    values = jnp.asarray([0.0, 1.0])
+
+    actual = dist.log_prob(values)
+
+    expected = jnp.asarray([math.log(0.75), math.log(0.25)])
+    assert actual.shape == (2,)
+    assert jnp.allclose(actual, expected)
+
+
+def test_bernoulli_log_prob_handles_boundary_probabilities() -> None:
+    certain_failure = Bernoulli(0.0)
+    certain_success = Bernoulli(1.0)
+
+    assert jnp.allclose(certain_failure.log_prob(jnp.asarray(0.0)), 0.0, atol=1e-6)
+    assert certain_failure.log_prob(jnp.asarray(1.0)) == -jnp.inf
+    assert jnp.allclose(certain_success.log_prob(jnp.asarray(1.0)), 0.0, atol=1e-6)
+    assert certain_success.log_prob(jnp.asarray(0.0)) == -jnp.inf
+
+
+def test_bernoulli_log_prob_is_negative_infinity_outside_support() -> None:
+    dist = Bernoulli(0.4)
+
+    negative = dist.log_prob(jnp.asarray(-1.0))
+    too_large = dist.log_prob(jnp.asarray(2.0))
+    fractional = dist.log_prob(jnp.asarray(0.5))
+    invalid_low_prob = Bernoulli(-0.1).log_prob(jnp.asarray(0.0))
+    invalid_high_prob = Bernoulli(1.1).log_prob(jnp.asarray(1.0))
+
+    assert negative == -jnp.inf
+    assert too_large == -jnp.inf
+    assert fractional == -jnp.inf
+    assert invalid_low_prob == -jnp.inf
+    assert invalid_high_prob == -jnp.inf
+
+
+def test_bernoulli_log_prob_broadcasts_over_vector_inputs() -> None:
+    probs = jnp.asarray([0.25, 0.5])
+    values = jnp.asarray([0.0, 1.0])
+    dist = Bernoulli(probs)
+
+    actual = dist.log_prob(values)
+
+    expected = jnp.asarray([math.log(0.75), math.log(0.5)])
+    assert actual.shape == (2,)
+    assert jnp.allclose(actual, expected)
+
+
+def test_bernoulli_log_prob_matches_binomial_with_one_trial() -> None:
+    probs = jnp.asarray([0.0, 0.25, 0.75, 1.0])
+    values = jnp.asarray([0.0, 1.0, 0.5, 2.0])
+
+    actual = Bernoulli(probs).log_prob(values)
+    expected = Binomial(1.0, probs).log_prob(values)
+
+    assert jnp.allclose(actual, expected, atol=1e-6)
+
+
+def test_bernoulli_batch_shape_matches_probability_shape() -> None:
+    dist = Bernoulli(jnp.ones((2, 3)) * 0.25)
+
+    assert dist.batch_shape() == (2, 3)
+
+
+def test_bernoulli_sample_is_deterministic_for_seed() -> None:
+    dist = Bernoulli(0.5)
+    key = jax.random.PRNGKey(123)
+
+    first = dist.sample(key, sample_shape=(4,))
+    second = dist.sample(key, sample_shape=(4,))
+
+    assert first.shape == (4,)
+    assert jnp.all(first >= 0)
+    assert jnp.all(first <= 1)
+    assert jnp.allclose(first, second)
+
+
+def test_bernoulli_sample_broadcasts_distribution_shape_after_sample_shape() -> None:
+    dist = Bernoulli(jnp.asarray([0.2, 0.5, 0.8]))
+
+    samples = dist.sample(jax.random.PRNGKey(456), sample_shape=(2,))
+
+    assert samples.shape == (2, 3)
+    assert jnp.all(samples >= 0)
+    assert jnp.all(samples <= 1)
 
 
 def test_binomial_log_prob_matches_expected_scalar_value() -> None:
