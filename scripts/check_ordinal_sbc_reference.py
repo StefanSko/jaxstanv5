@@ -16,7 +16,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import jax
 import jax.numpy as jnp
@@ -55,15 +55,6 @@ class OrdinalSbcResult:
     max_abs_bin_z: float
     mean_rank_z: float
     elapsed_seconds: float
-
-
-class PriorPredictiveDraws(NamedTuple):
-    """Prior truths and generated observations for ordinal SBC."""
-
-    beta: jax.Array
-    cutpoints: jax.Array
-    y: jax.Array
-    x: jax.Array
 
 
 class BindableModel(Protocol):
@@ -110,36 +101,6 @@ def _data_values(config: OrdinalSbcConfig) -> Mapping[str, object]:
     return {"n_cutpoints": 2, "x": x}
 
 
-def _simulate_prior_predictive(config: OrdinalSbcConfig) -> PriorPredictiveDraws:
-    """Draw normalized ordered-prior truths and zero-based ordinal observations.
-
-    Sorting iid Normal cutpoints samples from the normalized ordered prior implied by
-    ``ordered[2] cutpoints; cutpoints ~ normal(0, 2)``.
-    """
-    from jaxstanv5.distributions import OrderedLogistic
-
-    key = jax.random.PRNGKey(config.seed)
-    beta_key, cutpoint_key, observed_key = jax.random.split(key, 3)
-    x = jnp.asarray(_data_values(config)["x"])
-    beta = jax.random.normal(beta_key, shape=(config.num_simulations,))
-    unordered_cutpoints = 2.0 * jax.random.normal(cutpoint_key, shape=(config.num_simulations, 2))
-    cutpoints = jnp.sort(unordered_cutpoints, axis=-1)
-    observed_keys = jax.random.split(observed_key, config.num_simulations)
-
-    y_values: list[jax.Array] = []
-    for simulation_index in range(config.num_simulations):
-        eta = beta[simulation_index] * x
-        distribution = OrderedLogistic(eta, cutpoints[simulation_index])
-        y_values.append(distribution.sample(observed_keys[simulation_index]))
-
-    return PriorPredictiveDraws(
-        beta=beta,
-        cutpoints=cutpoints,
-        y=jnp.stack(y_values),
-        x=x,
-    )
-
-
 def _scalar_samples(result: SamplerResult) -> Mapping[str, jax.Array]:
     cutpoints = jnp.asarray(result.samples["cutpoints"])
     lower = cutpoints[:, :, 0]
@@ -152,15 +113,21 @@ def _scalar_samples(result: SamplerResult) -> Mapping[str, jax.Array]:
     }
 
 
-def _truth_value(draws: PriorPredictiveDraws, *, parameter: str, simulation_index: int) -> float:
+def _truth_value(
+    truth_draws: Mapping[str, jax.Array],
+    *,
+    parameter: str,
+    simulation_index: int,
+) -> float:
     if parameter == "beta":
-        return float(draws.beta[simulation_index])
+        return float(truth_draws["beta"][simulation_index])
+    cutpoints = truth_draws["cutpoints"]
     if parameter == "cutpoints[0]":
-        return float(draws.cutpoints[simulation_index, 0])
+        return float(cutpoints[simulation_index, 0])
     if parameter == "cutpoints[1]":
-        return float(draws.cutpoints[simulation_index, 1])
+        return float(cutpoints[simulation_index, 1])
     if parameter == "cutpoint_gap":
-        return float(draws.cutpoints[simulation_index, 1] - draws.cutpoints[simulation_index, 0])
+        return float(cutpoints[simulation_index, 1] - cutpoints[simulation_index, 0])
     raise ValueError(f"Unknown SBC parameter: {parameter}")
 
 
@@ -171,18 +138,29 @@ def _run_sbc(config: OrdinalSbcConfig) -> tuple[OrdinalSbcResult, ...]:
         scalar_sbc_rank,
     )
     from jaxstanv5.inference import compile_sampler
+    from jaxstanv5.simulation import simulate_prior_predictive
 
     start = time.perf_counter()
     parameters = ("beta", "cutpoints[0]", "cutpoints[1]", "cutpoint_gap")
     model_cls = _build_model()
     data = _data_values(config)
-    prior_predictive = _simulate_prior_predictive(config)
+    prior_predictive = simulate_prior_predictive(
+        model_cls,
+        seed=config.seed,
+        num_samples=config.num_simulations,
+        data=data,
+    )
+    truth_draws = {
+        "beta": jnp.asarray(prior_predictive.parameters["beta"]),
+        "cutpoints": jnp.asarray(prior_predictive.parameters["cutpoints"]),
+    }
+    y_draws = jnp.asarray(prior_predictive.observed["y"])
     ranks: dict[str, list[int]] = {name: [] for name in parameters}
     num_posterior_draws: int | None = None
     bindable = cast(BindableModel, model_cls)
 
     for simulation_index in range(config.num_simulations):
-        bound = bindable.bind(**data, y=prior_predictive.y[simulation_index])
+        bound = bindable.bind(**prior_predictive.data, y=y_draws[simulation_index])
         compiled = compile_sampler(bound, target_acceptance_rate=config.target_acceptance_rate)
         result = compiled.sample(
             seed=config.seed + 10_000 + simulation_index,
@@ -202,7 +180,7 @@ def _run_sbc(config: OrdinalSbcConfig) -> tuple[OrdinalSbcResult, ...]:
         samples = _scalar_samples(result)
         for parameter in parameters:
             true_value = _truth_value(
-                prior_predictive,
+                truth_draws,
                 parameter=parameter,
                 simulation_index=simulation_index,
             )
