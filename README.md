@@ -185,6 +185,7 @@ uv run --script scripts/check_binomial_stan_posterior_reference.py
 uv run --script scripts/check_beta_binomial_stan_posterior_reference.py
 uv run --script scripts/check_beta_regression_stan_posterior_reference.py
 uv run --script scripts/check_negative_binomial_stan_posterior_reference.py
+uv run --script scripts/check_ordinal_stan_posterior_reference.py
 uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
 
@@ -206,6 +207,7 @@ uv run --script scripts/check_binomial_sbc_reference.py
 uv run --script scripts/check_beta_binomial_sbc_reference.py
 uv run --script scripts/check_beta_regression_sbc_reference.py
 uv run --script scripts/check_negative_binomial_sbc_reference.py
+uv run --script scripts/check_ordinal_sbc_reference.py
 ```
 
 A restricted raw-model adapter is also available for supported Normal models:
