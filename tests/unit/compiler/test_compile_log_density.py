@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.distributions import Bernoulli, Binomial, Normal
@@ -209,3 +210,27 @@ def test_compile_log_density_handles_prior_only_model() -> None:
 
     expected = Normal(0.0, 1.0).log_prob(jnp.array(0.5))
     assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compile_log_density_rejects_wrong_q_shape() -> None:
+    meta = ModelMeta(
+        params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
+        data_slots=[],
+        observed_nodes=(ResolvedObserved("y", Normal(ParamRef("mu"), ConstNode(1.0))),),
+        expressions={},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={"y": jnp.array(1.0)},
+        param_shapes={"mu": ()},
+        n_params=1,
+    )
+    log_prob = compile_log_density(bound)
+
+    assert jnp.isfinite(log_prob(jnp.array([0.5])))
+    with pytest.raises(ValueError, match="expected 1, got 0"):
+        log_prob(jnp.array([]))
+    with pytest.raises(ValueError, match="expected 1, got 2"):
+        log_prob(jnp.array([0.5, 999.0]))
+    with pytest.raises(ValueError, match="one-dimensional"):
+        log_prob(jnp.array([[0.5]]))

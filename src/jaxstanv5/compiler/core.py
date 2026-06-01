@@ -81,11 +81,37 @@ def _evaluate_distribution[DistributionT: Distribution](
     return cast(DistributionT, type(distribution)(**resolved))
 
 
+def _param_vector_size(shapes: dict[str, tuple[int, ...]]) -> int:
+    """Return the flat unconstrained size implied by parameter shapes."""
+    total = 0
+    for shape in shapes.values():
+        size = 1
+        for dim in shape:
+            size *= dim
+        total += size
+    return total
+
+
+def _validate_flat_param_vector(flat: jax.Array, shapes: dict[str, tuple[int, ...]]) -> None:
+    """Validate the flat unconstrained parameter vector shape."""
+    if flat.ndim != 1:
+        raise ValueError("Unconstrained parameter vector q must be one-dimensional")
+
+    expected = _param_vector_size(shapes)
+    actual = flat.shape[0]
+    if actual != expected:
+        raise ValueError(
+            f"Unconstrained parameter vector q has wrong length: expected {expected}, got {actual}"
+        )
+
+
 def _split_params(
     flat: jax.Array,
     shapes: dict[str, tuple[int, ...]],
 ) -> dict[str, jax.Array]:
     """Split a flat unconstrained parameter vector into named segments."""
+    _validate_flat_param_vector(flat, shapes)
+
     result: dict[str, jax.Array] = {}
     offset = 0
     for name, shape in shapes.items():
