@@ -24,6 +24,18 @@ from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, P
 type ModelClass = type[object]
 type SymbolTable = dict[DeclarationSymbol, str]
 
+_INDEX_BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
+    "+": jnp.add,
+    "-": jnp.subtract,
+    "*": jnp.multiply,
+    "/": jnp.divide,
+}
+
+_INDEX_UNARY_FUNCTIONS: dict[str, Callable[[jax.Array], jax.Array]] = {
+    "exp": jnp.exp,
+    "sigmoid": jax.nn.sigmoid,
+}
+
 
 @dataclass(frozen=True)
 class ResolvedParam:
@@ -171,6 +183,7 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
             name: _resolve_param_shape(param.size, data) for name, param in meta.params.items()
         }
         n_params = sum(_param_count(shape) for shape in param_shapes.values())
+        _validate_bound_index_expressions(meta, data, param_shapes)
         return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
     return bind
@@ -196,6 +209,135 @@ def _resolve_param_shape(
             f"Data-dependent parameter size {size.name!r}",
         ),
     )
+
+
+def _validate_bound_index_expressions(
+    meta: ModelMeta,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate concrete data indexes before JAX gather semantics can clamp them."""
+    for param in meta.params.values():
+        _validate_distribution_index_expressions(param.distribution, data, param_shapes)
+    for observed in meta.observed_nodes:
+        _validate_distribution_index_expressions(observed.distribution, data, param_shapes)
+    for expression in meta.expressions.values():
+        _validate_index_expr(expression, data, param_shapes)
+
+
+def _validate_distribution_index_expressions(
+    distribution: Distribution,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate indexes inside symbolic dataclass distribution fields."""
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return
+
+    for field in fields(distribution):
+        value = getattr(distribution, field.name)
+        if _is_final_expr_node(value):
+            _validate_index_expr(cast(ExprNode, value), data, param_shapes)
+        elif is_dataclass(value) and not isinstance(value, type):
+            _validate_distribution_index_expressions(cast(Distribution, value), data, param_shapes)
+
+
+def _validate_index_expr(
+    node: ExprNode,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate all concrete indexes in a final expression tree."""
+    if isinstance(node, BinOp):
+        _validate_index_expr(node.left, data, param_shapes)
+        _validate_index_expr(node.right, data, param_shapes)
+    elif isinstance(node, UnaryOp):
+        _validate_index_expr(node.operand, data, param_shapes)
+    elif isinstance(node, IndexOp):
+        _validate_index_expr(node.base, data, param_shapes)
+        _validate_index_expr(node.index, data, param_shapes)
+        _validate_single_index_op(node, data, param_shapes)
+
+
+def _validate_single_index_op(
+    node: IndexOp,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate one concrete first-axis index operation."""
+    base_shape = _infer_expr_shape(node.base, data, param_shapes)
+    if not base_shape:
+        raise ValueError("Cannot index scalar expression")
+
+    index = _evaluate_data_index_expr(node.index, data)
+    _validate_index_value(index, base_shape[0])
+
+
+def _infer_expr_shape(
+    node: ExprNode,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> tuple[int, ...]:
+    """Infer the concrete shape of a resolved expression at bind time."""
+    if isinstance(node, ParamRef):
+        return param_shapes[node.name]
+    if isinstance(node, DataRef):
+        return data[node.name].shape
+    if isinstance(node, ConstNode):
+        return jnp.asarray(node.value).shape
+    if isinstance(node, BinOp):
+        left_shape = _infer_expr_shape(node.left, data, param_shapes)
+        right_shape = _infer_expr_shape(node.right, data, param_shapes)
+        return jnp.broadcast_shapes(left_shape, right_shape)
+    if isinstance(node, UnaryOp):
+        return _infer_expr_shape(node.operand, data, param_shapes)
+    if isinstance(node, IndexOp):
+        base_shape = _infer_expr_shape(node.base, data, param_shapes)
+        if not base_shape:
+            raise ValueError("Cannot index scalar expression")
+        index = _evaluate_data_index_expr(node.index, data)
+        _validate_index_value(index, base_shape[0])
+        return index.shape + base_shape[1:]
+    raise TypeError(f"Cannot infer shape for expression node: {type(node).__name__}")
+
+
+def _evaluate_data_index_expr(node: ExprNode, data: dict[str, jax.Array]) -> jax.Array:
+    """Evaluate an index expression that must depend only on data and constants."""
+    if isinstance(node, DataRef):
+        return data[node.name]
+    if isinstance(node, ConstNode):
+        return jnp.asarray(node.value)
+    if isinstance(node, ParamRef):
+        raise TypeError("Index expressions must depend only on data or constants")
+    if isinstance(node, BinOp):
+        left = _evaluate_data_index_expr(node.left, data)
+        right = _evaluate_data_index_expr(node.right, data)
+        op_fn = _INDEX_BINOPS.get(node.op)
+        if op_fn is None:
+            raise ValueError(f"Unknown binary operator in index expression: {node.op!r}")
+        return op_fn(left, right)
+    if isinstance(node, UnaryOp):
+        operand = _evaluate_data_index_expr(node.operand, data)
+        function = _INDEX_UNARY_FUNCTIONS.get(node.function)
+        if function is None:
+            raise ValueError(f"Unknown unary function in index expression: {node.function!r}")
+        return function(operand)
+    if isinstance(node, IndexOp):
+        base = _evaluate_data_index_expr(node.base, data)
+        if base.ndim == 0:
+            raise ValueError("Cannot index scalar data expression")
+        index = _evaluate_data_index_expr(node.index, data)
+        _validate_index_value(index, base.shape[0])
+        return base[index]
+    raise TypeError(f"Cannot evaluate index expression node: {type(node).__name__}")
+
+
+def _validate_index_value(index: jax.Array, base_size: int) -> None:
+    """Validate an integer first-axis index array against one base size."""
+    if not jnp.issubdtype(index.dtype, jnp.integer):
+        raise TypeError("Index data must be integer")
+    if bool(jnp.any((index < 0) | (index >= base_size))):
+        raise ValueError(f"Index data out of bounds for axis 0 with size {base_size}")
 
 
 def _param_count(shape: tuple[int, ...]) -> int:

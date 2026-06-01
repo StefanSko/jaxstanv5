@@ -6,6 +6,7 @@ import math
 
 import jax
 import jax.numpy as jnp
+import pytest
 from _helpers import bind_model
 from jax.scipy.special import gammaln
 
@@ -72,6 +73,16 @@ class PoissonLogDensity:
     eta = Param(Normal(0, 1))
     rate = exp(eta)
     y = Observed(Poisson(rate))
+
+
+@model
+class IndexedNormal:
+    """Hierarchical normal with data-indexed group effects."""
+
+    n_groups = Data()
+    group_idx = Data()
+    theta = Param(Normal(0, 1), size=n_groups)
+    y = Observed(Normal(theta[group_idx], 1))
 
 
 @model
@@ -441,3 +452,47 @@ def test_compiled_log_density_evaluates_data_expressions() -> None:
 
     expected = prior_lp + obs_lp
     assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_allows_valid_data_indexing() -> None:
+    group_idx = jnp.array([0, 1, 0])
+    y = jnp.array([0.25, -0.5, 0.5])
+    bound = bind_model(IndexedNormal, n_groups=2, group_idx=group_idx, y=y)
+    log_prob = compile_log_density(bound)
+
+    theta = jnp.array([1.0, 2.0])
+    actual = log_prob(theta)
+
+    expected = jnp.sum(normal_log_prob(theta, jnp.array(0.0), jnp.array(1.0)))
+    expected += jnp.sum(normal_log_prob(y, theta[group_idx], jnp.array(1.0)))
+    assert jnp.allclose(actual, expected, atol=1e-6)
+
+
+def test_bind_rejects_out_of_bounds_data_indexing() -> None:
+    with pytest.raises(ValueError, match="out of bounds"):
+        bind_model(
+            IndexedNormal,
+            n_groups=2,
+            group_idx=jnp.array([0, 2]),
+            y=jnp.array([0.0, 0.0]),
+        )
+
+
+def test_bind_rejects_negative_data_indexing() -> None:
+    with pytest.raises(ValueError, match="out of bounds"):
+        bind_model(
+            IndexedNormal,
+            n_groups=2,
+            group_idx=jnp.array([0, -1]),
+            y=jnp.array([0.0, 0.0]),
+        )
+
+
+def test_bind_rejects_non_integer_data_indexing() -> None:
+    with pytest.raises(TypeError, match="Index data must be integer"):
+        bind_model(
+            IndexedNormal,
+            n_groups=2,
+            group_idx=jnp.array([0.0, 1.0]),
+            y=jnp.array([0.0, 0.0]),
+        )
