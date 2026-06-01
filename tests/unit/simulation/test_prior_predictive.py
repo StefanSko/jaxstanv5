@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import pytest
 
 from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import MultivariateNormal, Normal, Uniform
+from jaxstanv5.constraints import Ordered, Positive
+from jaxstanv5.distributions import MultivariateNormal, Normal, OrderedLogistic, Uniform
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation import simulate_prior_predictive
 
@@ -92,6 +92,18 @@ class FixedKernelGpPriorPredictive:
     obs_sd = Data()
     f = Param(MultivariateNormal(0.0, chol), size=n)
     y = Observed(Normal(f, obs_sd))
+
+
+@model
+class OrderedOrdinalPriorPredictive:
+    """Ordinal prior predictive model with ordered cutpoints."""
+
+    n_cutpoints = Data()
+    x = Data()
+    beta = Param(Normal(0.0, 1.0))
+    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())
+    eta = beta * x
+    y = Observed(OrderedLogistic(eta, cutpoints))
 
 
 @model
@@ -185,6 +197,23 @@ def test_simulate_prior_predictive_draws_multivariate_normal_observed_event() ->
 
     assert result.parameters["mu"].shape == (5, 3)
     assert result.observed["y"].shape == (5, 3)
+
+
+def test_simulate_prior_predictive_draws_ordered_cutpoints_and_ordinal_observations() -> None:
+    result = simulate_prior_predictive(
+        OrderedOrdinalPriorPredictive,
+        seed=45,
+        num_samples=7,
+        data={"n_cutpoints": 2, "x": jnp.linspace(-1.0, 1.0, 10)},
+    )
+
+    cutpoints = result.parameters["cutpoints"]
+    y = result.observed["y"]
+    assert cutpoints.shape == (7, 2)
+    assert jnp.all(cutpoints[:, 1] > cutpoints[:, 0])
+    assert y.shape == (7, 10)
+    assert jnp.all(y >= 0)
+    assert jnp.all(y <= 2)
 
 
 def test_simulate_prior_predictive_draws_fixed_kernel_gp_shapes() -> None:

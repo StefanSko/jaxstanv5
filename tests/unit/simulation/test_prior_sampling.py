@@ -6,9 +6,9 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from jaxstanv5.constraints import Positive
+from jaxstanv5.constraints import Ordered, Positive
 from jaxstanv5.constraints.core import ConstrainedValue, LogAbsDetJacobian, UnconstrainedValue
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import MultivariateNormal, Normal
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation.core import _leading_sample_shape, _sample_prior_value
 
@@ -156,6 +156,60 @@ def test_sample_prior_value_rejects_interval_constrained_vector_event_distributi
             jax.random.PRNGKey(15),
             EventVectorInverseCdfDistribution(),
             constraint=Positive(),
+            target_shape=(2,),
+        )
+
+
+def test_sample_prior_value_draws_ordered_scalar_event_prior() -> None:
+    value = _sample_prior_value(
+        jax.random.PRNGKey(16),
+        Normal(0.0, 2.0),
+        constraint=Ordered(),
+        target_shape=(4,),
+    )
+
+    assert value.shape == (4,)
+    assert jnp.all(value[1:] > value[:-1])
+
+
+def test_sample_prior_value_draws_ordered_prior_with_leading_dimensions() -> None:
+    value = _sample_prior_value(
+        jax.random.PRNGKey(17),
+        Normal(0.0, 2.0),
+        constraint=Ordered(),
+        target_shape=(3, 4),
+    )
+
+    assert value.shape == (3, 4)
+    assert jnp.all(value[..., 1:] > value[..., :-1])
+
+
+def test_sample_prior_value_rejects_ordered_scalar_target_shape() -> None:
+    with pytest.raises(ValueError, match="Ordered prior simulation requires vector target shape"):
+        _sample_prior_value(
+            jax.random.PRNGKey(18),
+            Normal(0.0, 1.0),
+            constraint=Ordered(),
+            target_shape=(),
+        )
+
+
+def test_sample_prior_value_rejects_ordered_vector_event_distribution() -> None:
+    with pytest.raises(TypeError, match="Ordered prior simulation requires scalar-event"):
+        _sample_prior_value(
+            jax.random.PRNGKey(19),
+            MultivariateNormal(0.0, jnp.eye(2)),
+            constraint=Ordered(),
+            target_shape=(2,),
+        )
+
+
+def test_sample_prior_value_rejects_ordered_batched_distribution() -> None:
+    with pytest.raises(TypeError, match="Ordered prior simulation requires iid scalar"):
+        _sample_prior_value(
+            jax.random.PRNGKey(20),
+            Normal(jnp.asarray([0.0, 1.0]), 1.0),
+            constraint=Ordered(),
             target_shape=(2,),
         )
 

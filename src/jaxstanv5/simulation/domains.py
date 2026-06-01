@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.constraints.interval import Interval, UnitInterval
+from jaxstanv5.constraints.ordered import Ordered
 from jaxstanv5.constraints.positive import Positive
 from jaxstanv5.distributions.core import DistributionValue
 
@@ -23,7 +24,12 @@ class ScalarIntervalDomain:
     upper: DistributionValue | None
 
 
-type PriorDomain = UnconstrainedDomain | ScalarIntervalDomain
+@dataclass(frozen=True)
+class OrderedVectorDomain:
+    """Ordered vector prior domain."""
+
+
+type PriorDomain = UnconstrainedDomain | ScalarIntervalDomain | OrderedVectorDomain
 
 
 def prior_domain_for_constraint(constraint: Constraint | None) -> PriorDomain:
@@ -36,4 +42,6 @@ def prior_domain_for_constraint(constraint: Constraint | None) -> PriorDomain:
         return ScalarIntervalDomain(lower=constraint.lower, upper=constraint.upper)
     if isinstance(constraint, UnitInterval):
         return ScalarIntervalDomain(lower=0.0, upper=1.0)
+    if isinstance(constraint, Ordered):
+        return OrderedVectorDomain()
     raise TypeError(f"Unsupported prior constraint: {type(constraint).__name__}")

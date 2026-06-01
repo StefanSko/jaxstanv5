@@ -18,6 +18,7 @@ from jaxstanv5.distributions.core import (
 )
 from jaxstanv5.model.decorator import ModelMeta, _resolve_param_shape
 from jaxstanv5.simulation.domains import (
+    OrderedVectorDomain,
     ScalarIntervalDomain,
     UnconstrainedDomain,
     prior_domain_for_constraint,
@@ -82,6 +83,23 @@ def _sample_interval_restricted(
     return distribution.icdf(uniform)
 
 
+def _sample_ordered_vector(
+    key: jax.Array,
+    distribution: SampleableDistribution,
+    *,
+    target_shape: tuple[int, ...],
+) -> jax.Array:
+    """Sample an ordered vector from an iid scalar constrained-space prior."""
+    if target_shape == ():
+        raise ValueError("Ordered prior simulation requires vector target shape")
+    if distribution.event_shape() != ():
+        raise TypeError("Ordered prior simulation requires scalar-event distributions")
+    if distribution.batch_shape() != ():
+        raise TypeError("Ordered prior simulation requires iid scalar distributions")
+    raw = distribution.sample(key, sample_shape=target_shape)
+    return jnp.sort(raw, axis=-1)
+
+
 def _sample_prior_value(
     key: jax.Array,
     distribution: Distribution,
@@ -113,6 +131,11 @@ def _sample_prior_value(
         raise TypeError(
             f"Unsupported interval-constrained prior distribution: {type(distribution).__name__}"
         )
+
+    if isinstance(domain, OrderedVectorDomain):
+        if isinstance(distribution, SampleableDistribution):
+            return _sample_ordered_vector(key, distribution, target_shape=target_shape)
+        raise TypeError(f"Unsupported ordered prior distribution: {type(distribution).__name__}")
 
     raise TypeError(f"Unsupported prior domain: {type(domain).__name__}")
 
