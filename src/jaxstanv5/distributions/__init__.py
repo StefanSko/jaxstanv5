@@ -23,6 +23,7 @@ from jaxstanv5.distributions.counts import (
     Poisson,
 )
 from jaxstanv5.distributions.multivariate import MultivariateNormal
+from jaxstanv5.distributions.ordinal import OrderedLogistic
 
 __all__ = [
     "Bernoulli",
@@ -39,6 +40,7 @@ __all__ = [
     "MultivariateNormal",
     "NegativeBinomial",
     "Normal",
+    "OrderedLogistic",
     "Poisson",
     "StudentT",
     "Uniform",
