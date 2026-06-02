@@ -5,7 +5,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 
 from jaxstanv5.compiler.core import _evaluate_expr
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef
+from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
 
 
 def test_param_ref_lookup() -> None:
@@ -62,6 +62,12 @@ def test_binop_nested() -> None:
     values = {"a": jnp.array(1), "b": jnp.array(2), "c": jnp.array(3)}
     result = _evaluate_expr(node, values)
     assert jnp.allclose(result, jnp.array(9))
+
+
+def test_unary_negation() -> None:
+    node = UnaryOp("neg", ParamRef("alpha"))
+    result = _evaluate_expr(node, {"alpha": jnp.array(2.5)})
+    assert jnp.allclose(result, jnp.array(-2.5))
 
 
 def test_index_op() -> None:

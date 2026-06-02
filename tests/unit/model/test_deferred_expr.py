@@ -10,10 +10,10 @@ from __future__ import annotations
 import pytest
 
 from jaxstanv5.distributions import Normal
-from jaxstanv5.model._deferred import DeferredBinOp, DeferredExpr, DeferredIndexOp
+from jaxstanv5.model._deferred import DeferredBinOp, DeferredExpr, DeferredIndexOp, DeferredUnaryOp
 from jaxstanv5.model.core import Data, Param
 from jaxstanv5.model.decorator import _resolve_declaration_expr
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef
+from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
 
 
 def as_deferred_bin(value: object) -> DeferredBinOp:
@@ -26,9 +26,14 @@ def as_deferred_index(value: object) -> DeferredIndexOp:
     return value
 
 
+def as_deferred_unary(value: object) -> DeferredUnaryOp:
+    assert isinstance(value, DeferredUnaryOp)
+    return value
+
+
 def assert_no_final_expr_nodes(value: object) -> None:
     """Deferred trees must not contain final/resolved expression nodes."""
-    assert not isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp)
+    assert not isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp)
 
     if isinstance(value, DeferredBinOp):
         assert_no_final_expr_nodes(value.left)
@@ -36,6 +41,8 @@ def assert_no_final_expr_nodes(value: object) -> None:
     elif isinstance(value, DeferredIndexOp):
         assert_no_final_expr_nodes(value.base)
         assert_no_final_expr_nodes(value.index)
+    elif isinstance(value, DeferredUnaryOp):
+        assert_no_final_expr_nodes(value.operand)
     else:
         assert isinstance(value, Param | Data | int | float)
 
@@ -69,6 +76,30 @@ def test_declaration_arithmetic_captures_deferred_syntax_not_final_expr_tree() -
     assert scale_term.op == "/"
     assert scale_term.left == 2.0
     assert scale_term.right is sigma
+
+
+def test_declaration_unary_negation_captures_deferred_syntax_not_final_expr_tree() -> None:
+    alpha = Param(Normal(0.0, 1.0))
+    beta = Param(Normal(0.0, 1.0))
+    x = Data()
+
+    direct = as_deferred_unary(-alpha)
+    assert direct.function == "neg"
+    assert direct.operand is alpha
+    assert_no_final_expr_nodes(direct)
+
+    nested = as_deferred_unary(-(alpha + beta * x))
+    assert nested.function == "neg"
+    assert_no_final_expr_nodes(nested)
+
+    sum_expr = as_deferred_bin(nested.operand)
+    assert sum_expr.op == "+"
+    assert sum_expr.left is alpha
+
+    product = as_deferred_bin(sum_expr.right)
+    assert product.op == "*"
+    assert product.left is beta
+    assert product.right is x
 
 
 def test_declaration_indexing_and_reverse_ops_stay_deferred() -> None:

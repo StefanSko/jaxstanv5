@@ -454,6 +454,30 @@ def test_compiled_log_density_evaluates_data_expressions() -> None:
     assert jnp.allclose(lp, expected, atol=1e-6)
 
 
+def test_compiled_log_density_evaluates_unary_negation_expression() -> None:
+    @model
+    class NegatedLinearPredictor:
+        alpha = Param(Normal(0, 1))
+        beta = Param(Normal(0, 1))
+        x = Data()
+        mu = -(alpha + beta * x)
+        y = Observed(Normal(mu, 1))
+
+    x_data = jnp.array([1.0, 2.0, 3.0])
+    y_data = jnp.array([-2.4, -3.1, -3.6])
+    bound = bind_model(NegatedLinearPredictor, x=x_data, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    q = jnp.array([2.0, 0.5])
+    actual = log_prob(q)
+
+    expected = normal_log_prob(jnp.array(2.0), jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(jnp.array(0.5), jnp.array(0.0), jnp.array(1.0))
+    expected += jnp.sum(normal_log_prob(y_data, -(2.0 + 0.5 * x_data), jnp.array(1.0)))
+
+    assert jnp.allclose(actual, expected, atol=1e-6)
+
+
 def test_compiled_log_density_allows_valid_data_indexing() -> None:
     group_idx = jnp.array([0, 1, 0])
     y = jnp.array([0.25, -0.5, 0.5])

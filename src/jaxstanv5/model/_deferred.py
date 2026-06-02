@@ -55,6 +55,9 @@ class DeferredBinOp(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
 
+    def __neg__(self) -> DeferredUnaryOp:
+        return DeferredUnaryOp("neg", self)
+
     def __getitem__(self, index: object) -> DeferredIndexOp:
         return DeferredIndexOp(self, index)
 
@@ -90,6 +93,9 @@ class DeferredUnaryOp(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
 
+    def __neg__(self) -> DeferredUnaryOp:
+        return DeferredUnaryOp("neg", self)
+
     def __getitem__(self, index: object) -> DeferredIndexOp:
         return DeferredIndexOp(self, index)
 
@@ -124,6 +130,9 @@ class DeferredIndexOp(SymbolicDistributionParameter):
 
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
+
+    def __neg__(self) -> DeferredUnaryOp:
+        return DeferredUnaryOp("neg", self)
 
     def __getitem__(self, index: object) -> DeferredIndexOp:
         return DeferredIndexOp(self, index)

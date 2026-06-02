@@ -23,6 +23,7 @@ _BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
 
 _UNARY_FUNCTIONS: dict[str, Callable[[jax.Array], jax.Array]] = {
     "exp": jnp.exp,
+    "neg": jnp.negative,
     "sigmoid": jax.nn.sigmoid,
 }
 

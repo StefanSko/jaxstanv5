@@ -121,6 +121,19 @@ def test_resolve_declaration_expr_builds_final_tree_recursively() -> None:
     )
 
 
+def test_resolve_declaration_expr_handles_unary_negation() -> None:
+    alpha = Param(Normal(0.0, 1.0))
+    x = Data()
+    expr = -(alpha + x)
+
+    resolved = _resolve_declaration_expr(
+        expr,
+        {alpha.symbol: "alpha", x.symbol: "x"},
+    )
+
+    assert resolved == UnaryOp("neg", BinOp("+", ParamRef("alpha"), DataRef("x")))
+
+
 def test_resolve_declaration_expr_rejects_unknown_declaration_symbols() -> None:
     alpha = Param(Normal(0.0, 1.0))
 

@@ -4,7 +4,7 @@ These nodes are used after ``@model`` resolves declaration symbols to string
 names.
 """
 
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef
+from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
 
 
 def test_param_and_data_arithmetic_builds_expression_tree() -> None:
@@ -32,6 +32,17 @@ def test_scalar_constants_are_promoted_to_const_nodes() -> None:
     assert expr.op == "+"
     assert expr.left == ConstNode(1.5)
     assert expr.right == alpha
+
+
+def test_unary_negation_builds_expression_tree() -> None:
+    alpha = ParamRef("alpha")
+    beta = ParamRef("beta")
+
+    expr = -(alpha + beta)
+
+    assert isinstance(expr, UnaryOp)
+    assert expr.function == "neg"
+    assert expr.operand == BinOp("+", alpha, beta)
 
 
 def test_indexing_builds_index_expression() -> None:

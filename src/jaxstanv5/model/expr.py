@@ -23,6 +23,7 @@ class Expression(Protocol):
     def __rmul__(self, other: object) -> BinOp: ...
     def __truediv__(self, other: object) -> BinOp: ...
     def __rtruediv__(self, other: object) -> BinOp: ...
+    def __neg__(self) -> UnaryOp: ...
     def __getitem__(self, index: object) -> IndexOp: ...
 
 
@@ -55,6 +56,9 @@ class ParamRef(SymbolicDistributionParameter):
 
     def __rtruediv__(self, other: object) -> BinOp:
         return BinOp("/", _to_expr(other), self)
+
+    def __neg__(self) -> UnaryOp:
+        return UnaryOp("neg", self)
 
     def __getitem__(self, index: object) -> IndexOp:
         return IndexOp(self, _to_expr(index))
@@ -90,6 +94,9 @@ class DataRef(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> BinOp:
         return BinOp("/", _to_expr(other), self)
 
+    def __neg__(self) -> UnaryOp:
+        return UnaryOp("neg", self)
+
     def __getitem__(self, index: object) -> IndexOp:
         return IndexOp(self, _to_expr(index))
 
@@ -123,6 +130,9 @@ class ConstNode(SymbolicDistributionParameter):
 
     def __rtruediv__(self, other: object) -> BinOp:
         return BinOp("/", _to_expr(other), self)
+
+    def __neg__(self) -> UnaryOp:
+        return UnaryOp("neg", self)
 
     def __getitem__(self, index: object) -> IndexOp:
         return IndexOp(self, _to_expr(index))
@@ -160,6 +170,9 @@ class BinOp(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> BinOp:
         return BinOp("/", _to_expr(other), self)
 
+    def __neg__(self) -> UnaryOp:
+        return UnaryOp("neg", self)
+
     def __getitem__(self, index: object) -> IndexOp:
         return IndexOp(self, _to_expr(index))
 
@@ -195,6 +208,9 @@ class UnaryOp(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> BinOp:
         return BinOp("/", _to_expr(other), self)
 
+    def __neg__(self) -> UnaryOp:
+        return UnaryOp("neg", self)
+
     def __getitem__(self, index: object) -> IndexOp:
         return IndexOp(self, _to_expr(index))
 
@@ -229,6 +245,9 @@ class IndexOp(SymbolicDistributionParameter):
 
     def __rtruediv__(self, other: object) -> BinOp:
         return BinOp("/", _to_expr(other), self)
+
+    def __neg__(self) -> UnaryOp:
+        return UnaryOp("neg", self)
 
     def __getitem__(self, index: object) -> IndexOp:
         return IndexOp(self, _to_expr(index))
