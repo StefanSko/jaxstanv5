@@ -24,6 +24,8 @@ Core invariants that should remain true as the codebase changes.
 - Class-body syntax capture and resolved model metadata are separate phases.
 - Class-body arithmetic, indexing, and supported `jaxstanv5.math` helpers create
   private deferred syntax, never final expression IR.
+- Declaration expressions support Python scalar literals as constants; fixed
+  non-scalar inputs must be represented explicitly as `Data()`.
 - Raw JAX/NumPy functions are not declaration-language operations; supported
   symbolic math functions cross the declaration boundary through explicit helper
   nodes.

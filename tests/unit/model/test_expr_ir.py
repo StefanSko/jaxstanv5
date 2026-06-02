@@ -4,6 +4,9 @@ These nodes are used after ``@model`` resolves declaration symbols to string
 names.
 """
 
+import jax.numpy as jnp
+import pytest
+
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
 
 
@@ -54,6 +57,19 @@ def test_indexing_builds_index_expression() -> None:
     assert isinstance(expr, IndexOp)
     assert expr.base == alpha
     assert expr.index == group_idx
+
+
+def test_final_expression_rejects_array_like_constants_with_guidance() -> None:
+    alpha = ParamRef("alpha")
+
+    with pytest.raises(TypeError) as exc_info:
+        alpha + jnp.asarray([1.0, 2.0])
+
+    message = str(exc_info.value)
+    assert "Array-like constants are not supported in model declaration expressions" in message
+    assert "Data()" in message
+    assert "bind(...)" in message
+    assert "ArrayImpl" not in message
 
 
 def test_chained_arithmetic_supports_subtraction_and_division() -> None:

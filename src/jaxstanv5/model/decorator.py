@@ -18,6 +18,7 @@ from jaxstanv5.model._deferred import (
     DeferredUnaryOp,
     is_deferred_expr,
 )
+from jaxstanv5.model._expression_errors import array_like_constant_error, is_array_like_constant
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef, UnaryOp
 
@@ -404,6 +405,8 @@ def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
         return DataRef(_resolve_symbol(value.symbol, symbols))
     if isinstance(value, int | float):
         return ConstNode(value)
+    if is_array_like_constant(value):
+        raise array_like_constant_error()
     if isinstance(value, DeferredBinOp):
         return BinOp(
             value.op,

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from jaxstanv5.distributions.core import SymbolicDistributionParameter
+from jaxstanv5.model._expression_errors import array_like_constant_error, is_array_like_constant
 
 type ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp
 type BinaryOperator = str
@@ -259,4 +260,6 @@ def _to_expr(value: object) -> ExprNode:
         return value
     if isinstance(value, int | float):
         return ConstNode(value)
+    if is_array_like_constant(value):
+        raise array_like_constant_error()
     raise TypeError(f"Cannot convert {type(value).__name__} to an expression node")

@@ -78,8 +78,11 @@ mu = alpha + beta * x
 ```
 
 These expressions are symbolic during declaration and are evaluated by the
-compiler after concrete data and parameter values are available. A small
-symbolic math namespace is available for supported nonlinear declarations:
+compiler after concrete data and parameter values are available. Python scalar
+literals are valid expression constants. Fixed vector, matrix, or tensor inputs
+should be declared with `Data()` and passed to `bind(...)`, rather than captured
+as closed-over array constants in class-body arithmetic. A small symbolic math
+namespace is available for supported nonlinear declarations:
 
 ```python
 from jaxstanv5.distributions import Beta, Binomial, Poisson

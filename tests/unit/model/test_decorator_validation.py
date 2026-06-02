@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import cast
 
+import jax.numpy as jnp
 import pytest
 
+from jaxstanv5 import model
 from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.decorator import _resolve_model_declaration
@@ -25,6 +27,24 @@ def test_private_model_declaration_resolution_accepts_prior_only_model() -> None
     assert tuple(meta.params) == ("alpha",)
     assert meta.data_slots == ["x"]
     assert meta.observed_nodes == ()
+
+
+def test_model_declaration_rejects_array_like_expression_constants_with_guidance() -> None:
+    offset = jnp.asarray([1.0, 2.0])
+
+    with pytest.raises(TypeError) as exc_info:
+
+        @model
+        class ArrayConstantExpression:
+            alpha = Param(Normal(0.0, 1.0), size=2)
+            mu = alpha + offset
+            y = Observed(Normal(mu, 1.0))
+
+    message = str(exc_info.value)
+    assert "Array-like constants are not supported in model declaration expressions" in message
+    assert "Data()" in message
+    assert "bind(...)" in message
+    assert "ArrayImpl" not in message
 
 
 def test_private_model_declaration_resolution_rejects_data_only_model() -> None:
