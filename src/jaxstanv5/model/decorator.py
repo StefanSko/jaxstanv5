@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields, is_dataclass
 from typing import cast
 
@@ -11,6 +11,16 @@ import jax.numpy as jnp
 
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
+from jaxstanv5.model._data_schema import (
+    DataDimRef,
+    DataDimSymbol,
+    DataRankSchema,
+    DataShapeSchema,
+    ResolvedDataRankSchema,
+    ResolvedDataSchema,
+    ResolvedDataShapeDim,
+    ResolvedDataShapeSchema,
+)
 from jaxstanv5.model._deferred import (
     DeclarationSymbol,
     DeferredBinOp,
@@ -18,7 +28,12 @@ from jaxstanv5.model._deferred import (
     DeferredUnaryOp,
     is_deferred_expr,
 )
-from jaxstanv5.model._expression_errors import array_like_constant_error, is_array_like_constant
+from jaxstanv5.model._expression_errors import (
+    array_like_constant_error,
+    is_array_like_constant,
+    is_non_scalar_array_like_constant,
+    non_scalar_distribution_parameter_error,
+)
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef, UnaryOp
 
@@ -37,6 +52,13 @@ _INDEX_UNARY_FUNCTIONS: dict[str, Callable[[jax.Array], jax.Array]] = {
     "neg": jnp.negative,
     "sigmoid": jax.nn.sigmoid,
 }
+
+
+@dataclass(frozen=True)
+class ResolvedData:
+    """Data metadata after declaration symbols are resolved to names."""
+
+    schema: ResolvedDataSchema
 
 
 @dataclass(frozen=True)
@@ -61,7 +83,7 @@ class ModelMeta:
     """Final model metadata attached by ``@model``."""
 
     params: dict[str, ResolvedParam]
-    data_slots: list[str]
+    data: dict[str, ResolvedData]
     observed_nodes: tuple[ResolvedObserved, ...]
     expressions: dict[str, ExprNode]
 
@@ -71,7 +93,7 @@ class _ResolvedDeclarations:
     """Resolved top-level declarations from a declaration class."""
 
     params: dict[str, ResolvedParam]
-    data_slots: list[str]
+    data: dict[str, ResolvedData]
     observed_nodes: tuple[ResolvedObserved, ...]
 
 
@@ -83,7 +105,7 @@ def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
 
     return ModelMeta(
         params=declarations.params,
-        data_slots=declarations.data_slots,
+        data=declarations.data,
         observed_nodes=declarations.observed_nodes,
         expressions=expressions,
     )
@@ -109,7 +131,7 @@ def _collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
 def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDeclarations:
     """Resolve top-level declaration inventory into final named metadata."""
     params: dict[str, ResolvedParam] = {}
-    data_slots: list[str] = []
+    data: dict[str, ResolvedData] = {}
     observed_nodes: list[ResolvedObserved] = []
 
     for name, value in cls.__dict__.items():
@@ -126,7 +148,7 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                 size=_resolve_declaration_size(value.size, symbols),
             )
         elif isinstance(value, Data):
-            data_slots.append(name)
+            data[name] = ResolvedData(_resolve_data_schema(value.schema, symbols))
         elif isinstance(value, Observed):
             observed_nodes.append(
                 ResolvedObserved(
@@ -140,7 +162,7 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
 
     return _ResolvedDeclarations(
         params=params,
-        data_slots=data_slots,
+        data=data,
         observed_nodes=tuple(observed_nodes),
     )
 
@@ -170,7 +192,7 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
     def bind(_cls: ModelClass, **values: object) -> object:
         from jaxstanv5.model.bound import BoundModel
 
-        expected = set(meta.data_slots)
+        expected = set(meta.data)
         expected.update(observed.name for observed in meta.observed_nodes)
         actual = set(values)
         missing = expected - actual
@@ -181,6 +203,7 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
             raise ValueError(f"Unexpected model data: {sorted(extra)}")
 
         data = {name: jnp.asarray(value) for name, value in values.items()}
+        _validate_declared_data_values(meta, {name: data[name] for name in meta.data})
         param_shapes = {
             name: _resolve_param_shape(param.size, data) for name, param in meta.params.items()
         }
@@ -189,6 +212,59 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
         return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
     return bind
+
+
+def _normalize_declared_data_values(
+    meta: ModelMeta,
+    values: Mapping[str, object] | None,
+) -> dict[str, jax.Array]:
+    """Normalize and validate values for declared ``Data`` nodes only."""
+    raw_values: Mapping[str, object] = {} if values is None else values
+    expected = set(meta.data)
+    actual = set(raw_values)
+    missing = expected - actual
+    extra = actual - expected
+    if missing:
+        raise ValueError(f"Missing model data: {sorted(missing)}")
+    if extra:
+        raise ValueError(f"Unexpected model data: {sorted(extra)}")
+
+    data = {name: jnp.asarray(value) for name, value in raw_values.items()}
+    _validate_declared_data_values(meta, data)
+    return data
+
+
+def _validate_declared_data_values(meta: ModelMeta, data: dict[str, jax.Array]) -> None:
+    """Validate bound data arrays against resolved declaration schemas."""
+    for name, resolved in meta.data.items():
+        value = data[name]
+        schema = resolved.schema
+        if isinstance(schema, ResolvedDataRankSchema):
+            if value.ndim != schema.rank:
+                raise ValueError(
+                    f"Data {name!r} has wrong rank: expected {schema.rank}, got {value.ndim}"
+                )
+        elif isinstance(schema, ResolvedDataShapeSchema):
+            expected_shape = tuple(_resolve_data_shape_dim(dim, data) for dim in schema.dims)
+            if value.shape != expected_shape:
+                raise ValueError(
+                    f"Data {name!r} has wrong shape: expected {expected_shape}, got {value.shape}"
+                )
+        else:
+            raise TypeError(f"Unknown data schema for {name!r}: {type(schema).__name__}")
+
+
+def _resolve_data_shape_dim(dim: ResolvedDataShapeDim, data: dict[str, jax.Array]) -> int:
+    """Resolve one data shape dimension against concrete data values."""
+    if isinstance(dim, int):
+        return _validate_parameter_size(dim, "Data shape dimension")
+
+    dim_value = data[dim.name]
+    if dim_value.ndim != 0:
+        raise ValueError(f"Data shape dimension {dim.name!r} must be scalar")
+    if not jnp.issubdtype(dim_value.dtype, jnp.integer):
+        raise TypeError(f"Data shape dimension {dim.name!r} must be integer")
+    return _validate_parameter_size(int(dim_value), f"Data shape dimension {dim.name!r}")
 
 
 def _resolve_param_shape(
@@ -359,6 +435,26 @@ def _validate_parameter_size(size: int, label: str) -> int:
     return size
 
 
+def _resolve_data_schema(
+    schema: DataRankSchema | DataShapeSchema, symbols: SymbolTable
+) -> ResolvedDataSchema:
+    """Resolve a data declaration schema into named metadata."""
+    if isinstance(schema, DataRankSchema):
+        return ResolvedDataRankSchema(schema.rank)
+    return ResolvedDataShapeSchema(
+        tuple(_resolve_data_shape_schema_dim(dim, symbols) for dim in schema.dims)
+    )
+
+
+def _resolve_data_shape_schema_dim(
+    dim: int | DataDimSymbol,
+    symbols: SymbolTable,
+) -> ResolvedDataShapeDim:
+    if isinstance(dim, int):
+        return dim
+    return DataDimRef(_resolve_symbol(dim.symbol, symbols))
+
+
 def _resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | int | None:
     """Resolve a declaration-size value into final size metadata."""
     if size is None:
@@ -366,7 +462,11 @@ def _resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | i
     if isinstance(size, int):
         return _validate_parameter_size(size, "Parameter size")
     if isinstance(size, Data):
-        return DataRef(_resolve_symbol(size.symbol, symbols))
+        if isinstance(size.schema, DataShapeSchema) and size.schema.dims == ():
+            return DataRef(_resolve_symbol(size.symbol, symbols))
+        if isinstance(size.schema, DataRankSchema) and size.schema.rank == 0:
+            return DataRef(_resolve_symbol(size.symbol, symbols))
+        raise TypeError("Data-dependent parameter sizes must use scalar data declarations")
     raise TypeError(f"Cannot resolve {type(size).__name__} as a declaration size")
 
 
@@ -394,6 +494,8 @@ def _resolve_declaration_distribution_field(value: object, symbols: SymbolTable)
         raise TypeError("Final expression nodes are not valid in model declarations")
     if is_dataclass(value) and not isinstance(value, type):
         return _resolve_declaration_distribution(cast(Distribution, value), symbols)
+    if is_non_scalar_array_like_constant(value):
+        raise non_scalar_distribution_parameter_error()
     return value
 
 

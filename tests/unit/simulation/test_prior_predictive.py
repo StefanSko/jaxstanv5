@@ -52,7 +52,7 @@ class UnsupportedDistribution:
 class DataSizedPrior:
     """Data-dependent vector prior."""
 
-    n = Data()
+    n = Data.scalar()
     theta = Param(Normal(0.0, 1.0), size=n)
 
 
@@ -60,8 +60,8 @@ class DataSizedPrior:
 class MultivariateNormalPrior:
     """Event-shaped multivariate Normal prior."""
 
-    n = Data()
-    chol = Data()
+    n = Data.scalar()
+    chol = Data.matrix(n, n)
     f = Param(MultivariateNormal(0.0, chol), size=n)
 
 
@@ -69,7 +69,7 @@ class MultivariateNormalPrior:
 class BatchedNormalPrior:
     """Scalar-event prior with distribution batch shape matching parameter shape."""
 
-    loc = Data()
+    loc = Data.vector(3)
     theta = Param(Normal(loc, 1.0), size=3)
 
 
@@ -77,8 +77,8 @@ class BatchedNormalPrior:
 class MultivariateNormalObserved:
     """Event-shaped multivariate Normal prior and observed site."""
 
-    n = Data()
-    chol = Data()
+    n = Data.scalar()
+    chol = Data.matrix(n, n)
     mu = Param(MultivariateNormal(0.0, chol), size=n)
     y = Observed(MultivariateNormal(mu, chol))
 
@@ -87,9 +87,9 @@ class MultivariateNormalObserved:
 class FixedKernelGpPriorPredictive:
     """Fixed-kernel GP prior predictive model."""
 
-    n = Data()
-    chol = Data()
-    obs_sd = Data()
+    n = Data.scalar()
+    chol = Data.matrix(n, n)
+    obs_sd = Data.scalar()
     f = Param(MultivariateNormal(0.0, chol), size=n)
     y = Observed(Normal(f, obs_sd))
 
@@ -98,8 +98,8 @@ class FixedKernelGpPriorPredictive:
 class OrderedOrdinalPriorPredictive:
     """Ordinal prior predictive model with ordered cutpoints."""
 
-    n_cutpoints = Data()
-    x = Data()
+    n_cutpoints = Data.scalar()
+    x = Data.vector()
     beta = Param(Normal(0.0, 1.0))
     cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())
     eta = beta * x
@@ -226,6 +226,16 @@ def test_simulate_prior_predictive_draws_fixed_kernel_gp_shapes() -> None:
 
     assert result.parameters["f"].shape == (5, 3)
     assert result.observed["y"].shape == (5, 3)
+
+
+def test_simulate_prior_predictive_rejects_wrong_shaped_data() -> None:
+    with pytest.raises(ValueError, match="Data 'chol' has wrong shape"):
+        simulate_prior_predictive(
+            FixedKernelGpPriorPredictive,
+            seed=44,
+            num_samples=5,
+            data={"n": 3, "chol": jnp.eye(2), "obs_sd": 0.2},
+        )
 
 
 def test_simulate_prior_predictive_rejects_missing_data() -> None:

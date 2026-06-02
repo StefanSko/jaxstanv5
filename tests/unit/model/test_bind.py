@@ -9,9 +9,11 @@ import jax.numpy as jnp
 import pytest
 
 from jaxstanv5.distributions import Normal
+from jaxstanv5.model._data_schema import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import (
     ModelMeta,
+    ResolvedData,
     ResolvedObserved,
     ResolvedParam,
     _make_bind,
@@ -32,7 +34,10 @@ def make_meta() -> ModelMeta:
             "beta": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=2),
             "group": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=DataRef("n")),
         },
-        data_slots=["x", "n"],
+        data={
+            "x": ResolvedData(ResolvedDataRankSchema(1)),
+            "n": ResolvedData(ResolvedDataShapeSchema(())),
+        },
         observed_nodes=(ResolvedObserved("y", Normal(0.0, 1.0)),),
         expressions={},
     )
@@ -46,7 +51,7 @@ def bind_meta(meta: ModelMeta, **values: object) -> BoundModel:
 def test_bind_requires_all_observed_node_values() -> None:
     meta = ModelMeta(
         params={},
-        data_slots=["x"],
+        data={"x": ResolvedData(ResolvedDataShapeSchema(()))},
         observed_nodes=(
             ResolvedObserved("x_obs", Normal(0.0, 1.0)),
             ResolvedObserved("y_obs", Normal(0.0, 1.0)),
@@ -81,6 +86,40 @@ def test_bind_converts_data_to_arrays_and_resolves_all_parameter_shapes() -> Non
     assert isinstance(bound.data["n"], jax.Array)
     assert bound.param_shapes == {"alpha": (), "beta": (2,), "group": (3,)}
     assert bound.n_params == 6
+
+
+def test_bind_rejects_wrong_data_rank() -> None:
+    with pytest.raises(ValueError, match="Data 'x' has wrong rank"):
+        bind_meta(make_meta(), x=jnp.asarray(1.0), n=3, y=jnp.asarray([0.0, 1.0]))
+
+
+def test_bind_rejects_wrong_data_shape() -> None:
+    meta = shaped_chol_meta()
+
+    with pytest.raises(ValueError, match="Data 'chol' has wrong shape"):
+        bind_meta(meta, n=3, chol=jnp.eye(2), y=0.0)
+
+
+def test_bind_rejects_non_scalar_dynamic_data_shape_dimension_source() -> None:
+    with pytest.raises(ValueError, match="Data 'n' has wrong shape"):
+        bind_meta(shaped_chol_meta(), n=jnp.asarray([3]), chol=jnp.eye(3), y=0.0)
+
+
+def test_bind_rejects_non_integer_dynamic_data_shape_dimension() -> None:
+    with pytest.raises(TypeError, match="Data shape dimension 'n' must be integer"):
+        bind_meta(shaped_chol_meta(), n=3.0, chol=jnp.eye(3), y=0.0)
+
+
+def shaped_chol_meta() -> ModelMeta:
+    return ModelMeta(
+        params={},
+        data={
+            "n": ResolvedData(ResolvedDataShapeSchema(())),
+            "chol": ResolvedData(ResolvedDataShapeSchema((DataDimRef("n"), DataDimRef("n")))),
+        },
+        observed_nodes=(ResolvedObserved("y", Normal(0.0, 1.0)),),
+        expressions={},
+    )
 
 
 def test_resolve_param_shape_rejects_negative_literal_size() -> None:

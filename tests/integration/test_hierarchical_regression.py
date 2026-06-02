@@ -21,9 +21,9 @@ class HierarchicalLinearRegression:
     sigma_beta = Param(Normal(0, 1), constraint=Positive())
     sigma = Param(Normal(0, 1), constraint=Positive())
 
-    n_groups = Data()
-    x = Data()
-    group_idx = Data()
+    n_groups = Data.scalar()
+    x = Data.vector()
+    group_idx = Data.vector()
 
     alpha = Param(Normal(alpha_pop, sigma_alpha), size=n_groups)
     beta = Param(Normal(beta_pop, sigma_beta), size=n_groups)

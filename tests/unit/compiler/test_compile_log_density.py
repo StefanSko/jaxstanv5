@@ -43,7 +43,7 @@ def test_scalar_unconstrained() -> None:
     """Single scalar parameter, no constraint, observed has no expressions."""
     meta = ModelMeta(
         params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ParamRef("mu"), ConstNode(1.0))),),
         expressions={},
     )
@@ -67,13 +67,13 @@ def test_scalar_unconstrained() -> None:
 def test_bernoulli_sigmoid_likelihood_matches_binomial_one_trial() -> None:
     bernoulli_meta = ModelMeta(
         params={"eta": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Bernoulli(UnaryOp("sigmoid", ParamRef("eta")))),),
         expressions={},
     )
     binomial_meta = ModelMeta(
         params={"eta": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
-        data_slots=[],
+        data={},
         observed_nodes=(
             ResolvedObserved("y", Binomial(ConstNode(1.0), UnaryOp("sigmoid", ParamRef("eta")))),
         ),
@@ -103,7 +103,7 @@ def test_bernoulli_sigmoid_likelihood_matches_binomial_one_trial() -> None:
 def test_multiple_observed_nodes_contribute_to_log_density() -> None:
     meta = ModelMeta(
         params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
-        data_slots=[],
+        data={},
         observed_nodes=(
             ResolvedObserved("y", Normal(ParamRef("mu"), ConstNode(1.0))),
             ResolvedObserved("z", Normal(ParamRef("mu"), ConstNode(2.0))),
@@ -132,7 +132,7 @@ def test_compiled_log_density_does_not_reenter_python_for_same_shape_calls() -> 
     counter = _TraceCounter()
     meta = ModelMeta(
         params={"theta": ResolvedParam(_CountingLogProb(counter), None, None)},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ParamRef("theta"), ConstNode(1.0))),),
         expressions={},
     )
@@ -157,7 +157,7 @@ def test_compiled_log_density_remains_differentiable() -> None:
     """BlackJAX needs gradients through the compiled log-density."""
     meta = ModelMeta(
         params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ParamRef("mu"), ConstNode(1.0))),),
         expressions={},
     )
@@ -178,7 +178,7 @@ def test_no_params() -> None:
     """Model with only observed — no parameters, just data likelihood."""
     meta = ModelMeta(
         params={},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
@@ -199,7 +199,7 @@ def test_no_params() -> None:
 def test_compile_log_density_handles_prior_only_model() -> None:
     meta = ModelMeta(
         params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
-        data_slots=[],
+        data={},
         observed_nodes=(),
         expressions={},
     )
@@ -215,7 +215,7 @@ def test_compile_log_density_handles_prior_only_model() -> None:
 def test_compile_log_density_rejects_wrong_q_shape() -> None:
     meta = ModelMeta(
         params={"mu": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, None)},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ParamRef("mu"), ConstNode(1.0))),),
         expressions={},
     )

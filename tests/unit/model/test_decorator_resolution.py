@@ -60,7 +60,7 @@ class UnknownExpr:
 
 
 def test_resolve_declarations_resolves_param_data_and_observed_inventory() -> None:
-    n = Data()
+    n = Data.scalar()
     alpha = Param(Normal(0.0, 1.0), size=n)
 
     class Fixture:
@@ -71,7 +71,7 @@ def test_resolve_declarations_resolves_param_data_and_observed_inventory() -> No
     symbols = _collect_declaration_symbols(Fixture)
     resolved = _resolve_declarations(Fixture, symbols)
 
-    assert resolved.data_slots == ["n_groups"]
+    assert tuple(resolved.data) == ("n_groups",)
     assert tuple(node.name for node in resolved.observed_nodes) == ("y",)
     assert set(resolved.params) == {"alpha_offset"}
     assert resolved.params["alpha_offset"].size == DataRef("n_groups")
@@ -84,7 +84,7 @@ def test_resolve_declarations_resolves_param_data_and_observed_inventory() -> No
 
 def test_resolve_declarations_resolves_multiple_observed_nodes() -> None:
     theta = Param(Normal(0.0, 1.0))
-    x = Data()
+    x = Data.scalar()
 
     class Fixture:
         theta_value = theta
@@ -106,7 +106,7 @@ def test_resolve_declarations_resolves_multiple_observed_nodes() -> None:
 
 def test_resolve_declaration_expr_builds_final_tree_recursively() -> None:
     alpha = Param(Normal(0.0, 1.0))
-    group_idx = Data()
+    group_idx = Data.scalar()
     expr = alpha[group_idx] + 1.5
 
     resolved = _resolve_declaration_expr(
@@ -123,7 +123,7 @@ def test_resolve_declaration_expr_builds_final_tree_recursively() -> None:
 
 def test_resolve_declaration_expr_handles_unary_negation() -> None:
     alpha = Param(Normal(0.0, 1.0))
-    x = Data()
+    x = Data.scalar()
     expr = -(alpha + x)
 
     resolved = _resolve_declaration_expr(
@@ -147,7 +147,7 @@ def test_resolve_declaration_expr_rejects_unknown_expression_values() -> None:
 
 
 def test_resolve_declaration_size_resolves_data_refs_and_preserves_static_sizes() -> None:
-    n_groups = Data()
+    n_groups = Data.scalar()
     symbols = {n_groups.symbol: "n_groups"}
 
     assert _resolve_declaration_size(None, symbols) is None
@@ -156,7 +156,7 @@ def test_resolve_declaration_size_resolves_data_refs_and_preserves_static_sizes(
 
 
 def test_resolve_declaration_size_rejects_unknown_declaration_symbols() -> None:
-    n_groups = Data()
+    n_groups = Data.scalar()
 
     with pytest.raises(ValueError, match="Unknown declaration symbol"):
         _resolve_declaration_size(n_groups, {})
@@ -164,7 +164,7 @@ def test_resolve_declaration_size_rejects_unknown_declaration_symbols() -> None:
 
 def test_distribution_resolution_handles_symbolic_fields() -> None:
     alpha = Param(Normal(0.0, 1.0))
-    x = Data()
+    x = Data.scalar()
     resolved_dist = normal_fields(
         _resolve_declaration_distribution(
             Normal(dist_param(alpha + x), 2.0),
@@ -178,7 +178,7 @@ def test_distribution_resolution_handles_symbolic_fields() -> None:
 
 def test_distribution_resolution_handles_symbolic_unary_function_fields() -> None:
     alpha = Param(Normal(0.0, 1.0))
-    x = Data()
+    x = Data.scalar()
     resolved_dist = poisson_fields(
         _resolve_declaration_distribution(
             Poisson(dist_param(exp(alpha + x))),
@@ -191,7 +191,7 @@ def test_distribution_resolution_handles_symbolic_unary_function_fields() -> Non
 
 def test_distribution_resolution_handles_symbolic_sigmoid_fields() -> None:
     alpha = Param(Normal(0.0, 1.0))
-    x = Data()
+    x = Data.scalar()
     resolved_dist = binomial_fields(
         _resolve_declaration_distribution(
             Binomial(10.0, dist_param(sigmoid(alpha + x))),

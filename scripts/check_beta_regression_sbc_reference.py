@@ -86,9 +86,9 @@ def _build_model() -> object:
     class HierarchicalBetaRegressionSbcModel:
         """Hierarchical Beta-regression logistic varying-slopes SBC model."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))
         sigma_alpha = Param(HalfNormal(0.5), constraint=Positive())

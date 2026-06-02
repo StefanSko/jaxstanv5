@@ -185,8 +185,8 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     class OrdinalLogisticStanReferenceModel:
         """Ordinal-logistic model matching the Stan fixture with zero-based labels."""
 
-        n_cutpoints = Data()
-        x = Data()
+        n_cutpoints = Data.scalar()
+        x = Data.vector()
 
         beta = Param(Normal(0.0, 1.0))
         cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())

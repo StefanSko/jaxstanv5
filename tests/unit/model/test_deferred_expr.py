@@ -51,7 +51,7 @@ def test_declaration_arithmetic_captures_deferred_syntax_not_final_expr_tree() -
     alpha = Param(Normal(0.0, 1.0))
     beta = Param(Normal(0.0, 1.0))
     sigma = Param(Normal(0.0, 1.0))
-    x = Data()
+    x = Data.scalar()
 
     expr = (alpha + beta) * (x - 1.0) + 2.0 / sigma
 
@@ -81,7 +81,7 @@ def test_declaration_arithmetic_captures_deferred_syntax_not_final_expr_tree() -
 def test_declaration_unary_negation_captures_deferred_syntax_not_final_expr_tree() -> None:
     alpha = Param(Normal(0.0, 1.0))
     beta = Param(Normal(0.0, 1.0))
-    x = Data()
+    x = Data.scalar()
 
     direct = as_deferred_unary(-alpha)
     assert direct.function == "neg"
@@ -105,7 +105,7 @@ def test_declaration_unary_negation_captures_deferred_syntax_not_final_expr_tree
 def test_declaration_indexing_and_reverse_ops_stay_deferred() -> None:
     alpha = Param(Normal(0.0, 1.0))
     beta = Param(Normal(0.0, 1.0))
-    group_idx = Data()
+    group_idx = Data.scalar()
 
     expr = 1.0 - alpha[group_idx] / (beta + 2.0)
 

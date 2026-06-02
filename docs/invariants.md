@@ -12,7 +12,9 @@ Core invariants that should remain true as the codebase changes.
 
 - `Param`, `Data`, and `Observed` are declarations.
 - `Param(...)` is latent and contributes a prior term.
-- `Data()` is known input and contributes no log-density term.
+- `Data.scalar()`, `Data.vector(...)`, `Data.matrix(...)`, and
+  `Data.array(...)` are known inputs with shape/rank schemas and contribute no
+  log-density term.
 - `Observed(...)` is known input and contributes a likelihood term.
 - A model has one or more stochastic declarations: `Param` or `Observed`.
 - `Observed` nodes are optional; prior-only models are valid.
@@ -25,7 +27,9 @@ Core invariants that should remain true as the codebase changes.
 - Class-body arithmetic, indexing, and supported `jaxstanv5.math` helpers create
   private deferred syntax, never final expression IR.
 - Declaration expressions support Python scalar literals as constants; fixed
-  non-scalar inputs must be represented explicitly as `Data()`.
+  non-scalar inputs must be represented explicitly as shaped `Data` declarations.
+- Non-scalar fixed distribution parameters in model declarations are invalid;
+  they must enter through named `Data` declarations.
 - Raw JAX/NumPy functions are not declaration-language operations; supported
   symbolic math functions cross the declaration boundary through explicit helper
   nodes.
@@ -42,7 +46,7 @@ Core invariants that should remain true as the codebase changes.
   deferred syntax tokens.
 - Final expression trees may contain explicit unary operation nodes only for
   supported declaration-language unary operations such as `neg`, `exp`, and `sigmoid`.
-- `ModelMeta` contains resolved metadata only.
+- `ModelMeta` contains resolved metadata only, including resolved data schemas.
 - `BoundModel` contains no inference logic.
 
 ## Log density

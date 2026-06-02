@@ -86,10 +86,10 @@ def _build_model() -> object:
     class HierarchicalBetaBinomialSbcModel:
         """Hierarchical Beta-binomial logistic varying-slopes SBC model."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
-        trials = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
+        trials = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))

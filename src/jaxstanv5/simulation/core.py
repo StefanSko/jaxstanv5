@@ -16,7 +16,11 @@ from jaxstanv5.distributions.core import (
     InverseCdfDistribution,
     SampleableDistribution,
 )
-from jaxstanv5.model.decorator import ModelMeta, _resolve_param_shape
+from jaxstanv5.model.decorator import (
+    ModelMeta,
+    _normalize_declared_data_values,
+    _resolve_param_shape,
+)
 from jaxstanv5.simulation.domains import (
     OrderedVectorDomain,
     ScalarIntervalDomain,
@@ -147,16 +151,7 @@ def _model_meta(model_cls: object) -> ModelMeta:
 
 
 def _normalize_data(meta: ModelMeta, data: Mapping[str, object] | None) -> dict[str, jax.Array]:
-    raw_data: Mapping[str, object] = {} if data is None else data
-    expected = set(meta.data_slots)
-    actual = set(raw_data)
-    missing = expected - actual
-    extra = actual - expected
-    if missing:
-        raise ValueError(f"Missing model data: {sorted(missing)}")
-    if extra:
-        raise ValueError(f"Unexpected model data: {sorted(extra)}")
-    return {name: jnp.asarray(value) for name, value in raw_data.items()}
+    return _normalize_declared_data_values(meta, data)
 
 
 def _resolve_param_shapes(

@@ -17,15 +17,20 @@ def param_size(value: object) -> Data | int | None:
     return cast(Data | int | None, value)
 
 
+def test_bare_data_declaration_is_rejected_with_schema_guidance() -> None:
+    with pytest.raises(TypeError, match="Data.scalar"):
+        Data()
+
+
 def test_private_model_declaration_resolution_accepts_prior_only_model() -> None:
     class PriorOnly:
         alpha = Param(Normal(0.0, 1.0))
-        x = Data()
+        x = Data.vector()
 
     meta = _resolve_model_declaration(PriorOnly)
 
     assert tuple(meta.params) == ("alpha",)
-    assert meta.data_slots == ["x"]
+    assert tuple(meta.data) == ("x",)
     assert meta.observed_nodes == ()
 
 
@@ -42,14 +47,31 @@ def test_model_declaration_rejects_array_like_expression_constants_with_guidance
 
     message = str(exc_info.value)
     assert "Array-like constants are not supported in model declaration expressions" in message
-    assert "Data()" in message
+    assert "Data.vector" in message
+    assert "bind(...)" in message
+    assert "ArrayImpl" not in message
+
+
+def test_model_declaration_rejects_hidden_non_scalar_distribution_parameters() -> None:
+    scale = jnp.asarray([1.0, 2.0])
+
+    with pytest.raises(TypeError) as exc_info:
+
+        @model
+        class HiddenDistributionField:
+            alpha = Param(Normal(0.0, 1.0), size=2)
+            y = Observed(Normal(alpha, scale))
+
+    message = str(exc_info.value)
+    assert "Non-scalar distribution parameters" in message
+    assert "Data.vector" in message
     assert "bind(...)" in message
     assert "ArrayImpl" not in message
 
 
 def test_private_model_declaration_resolution_rejects_data_only_model() -> None:
     class DataOnly:
-        x = Data()
+        x = Data.vector()
 
     with pytest.raises(ValueError, match="at least one stochastic declaration"):
         _resolve_model_declaration(DataOnly)
@@ -97,20 +119,20 @@ def test_private_model_declaration_resolution_rejects_negative_binomial_paramete
         _resolve_model_declaration(DiscreteLatent)
 
 
-def test_private_model_declaration_resolution_keeps_observed_name_out_of_data_slots() -> None:
+def test_private_model_declaration_resolution_keeps_observed_name_out_of_data() -> None:
     class Fixture:
-        x = Data()
+        x = Data.vector()
         y = Observed(Normal(0.0, 1.0))
 
     meta = _resolve_model_declaration(Fixture)
 
-    assert meta.data_slots == ["x"]
+    assert tuple(meta.data) == ("x",)
     assert tuple(node.name for node in meta.observed_nodes) == ("y",)
 
 
 def test_private_model_declaration_resolution_rejects_invalid_parameter_size_type() -> None:
     class InvalidSize:
-        n = Data()
+        n = Data.scalar()
         alpha = Param(Normal(0.0, 1.0), size=param_size("large"))
         y = Observed(Normal(0.0, 1.0))
 
@@ -148,7 +170,7 @@ def test_private_model_declaration_resolution_rejects_aliased_param_declarations
 
 def test_private_model_declaration_resolution_rejects_aliased_data_declarations() -> None:
     class AliasedData:
-        x = Data()
+        x = Data.vector()
         z = x
         y = Observed(Normal(0.0, 1.0))
 

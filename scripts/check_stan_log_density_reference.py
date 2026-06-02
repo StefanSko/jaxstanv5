@@ -333,8 +333,8 @@ def _multivariate_normal_likelihood_log_density(
     class MultivariateNormalLikelihoodStanReferenceModel:
         """Multivariate Normal likelihood model matching the Stan fixture."""
 
-        n_dim = Data()
-        chol = Data()
+        n_dim = Data.scalar()
+        chol = Data.matrix(n_dim, n_dim)
 
         mu = Param(Normal(0.0, prior_scale), size=n_dim)
         y = Observed(MultivariateNormal(mu, chol))
@@ -368,9 +368,9 @@ def _hierarchical_poisson_log_density(
     class HierarchicalPoissonStanReferenceModel:
         """Hierarchical Poisson model matching the Stan fixture."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 0.5))
         beta_pop = Param(Normal(0.0, 0.5))
@@ -418,10 +418,10 @@ def _hierarchical_binomial_logistic_log_density(
     class HierarchicalBinomialLogisticStanReferenceModel:
         """Hierarchical Binomial logistic model matching the Stan fixture."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
-        trials = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
+        trials = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))
@@ -473,10 +473,10 @@ def _hierarchical_beta_binomial_logistic_log_density(
     class HierarchicalBetaBinomialLogisticStanReferenceModel:
         """Hierarchical Beta-binomial logistic model matching the Stan fixture."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
-        trials = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
+        trials = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))
@@ -533,9 +533,9 @@ def _hierarchical_beta_regression_log_density(
     class HierarchicalBetaRegressionStanReferenceModel:
         """Hierarchical Beta-regression model matching the Stan fixture."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))
@@ -590,9 +590,9 @@ def _hierarchical_negative_binomial_log_density(
     class HierarchicalNegativeBinomialStanReferenceModel:
         """Hierarchical Negative-binomial model matching the Stan fixture."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 0.5))
         beta_pop = Param(Normal(0.0, 0.5))
@@ -642,8 +642,8 @@ def _ordinal_logistic_regression_log_density(
     class OrdinalLogisticStanReferenceModel:
         """Ordinal logistic model matching the Stan fixture with zero-based labels."""
 
-        n_cutpoints = Data()
-        x = Data()
+        n_cutpoints = Data.scalar()
+        x = Data.vector()
 
         beta = Param(Normal(0.0, 1.0))
         cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())
@@ -679,9 +679,9 @@ def _fixed_kernel_gp_log_density(data: Mapping[str, object]) -> Callable[[jax.Ar
     class FixedKernelGpStanReferenceModel:
         """Fixed-kernel GP model matching the Stan fixture."""
 
-        n = Data()
-        chol = Data()
-        obs_sd = Data()
+        n = Data.scalar()
+        chol = Data.matrix(n, n)
+        obs_sd = Data.scalar()
 
         f = Param(MultivariateNormal(0.0, chol), size=n)
         y = Observed(Normal(f, obs_sd))

@@ -37,7 +37,7 @@ class LinearRegression:
     beta = Param(Normal(0.0, 1.0))
     sigma = Param(Normal(0.0, 1.0), constraint=Positive())
 
-    x = Data()
+    x = Data.vector()
     mu = alpha + beta * x
     y = Observed(Normal(mu, sigma))
 
@@ -67,7 +67,8 @@ The declaration language has three core node types:
 
 - `Param(distribution, constraint=None, size=None)` declares a latent stochastic
   value. It contributes a prior term to the log density and is sampled by NUTS.
-- `Data()` declares known input with no likelihood contribution.
+- `Data.scalar()`, `Data.vector(...)`, `Data.matrix(...)`, and
+  `Data.array(...)` declare known inputs with no likelihood contribution.
 - `Observed(distribution)` declares known input with a likelihood contribution.
   A model may contain one or more observed likelihood sites.
 
@@ -80,9 +81,9 @@ mu = alpha + beta * x
 These expressions are symbolic during declaration and are evaluated by the
 compiler after concrete data and parameter values are available. Python scalar
 literals are valid expression constants. Fixed vector, matrix, or tensor inputs
-should be declared with `Data()` and passed to `bind(...)`, rather than captured
-as closed-over array constants in class-body arithmetic. A small symbolic math
-namespace is available for supported nonlinear declarations:
+must be declared with shaped `Data` helpers and passed to `bind(...)`, rather
+than captured as closed-over array constants. A small symbolic math namespace is
+available for supported nonlinear declarations:
 
 ```python
 from jaxstanv5.distributions import Beta, Binomial, Poisson
@@ -95,6 +96,12 @@ probability = sigmoid(alpha + beta * x)
 y_successes = Observed(Binomial(trials, probability))
 y_proportion = Observed(Beta(probability * concentration, (1.0 - probability) * concentration))
 ```
+
+Data declarations are schema-only; they never construct values. Use
+`Data.scalar()` for rank-0 inputs, `Data.vector()` or `Data.vector(n)` for
+vectors, `Data.matrix()` or `Data.matrix(n, m)` for matrices, and
+`Data.array(rank=...)` or `Data.array(shape=(...))` for higher-rank arrays.
+Rank-only declarations validate rank while allowing any dimension sizes.
 
 Use `jaxstanv5.math` helpers in model declarations, not raw `jax.numpy`
 functions. Discrete distributions such as `Poisson`, `Binomial`,
@@ -112,9 +119,9 @@ A parameter can have a static or data-dependent size:
 ```python
 @model
 class HierarchicalRegression:
-    n_groups = Data()
-    group_idx = Data()
-    x = Data()
+    n_groups = Data.scalar()
+    group_idx = Data.vector()
+    x = Data.vector()
 
     alpha_pop = Param(Normal(0.0, 1.0))
     beta_pop = Param(Normal(0.0, 1.0))
@@ -139,9 +146,9 @@ models with more than one observed likelihood factor.
 ```python
 @model
 class MeasurementErrorRegression:
-    n = Data()
-    x_sd = Data()
-    y_sd = Data()
+    n = Data.scalar()
+    x_sd = Data.vector(n)
+    y_sd = Data.vector(n)
 
     alpha = Param(Normal(0.0, 1.0))
     beta = Param(Normal(0.0, 1.0))
@@ -172,7 +179,7 @@ parameter priors + constraint Jacobians + all observed likelihood terms
 Prior and prior-predictive simulation are available through
 `jaxstanv5.simulation.simulate_prior_predictive(...)` for supported model
 fragments. It draws parameters and observed values with a leading simulation
-axis, using fixed `Data()` values and optional observed-site shapes.
+axis, using fixed shaped `Data` values and optional observed-site shapes.
 
 Optional Stan reference fixtures live in [`reference/stan/`](reference/stan/).
 They are used by standalone scripts, not by the default pytest suite and not by

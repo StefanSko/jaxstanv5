@@ -187,10 +187,10 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     class HierarchicalBetaBinomialStanReferenceModel:
         """Hierarchical Beta-binomial model matching the Stan fixture."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
-        trials = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
+        trials = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))

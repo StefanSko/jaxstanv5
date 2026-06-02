@@ -15,10 +15,10 @@ from jaxstanv5.inference import sample
 class MarriageMeasurementError:
     """Measurement-error model with two observed likelihood sites."""
 
-    n_states = Data()
-    age = Data()
-    marriage_sd = Data()
-    divorce_sd = Data()
+    n_states = Data.scalar()
+    age = Data.vector()
+    marriage_sd = Data.vector()
+    divorce_sd = Data.vector()
 
     alpha = Param(Normal(0, 1))
     b_age = Param(Normal(0, 1))

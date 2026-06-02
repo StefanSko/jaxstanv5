@@ -109,9 +109,9 @@ def _build_model() -> object:
     class FixedKernelGpSbcModel:
         """Fixed-kernel GP model used for projected SBC."""
 
-        n = Data()
-        chol = Data()
-        obs_sd = Data()
+        n = Data.scalar()
+        chol = Data.matrix(n, n)
+        obs_sd = Data.scalar()
 
         f = Param(MultivariateNormal(0.0, chol), size=n)
         y = Observed(Normal(f, obs_sd))

@@ -24,7 +24,7 @@ class SimpleNormalForSeedChecks:
 class VectorAndConstrainedNormal:
     """Model with vector and constrained scalar parameters."""
 
-    n = Data()
+    n = Data.scalar()
     theta = Param(Normal(0, 1), size=n)
     sigma = Param(Normal(0, 1), constraint=Positive())
     y = Observed(Normal(theta, 1))

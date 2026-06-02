@@ -67,7 +67,7 @@ def test_final_expression_rejects_array_like_constants_with_guidance() -> None:
 
     message = str(exc_info.value)
     assert "Array-like constants are not supported in model declaration expressions" in message
-    assert "Data()" in message
+    assert "Data.vector" in message
     assert "bind(...)" in message
     assert "ArrayImpl" not in message
 

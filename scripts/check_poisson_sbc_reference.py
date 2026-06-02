@@ -85,9 +85,9 @@ def _build_model() -> object:
     class HierarchicalPoissonSbcModel:
         """Hierarchical Poisson varying-slopes SBC model."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 0.5))
         beta_pop = Param(Normal(0.0, 0.5))

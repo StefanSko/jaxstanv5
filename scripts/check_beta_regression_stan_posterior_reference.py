@@ -187,9 +187,9 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     class HierarchicalBetaRegressionStanReferenceModel:
         """Hierarchical Beta-regression model matching the Stan fixture."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))
         sigma_alpha = Param(HalfNormal(0.5), constraint=Positive())

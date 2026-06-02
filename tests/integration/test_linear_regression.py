@@ -18,7 +18,7 @@ class LinearRegression:
     alpha = Param(Normal(0, 1))
     beta = Param(Normal(0, 1))
     sigma = Param(Normal(0, 1), constraint=Positive())
-    x = Data()
+    x = Data.vector()
     mu = alpha + beta * x
     y = Observed(Normal(mu, sigma))
 

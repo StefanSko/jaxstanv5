@@ -229,8 +229,8 @@ def eight_schools_fixture() -> EightSchoolsFixture:
     class EightSchoolsNonCentered:
         """Non-centered eight-schools hierarchy with a positive population scale."""
 
-        n_schools = Data()
-        sigma = Data()
+        n_schools = Data.scalar()
+        sigma = Data.vector(n_schools)
 
         mu = Param(Normal(0.0, 5.0))
         tau = Param(HalfNormal(5.0), constraint=Positive())
@@ -313,7 +313,7 @@ def binomial_logistic_fixture() -> BinomialLogisticFixture:
         """Scalar logistic Binomial observations."""
 
         eta = Param(Normal(prior_loc, prior_scale))
-        trials = Data()
+        trials = Data.vector()
         y = Observed(Binomial(trials, sigmoid(eta)))
 
     trials = jnp.array([5.0, 8.0, 10.0, 12.0, 7.0, 9.0])
@@ -343,8 +343,8 @@ def beta_binomial_logistic_fixture() -> BetaBinomialLogisticFixture:
         """Scalar logistic Beta-binomial observations with fixed concentration."""
 
         eta = Param(Normal(prior_loc, prior_scale))
-        trials = Data()
-        concentration = Data()
+        trials = Data.vector()
+        concentration = Data.scalar()
         p = sigmoid(eta)
         a = p * concentration
         b = (1.0 - p) * concentration
@@ -378,7 +378,7 @@ def beta_logistic_fixture() -> BetaLogisticFixture:
         """Scalar logistic Beta observations with fixed concentration."""
 
         eta = Param(Normal(prior_loc, prior_scale))
-        concentration = Data()
+        concentration = Data.scalar()
         p = sigmoid(eta)
         a = p * concentration
         b = (1.0 - p) * concentration
@@ -410,7 +410,7 @@ def negative_binomial_log_rate_fixture() -> NegativeBinomialLogRateFixture:
         """Scalar log-rate Negative-binomial observations with fixed overdispersion."""
 
         eta = Param(Normal(prior_loc, prior_scale))
-        overdispersion = Data()
+        overdispersion = Data.scalar()
         y = Observed(NegativeBinomial(exp(eta), overdispersion))
 
     y = jnp.array([0.0, 1.0, 4.0, 2.0, 6.0, 1.0, 3.0, 2.0])
@@ -434,8 +434,8 @@ def robust_regression_fixture() -> RobustRegressionFixture:
     class RobustLinearRegression:
         """Linear regression with heavy-tailed Student-t observation noise."""
 
-        nu = Data()
-        x = Data()
+        nu = Data.scalar()
+        x = Data.vector()
 
         alpha = Param(Normal(0.0, 5.0))
         beta = Param(Normal(0.0, 5.0))
@@ -466,9 +466,9 @@ def hierarchical_poisson_varying_slopes_fixture() -> HierarchicalPoissonFixture:
     class HierarchicalPoissonVaryingSlopes:
         """Non-centered Poisson log-rate model with varying intercepts and slopes."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 0.5))
         beta_pop = Param(Normal(0.0, 0.5))
@@ -517,10 +517,10 @@ def hierarchical_binomial_logistic_varying_slopes_fixture() -> HierarchicalBinom
     class HierarchicalBinomialLogisticVaryingSlopes:
         """Non-centered Binomial logit-probability model with varying slopes."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
-        trials = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
+        trials = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))
@@ -574,10 +574,10 @@ def hierarchical_beta_binomial_logistic_varying_slopes_fixture() -> Hierarchical
     class HierarchicalBetaBinomialLogisticVaryingSlopes:
         """Non-centered overdispersed Binomial model with varying slopes."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
-        trials = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
+        trials = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))
@@ -641,9 +641,9 @@ def hierarchical_beta_regression_logistic_varying_slopes_fixture() -> (
     class HierarchicalBetaRegressionLogisticVaryingSlopes:
         """Non-centered Beta-regression model with varying slopes."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 1.0))
         beta_pop = Param(Normal(0.0, 1.0))
@@ -702,9 +702,9 @@ def hierarchical_negative_binomial_log_rate_varying_slopes_fixture() -> (
     class HierarchicalNegativeBinomialLogRateVaryingSlopes:
         """Non-centered overdispersed count model with varying intercepts and slopes."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 0.5))
         beta_pop = Param(Normal(0.0, 0.5))
@@ -757,8 +757,8 @@ def multivariate_normal_likelihood_fixture() -> MultivariateNormalLikelihoodFixt
     class MultivariateNormalLikelihood:
         """Single multivariate observation with a known Cholesky factor."""
 
-        n_dim = Data()
-        chol = Data()
+        n_dim = Data.scalar()
+        chol = Data.matrix(n_dim, n_dim)
 
         mu = Param(Normal(0.0, 10.0), size=n_dim)
         y = Observed(MultivariateNormal(mu, chol))
@@ -786,8 +786,8 @@ def ordinal_logistic_regression_fixture() -> OrdinalLogisticFixture:
     class OrdinalLogisticRegression:
         """Ordinal regression with ordered cutpoints and zero-based observed labels."""
 
-        n_cutpoints = Data()
-        x = Data()
+        n_cutpoints = Data.scalar()
+        x = Data.vector()
 
         beta = Param(Normal(0.0, 1.0))
         cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())
@@ -840,9 +840,9 @@ def fixed_kernel_gp_fixture(
     class GaussianProcessRegression:
         """Fixed-kernel GP latent with Normal observation noise."""
 
-        n = Data()
-        chol = Data()
-        obs_sd = Data()
+        n = Data.scalar()
+        chol = Data.matrix(n, n)
+        obs_sd = Data.scalar()
 
         f = Param(MultivariateNormal(0.0, chol), size=n)
         y = Observed(Normal(f, obs_sd))
@@ -877,8 +877,8 @@ def non_centered_known_scale_fixture() -> NonCenteredKnownScaleFixture:
     class NonCenteredHierarchicalNormal:
         """Known-scale non-centered Normal-Normal hierarchy."""
 
-        n_groups = Data()
-        group_idx = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
 
         mu_pop = Param(Normal(prior_loc, prior_scale))
         z = Param(Normal(0.0, 1.0), size=n_groups)

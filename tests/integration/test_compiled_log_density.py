@@ -61,7 +61,7 @@ class LinearPredictor:
 
     alpha = Param(Normal(0, 1))
     beta = Param(Normal(0, 1))
-    x = Data()
+    x = Data.vector()
     mu = alpha + beta * x
     y = Observed(Normal(mu, 1))
 
@@ -79,8 +79,8 @@ class PoissonLogDensity:
 class IndexedNormal:
     """Hierarchical normal with data-indexed group effects."""
 
-    n_groups = Data()
-    group_idx = Data()
+    n_groups = Data.scalar()
+    group_idx = Data.vector()
     theta = Param(Normal(0, 1), size=n_groups)
     y = Observed(Normal(theta[group_idx], 1))
 
@@ -90,7 +90,7 @@ class BinomialLogisticDensity:
     """Binomial count model using symbolic logistic success probabilities."""
 
     eta = Param(Normal(0, 1))
-    trials = Data()
+    trials = Data.vector()
     y = Observed(Binomial(trials, sigmoid(eta)))
 
 
@@ -100,7 +100,7 @@ class BetaBinomialLogisticDensity:
 
     eta = Param(Normal(0, 1))
     log_concentration = Param(Normal(math.log(20.0), 0.5))
-    trials = Data()
+    trials = Data.vector()
     p = sigmoid(eta)
     concentration = exp(log_concentration)
     a = p * concentration
@@ -136,8 +136,8 @@ class NegativeBinomialLogRateDensity:
 class OrderedLogisticDensity:
     """Ordinal model using ordered cutpoints and zero-based labels."""
 
-    n_cutpoints = Data()
-    x = Data()
+    n_cutpoints = Data.scalar()
+    x = Data.vector()
 
     beta = Param(Normal(0.0, 1.0))
     cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())
@@ -150,10 +150,10 @@ class OrderedLogisticDensity:
 class MeasurementErrorLogDensity:
     """Measurement-error model with latent vectors and two observed sites."""
 
-    n_states = Data()
-    age = Data()
-    marriage_sd = Data()
-    divorce_sd = Data()
+    n_states = Data.scalar()
+    age = Data.vector()
+    marriage_sd = Data.vector()
+    divorce_sd = Data.vector()
 
     alpha = Param(Normal(0, 1))
     b_age = Param(Normal(0, 1))
@@ -459,7 +459,7 @@ def test_compiled_log_density_evaluates_unary_negation_expression() -> None:
     class NegatedLinearPredictor:
         alpha = Param(Normal(0, 1))
         beta = Param(Normal(0, 1))
-        x = Data()
+        x = Data.vector()
         mu = -(alpha + beta * x)
         y = Observed(Normal(mu, 1))
 

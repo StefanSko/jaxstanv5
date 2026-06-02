@@ -186,9 +186,9 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     class HierarchicalPoissonStanReferenceModel:
         """Hierarchical Poisson model matching the Stan fixture."""
 
-        n_groups = Data()
-        group_idx = Data()
-        x = Data()
+        n_groups = Data.scalar()
+        group_idx = Data.vector()
+        x = Data.vector()
 
         alpha_pop = Param(Normal(0.0, 0.5))
         beta_pop = Param(Normal(0.0, 0.5))

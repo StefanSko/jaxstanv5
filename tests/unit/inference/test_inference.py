@@ -72,7 +72,7 @@ def test_unflatten_zero_sized_parameter_does_not_advance_offset() -> None:
 def test_constrain_sample_values_applies_parameter_constraints() -> None:
     meta = ModelMeta(
         params={"sigma": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), Positive(), None)},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
@@ -104,7 +104,7 @@ def test_sampler_result_dataclass() -> None:
 def test_compile_sampler_rejects_invalid_target_acceptance_rate() -> None:
     meta = ModelMeta(
         params={},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
@@ -122,7 +122,7 @@ def test_compile_sampler_rejects_invalid_target_acceptance_rate() -> None:
 def test_sample_rejects_non_positive_chain_count() -> None:
     meta = ModelMeta(
         params={},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
@@ -141,7 +141,7 @@ def test_sample_rejects_non_positive_chain_count() -> None:
 def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None:
     meta = ModelMeta(
         params={},
-        data_slots=[],
+        data={},
         observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
