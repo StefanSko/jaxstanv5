@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import cast
 
 import jax
@@ -62,12 +62,29 @@ class ResolvedData:
 
 
 @dataclass(frozen=True)
+class ResolvedFreeValue:
+    """Free NUTS coordinate metadata after declaration symbols are resolved."""
+
+    constraint: Constraint | None
+    size: DataRef | int | None
+
+
+@dataclass(frozen=True)
 class ResolvedParam:
-    """Parameter metadata after declaration symbols are resolved to names."""
+    """Parameter declaration metadata after declaration symbols are resolved."""
 
     distribution: Distribution
     constraint: Constraint | None
     size: DataRef | int | None
+
+
+@dataclass(frozen=True)
+class ResolvedStochasticSite:
+    """One log-density factor evaluated at a resolved model value expression."""
+
+    name: str
+    distribution: Distribution
+    value: ExprNode
 
 
 @dataclass(frozen=True)
@@ -86,6 +103,8 @@ class ModelMeta:
     data: dict[str, ResolvedData]
     observed_nodes: tuple[ResolvedObserved, ...]
     expressions: dict[str, ExprNode]
+    free_values: dict[str, ResolvedFreeValue] = field(default_factory=dict)
+    stochastic_sites: tuple[ResolvedStochasticSite, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -95,6 +114,8 @@ class _ResolvedDeclarations:
     params: dict[str, ResolvedParam]
     data: dict[str, ResolvedData]
     observed_nodes: tuple[ResolvedObserved, ...]
+    free_values: dict[str, ResolvedFreeValue]
+    stochastic_sites: tuple[ResolvedStochasticSite, ...]
 
 
 def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
@@ -108,6 +129,8 @@ def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
         data=declarations.data,
         observed_nodes=declarations.observed_nodes,
         expressions=expressions,
+        free_values=declarations.free_values,
+        stochastic_sites=declarations.stochastic_sites,
     )
 
 
@@ -133,6 +156,8 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
     params: dict[str, ResolvedParam] = {}
     data: dict[str, ResolvedData] = {}
     observed_nodes: list[ResolvedObserved] = []
+    free_values: dict[str, ResolvedFreeValue] = {}
+    stochastic_sites: list[ResolvedStochasticSite] = []
 
     for name, value in cls.__dict__.items():
         if isinstance(value, Param):
@@ -142,18 +167,38 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                     "Discrete distributions cannot be used as Param priors; "
                     "use them for Observed likelihoods or marginalize discrete latents"
                 )
+            size = _resolve_declaration_size(value.size, symbols)
             params[name] = ResolvedParam(
                 distribution=distribution,
                 constraint=value.constraint,
-                size=_resolve_declaration_size(value.size, symbols),
+                size=size,
+            )
+            free_values[name] = ResolvedFreeValue(
+                constraint=value.constraint,
+                size=size,
+            )
+            stochastic_sites.append(
+                ResolvedStochasticSite(
+                    name=name,
+                    distribution=distribution,
+                    value=ParamRef(name),
+                )
             )
         elif isinstance(value, Data):
             data[name] = ResolvedData(_resolve_data_schema(value.schema, symbols))
         elif isinstance(value, Observed):
+            distribution = _resolve_declaration_distribution(value.distribution, symbols)
             observed_nodes.append(
                 ResolvedObserved(
                     name=name,
-                    distribution=_resolve_declaration_distribution(value.distribution, symbols),
+                    distribution=distribution,
+                )
+            )
+            stochastic_sites.append(
+                ResolvedStochasticSite(
+                    name=name,
+                    distribution=distribution,
+                    value=DataRef(name),
                 )
             )
 
@@ -164,6 +209,8 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
         params=params,
         data=data,
         observed_nodes=tuple(observed_nodes),
+        free_values=free_values,
+        stochastic_sites=tuple(stochastic_sites),
     )
 
 
@@ -205,13 +252,47 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
         data = {name: jnp.asarray(value) for name, value in values.items()}
         _validate_declared_data_values(meta, {name: data[name] for name in meta.data})
         param_shapes = {
-            name: _resolve_param_shape(param.size, data) for name, param in meta.params.items()
+            name: _resolve_param_shape(value.size, data)
+            for name, value in _resolved_free_values(meta).items()
         }
         n_params = sum(_param_count(shape) for shape in param_shapes.values())
         _validate_bound_index_expressions(meta, data, param_shapes)
         return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
     return bind
+
+
+def _resolved_free_values(meta: ModelMeta) -> dict[str, ResolvedFreeValue]:
+    """Return free NUTS values, deriving legacy metadata when absent."""
+    if meta.free_values:
+        return meta.free_values
+    return {
+        name: ResolvedFreeValue(constraint=param.constraint, size=param.size)
+        for name, param in meta.params.items()
+    }
+
+
+def _resolved_stochastic_sites(meta: ModelMeta) -> tuple[ResolvedStochasticSite, ...]:
+    """Return log-density sites, deriving legacy metadata when absent."""
+    if meta.stochastic_sites:
+        return meta.stochastic_sites
+    param_sites = tuple(
+        ResolvedStochasticSite(
+            name=name,
+            distribution=param.distribution,
+            value=ParamRef(name),
+        )
+        for name, param in meta.params.items()
+    )
+    observed_sites = tuple(
+        ResolvedStochasticSite(
+            name=observed.name,
+            distribution=observed.distribution,
+            value=DataRef(observed.name),
+        )
+        for observed in meta.observed_nodes
+    )
+    return param_sites + observed_sites
 
 
 def _normalize_declared_data_values(
@@ -295,10 +376,9 @@ def _validate_bound_index_expressions(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Validate concrete data indexes before JAX gather semantics can clamp them."""
-    for param in meta.params.values():
-        _validate_distribution_index_expressions(param.distribution, data, param_shapes)
-    for observed in meta.observed_nodes:
-        _validate_distribution_index_expressions(observed.distribution, data, param_shapes)
+    for site in _resolved_stochastic_sites(meta):
+        _validate_distribution_index_expressions(site.distribution, data, param_shapes)
+        _validate_index_expr(site.value, data, param_shapes)
     for expression in meta.expressions.values():
         _validate_index_expr(expression, data, param_shapes)
 
@@ -312,8 +392,8 @@ def _validate_distribution_index_expressions(
     if not is_dataclass(distribution) or isinstance(distribution, type):
         return
 
-    for field in fields(distribution):
-        value = getattr(distribution, field.name)
+    for distribution_field in fields(distribution):
+        value = getattr(distribution, distribution_field.name)
         if _is_final_expr_node(value):
             _validate_index_expr(cast(ExprNode, value), data, param_shapes)
         elif is_dataclass(value) and not isinstance(value, type):
@@ -478,11 +558,11 @@ def _resolve_declaration_distribution(
     if not is_dataclass(distribution) or isinstance(distribution, type):
         return distribution
     resolved = {
-        field.name: _resolve_declaration_distribution_field(
-            getattr(distribution, field.name),
+        distribution_field.name: _resolve_declaration_distribution_field(
+            getattr(distribution, distribution_field.name),
             symbols,
         )
-        for field in fields(distribution)
+        for distribution_field in fields(distribution)
     }
     return type(distribution)(**resolved)
 

@@ -11,7 +11,7 @@ import jax.numpy as jnp
 
 from jaxstanv5.distributions.core import Distribution
 from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import ModelMeta
+from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values, _resolved_stochastic_sites
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef, UnaryOp
 
 _BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
@@ -134,11 +134,11 @@ def _constrain_params(
     """Apply constraint transforms and return constrained params + log-Jacobian sum."""
     constrained: dict[str, jax.Array] = {}
     log_jac: jax.Array = jnp.array(0.0)
-    for name, pinfo in meta.params.items():
+    for name, value in _resolved_free_values(meta).items():
         val = params[name]
-        if pinfo.constraint is not None:
-            constrained[name] = cast(jax.Array, pinfo.constraint.inverse_transform(val))
-            log_jac = log_jac + jnp.sum(pinfo.constraint.log_abs_det_jacobian(val))
+        if value.constraint is not None:
+            constrained[name] = cast(jax.Array, value.constraint.inverse_transform(val))
+            log_jac = log_jac + jnp.sum(value.constraint.log_abs_det_jacobian(val))
         else:
             constrained[name] = val
     return constrained, log_jac
@@ -156,13 +156,10 @@ def _build_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
 
         lp: jax.Array = log_jac
 
-        for name, pinfo in meta.params.items():
-            dist = _evaluate_distribution(pinfo.distribution, values)
-            lp = lp + jnp.sum(dist.log_prob(constrained[name]))
-
-        for observed in meta.observed_nodes:
-            obs_dist = _evaluate_distribution(observed.distribution, values)
-            lp = lp + jnp.sum(obs_dist.log_prob(bound.data[observed.name]))
+        for site in _resolved_stochastic_sites(meta):
+            dist = _evaluate_distribution(site.distribution, values)
+            value = _evaluate_expr(site.value, values)
+            lp = lp + jnp.sum(dist.log_prob(value))
 
         return lp
 

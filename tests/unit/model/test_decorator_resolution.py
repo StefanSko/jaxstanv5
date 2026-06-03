@@ -74,12 +74,17 @@ def test_resolve_declarations_resolves_param_data_and_observed_inventory() -> No
     assert tuple(resolved.data) == ("n_groups",)
     assert tuple(node.name for node in resolved.observed_nodes) == ("y",)
     assert set(resolved.params) == {"alpha_offset"}
+    assert set(resolved.free_values) == {"alpha_offset"}
     assert resolved.params["alpha_offset"].size == DataRef("n_groups")
+    assert resolved.free_values["alpha_offset"].size == DataRef("n_groups")
     assert normal_fields(resolved.observed_nodes[0].distribution).loc == BinOp(
         "+",
         ParamRef("alpha_offset"),
         DataRef("n_groups"),
     )
+    assert tuple(site.name for site in resolved.stochastic_sites) == ("alpha_offset", "y")
+    assert resolved.stochastic_sites[0].value == ParamRef("alpha_offset")
+    assert resolved.stochastic_sites[1].value == DataRef("y")
 
 
 def test_resolve_declarations_resolves_multiple_observed_nodes() -> None:
