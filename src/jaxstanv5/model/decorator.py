@@ -34,7 +34,7 @@ from jaxstanv5.model._expression_errors import (
     is_non_scalar_array_like_constant,
     non_scalar_distribution_parameter_error,
 )
-from jaxstanv5.model.core import Data, Observed, Param
+from jaxstanv5.model.core import Data, Observed, Param, PartiallyObserved
 from jaxstanv5.model.expr import (
     BinOp,
     ConstNode,
@@ -148,7 +148,7 @@ def _collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
     symbols: SymbolTable = {}
 
     for name, value in cls.__dict__.items():
-        if isinstance(value, Param | Data | Observed):
+        if isinstance(value, Param | Data | Observed | PartiallyObserved):
             existing_name = symbols.get(value.symbol)
             if existing_name is not None:
                 raise ValueError(
@@ -210,8 +210,26 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                     value=DataRef(name),
                 )
             )
+        elif isinstance(value, PartiallyObserved):
+            distribution = _resolve_declaration_distribution(value.distribution, symbols)
+            if isinstance(distribution, DiscreteDistribution):
+                raise TypeError(
+                    "Discrete distributions cannot be partially observed NUTS values; "
+                    "marginalize discrete missing values or impute them posterior-predictively"
+                )
+            free_values[name] = ResolvedFreeValue(
+                constraint=None,
+                size=_resolve_partially_observed_missing_size(value, symbols),
+            )
+            stochastic_sites.append(
+                ResolvedStochasticSite(
+                    name=name,
+                    distribution=distribution,
+                    value=_resolve_partially_observed_vector(value, name, symbols),
+                )
+            )
 
-    if not params and not observed_nodes:
+    if not stochastic_sites:
         raise ValueError("Model declarations must contain at least one stochastic declaration")
 
     return _ResolvedDeclarations(
@@ -615,6 +633,38 @@ def _resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | i
     raise TypeError(f"Cannot resolve {type(size).__name__} as a declaration size")
 
 
+def _resolve_partially_observed_missing_size(
+    value: PartiallyObserved,
+    symbols: SymbolTable,
+) -> DataRef | int:
+    """Resolve the free-coordinate size from an exact missing-index data schema."""
+    schema = value.missing_idx.schema
+    if not isinstance(schema, DataShapeSchema) or len(schema.dims) != 1:
+        raise TypeError("PartiallyObserved missing_idx must be declared as Data.vector(length)")
+
+    dim = schema.dims[0]
+    if isinstance(dim, int):
+        return _validate_parameter_size(dim, "PartiallyObserved missing size")
+    if isinstance(dim, DataDimSymbol):
+        return DataRef(_resolve_symbol(dim.symbol, symbols))
+    raise TypeError(f"Unknown partial-observed missing size dimension: {type(dim).__name__}")
+
+
+def _resolve_partially_observed_vector(
+    value: PartiallyObserved,
+    name: str,
+    symbols: SymbolTable,
+) -> VectorScatterOp:
+    """Resolve a partially observed declaration into full-vector assembly IR."""
+    return VectorScatterOp(
+        length=_resolve_declaration_expr(value.length, symbols),
+        observed_idx=_resolve_declaration_expr(value.observed_idx, symbols),
+        observed_values=_resolve_declaration_expr(value.observed, symbols),
+        missing_idx=_resolve_declaration_expr(value.missing_idx, symbols),
+        missing_values=ParamRef(name),
+    )
+
+
 def _resolve_declaration_distribution(
     distribution: Distribution,
     symbols: SymbolTable,
@@ -650,6 +700,12 @@ def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
         return ParamRef(_resolve_symbol(value.symbol, symbols))
     if isinstance(value, Data):
         return DataRef(_resolve_symbol(value.symbol, symbols))
+    if isinstance(value, PartiallyObserved):
+        return _resolve_partially_observed_vector(
+            value,
+            _resolve_symbol(value.symbol, symbols),
+            symbols,
+        )
     if isinstance(value, int | float):
         return ConstNode(value)
     if is_array_like_constant(value):
@@ -676,7 +732,15 @@ def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
 def _is_declaration_expr(value: object) -> bool:
     """Return whether ``value`` can resolve to final expression IR."""
     return isinstance(
-        value, Param | Data | DeferredBinOp | DeferredIndexOp | DeferredUnaryOp | int | float
+        value,
+        Param
+        | Data
+        | PartiallyObserved
+        | DeferredBinOp
+        | DeferredIndexOp
+        | DeferredUnaryOp
+        | int
+        | float,
     )
 
 

@@ -174,6 +174,20 @@ class MultivariateNormalLikelihoodFixture:
 
 
 @dataclass(frozen=True)
+class PartiallyObservedMvnFixture:
+    """Bound correlated MVN with one missing coordinate."""
+
+    bound: BoundModel
+    covariance: jax.Array
+    chol: jax.Array
+    observed_idx: jax.Array
+    missing_idx: jax.Array
+    observed_values: jax.Array
+    conditional_mean: float
+    conditional_variance: float
+
+
+@dataclass(frozen=True)
 class OrdinalLogisticFixture:
     """Bound ordinal-logistic regression fixture."""
 
@@ -773,6 +787,73 @@ def multivariate_normal_likelihood_fixture() -> MultivariateNormalLikelihoodFixt
         prior_mean=jnp.zeros((3,)),
         prior_scale=10.0,
         covariance=covariance,
+    )
+
+
+def partially_observed_mvn_fixture() -> PartiallyObservedMvnFixture:
+    """Return a partially observed correlated MVN fixture."""
+    from jaxstanv5 import Data, PartiallyObserved, model
+    from jaxstanv5.distributions import MultivariateNormal
+
+    @model
+    class PartiallyObservedMvn:
+        """Three-dimensional MVN with first/last coordinates observed."""
+
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        chol = Data.matrix(n, n)
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        observed_values = Data.vector(n_obs)
+
+        y = PartiallyObserved.vector(
+            MultivariateNormal(0.0, chol),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+        )
+
+    covariance = jnp.asarray(
+        [
+            [1.0, 0.6, 0.25],
+            [0.6, 1.4, 0.5],
+            [0.25, 0.5, 1.2],
+        ]
+    )
+    chol = jnp.linalg.cholesky(covariance)
+    observed_idx = jnp.asarray([0, 2], dtype=jnp.int32)
+    missing_idx = jnp.asarray([1], dtype=jnp.int32)
+    observed_values = jnp.asarray([0.7, -0.4])
+
+    sigma_oo = covariance[jnp.ix_(observed_idx, observed_idx)]
+    sigma_mo = covariance[jnp.ix_(missing_idx, observed_idx)]
+    sigma_om = covariance[jnp.ix_(observed_idx, missing_idx)]
+    sigma_mm = covariance[jnp.ix_(missing_idx, missing_idx)]
+    solve_oo_y = jnp.linalg.solve(sigma_oo, observed_values)
+    solve_oo_om = jnp.linalg.solve(sigma_oo, sigma_om)
+    conditional_mean = jnp.squeeze(sigma_mo @ solve_oo_y)
+    conditional_variance = jnp.squeeze(sigma_mm - sigma_mo @ solve_oo_om)
+
+    return PartiallyObservedMvnFixture(
+        bound=bind_model(
+            PartiallyObservedMvn,
+            n=3,
+            n_obs=2,
+            n_mis=1,
+            chol=chol,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            observed_values=observed_values,
+        ),
+        covariance=covariance,
+        chol=chol,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+        observed_values=observed_values,
+        conditional_mean=float(conditional_mean),
+        conditional_variance=float(conditional_variance),
     )
 
 

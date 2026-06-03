@@ -202,3 +202,117 @@ class Observed:
 
     distribution: Distribution
     symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
+
+
+@dataclass(frozen=True, init=False)
+class PartiallyObserved(SymbolicDistributionParameter):
+    """Partially observed vector declaration.
+
+    The declaration contributes one log-density factor evaluated at the full
+    assembled vector. Coordinates listed by ``missing_idx`` are free NUTS
+    coordinates; coordinates listed by ``observed_idx`` are fixed data.
+    """
+
+    distribution: Distribution
+    length: Data | int
+    observed: Data
+    observed_idx: Data
+    missing_idx: Data
+    symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
+
+    def __init__(
+        self,
+        distribution: Distribution,
+        *,
+        length: Data | int,
+        observed: Data,
+        observed_idx: Data,
+        missing_idx: Data,
+    ) -> None:
+        object.__setattr__(self, "distribution", distribution)
+        object.__setattr__(self, "length", _validate_partial_vector_length(length))
+        object.__setattr__(
+            self,
+            "observed",
+            _validate_exact_vector_data(observed, label="PartiallyObserved observed values"),
+        )
+        object.__setattr__(
+            self,
+            "observed_idx",
+            _validate_exact_vector_data(observed_idx, label="PartiallyObserved observed_idx"),
+        )
+        object.__setattr__(
+            self,
+            "missing_idx",
+            _validate_exact_vector_data(missing_idx, label="PartiallyObserved missing_idx"),
+        )
+        object.__setattr__(self, "symbol", _next_symbol())
+
+    @classmethod
+    def vector(
+        cls,
+        distribution: Distribution,
+        *,
+        length: Data | int,
+        observed: Data,
+        observed_idx: Data,
+        missing_idx: Data,
+    ) -> PartiallyObserved:
+        """Declare a rank-1 random vector with explicit observed/missing coordinates."""
+        return cls(
+            distribution,
+            length=length,
+            observed=observed,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+        )
+
+    def __add__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("+", self, other)
+
+    def __radd__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("+", other, self)
+
+    def __sub__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("-", self, other)
+
+    def __rsub__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("-", other, self)
+
+    def __mul__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("*", self, other)
+
+    def __rmul__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("*", other, self)
+
+    def __truediv__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("/", self, other)
+
+    def __rtruediv__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("/", other, self)
+
+    def __neg__(self) -> DeferredUnaryOp:
+        return DeferredUnaryOp("neg", self)
+
+    def __getitem__(self, index: object) -> DeferredIndexOp:
+        return DeferredIndexOp(self, index)
+
+
+def _validate_partial_vector_length(length: Data | int) -> Data | int:
+    if isinstance(length, bool):
+        raise TypeError("PartiallyObserved.vector length must be an integer, not bool")
+    if isinstance(length, int):
+        return _validate_static_data_dimension(length, label="PartiallyObserved.vector length")
+    if isinstance(length, Data):
+        if not is_scalar_data_schema(length.schema):
+            raise TypeError("PartiallyObserved.vector length must reference scalar data")
+        return length
+    raise TypeError("PartiallyObserved.vector length must be an integer or scalar data declaration")
+
+
+def _validate_exact_vector_data(value: Data, *, label: str) -> Data:
+    if not isinstance(value, Data):
+        raise TypeError(f"{label} must be a Data.vector(length) declaration")
+    if not isinstance(value.schema, DataShapeSchema) or len(value.schema.dims) != 1:
+        raise TypeError(f"{label} must be a Data.vector(length) declaration")
+    return value
