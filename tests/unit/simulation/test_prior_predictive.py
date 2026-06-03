@@ -5,7 +5,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import pytest
 
-from jaxstanv5 import Data, Observed, Param, model
+from jaxstanv5 import Data, Observed, Param, PartiallyObserved, model
 from jaxstanv5.constraints import Ordered, Positive
 from jaxstanv5.distributions import MultivariateNormal, Normal, OrderedLogistic, Uniform
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
@@ -111,6 +111,26 @@ class UnsupportedPrior:
     """Prior using an unsupported distribution."""
 
     theta = Param(UnsupportedDistribution())
+
+
+@model
+class PartialObservedPriorPredictive:
+    """Partially observed vectors are not prior-predictive simulation nodes in v1."""
+
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    chol = Data.matrix(n, n)
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+    y = PartiallyObserved.vector(
+        MultivariateNormal(0.0, chol),
+        length=n,
+        observed=observed_values,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+    )
 
 
 def test_simulate_prior_predictive_draws_prior_only_parameters_with_vmap_shape() -> None:
@@ -235,6 +255,24 @@ def test_simulate_prior_predictive_rejects_wrong_shaped_data() -> None:
             seed=44,
             num_samples=5,
             data={"n": 3, "chol": jnp.eye(2), "obs_sd": 0.2},
+        )
+
+
+def test_simulate_prior_predictive_rejects_partially_observed_models() -> None:
+    with pytest.raises(TypeError, match="PartiallyObserved declarations are not supported"):
+        simulate_prior_predictive(
+            PartialObservedPriorPredictive,
+            seed=46,
+            num_samples=2,
+            data={
+                "n": 3,
+                "n_obs": 2,
+                "n_mis": 1,
+                "chol": jnp.eye(3),
+                "observed_idx": jnp.asarray([0, 2]),
+                "missing_idx": jnp.asarray([1]),
+                "observed_values": jnp.asarray([1.0, -1.0]),
+            },
         )
 
 

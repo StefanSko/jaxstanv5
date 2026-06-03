@@ -20,6 +20,7 @@ from jaxstanv5.model.decorator import (
     ModelMeta,
     _normalize_declared_data_values,
     _resolve_param_shape,
+    _resolved_free_values,
 )
 from jaxstanv5.simulation.domains import (
     OrderedVectorDomain,
@@ -241,6 +242,11 @@ def simulate_prior_predictive(
         raise ValueError("num_samples must be at least 1")
 
     meta = _model_meta(model_cls)
+    non_param_free_values = set(_resolved_free_values(meta)) - set(meta.params)
+    if non_param_free_values:
+        raise TypeError(
+            "PartiallyObserved declarations are not supported by prior-predictive simulation"
+        )
     normalized_data = _normalize_data(meta, data)
     param_shapes = _resolve_param_shapes(meta, normalized_data)
     normalized_observed_shapes = _validate_observed_shapes(meta, observed_shapes)

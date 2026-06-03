@@ -9,7 +9,7 @@ import pytest
 
 from jaxstanv5 import model
 from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
-from jaxstanv5.model.core import Data, Observed, Param
+from jaxstanv5.model.core import Data, Observed, Param, PartiallyObserved
 from jaxstanv5.model.decorator import _resolve_model_declaration
 
 
@@ -67,6 +67,43 @@ def test_model_declaration_rejects_hidden_non_scalar_distribution_parameters() -
     assert "Data.vector" in message
     assert "bind(...)" in message
     assert "ArrayImpl" not in message
+
+
+def test_partially_observed_vector_rejects_rank_only_missing_index_schema() -> None:
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector()
+    observed_values = Data.vector(n_obs)
+
+    with pytest.raises(TypeError, match="missing_idx"):
+        PartiallyObserved.vector(
+            Normal(0.0, 1.0),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+        )
+
+
+def test_partially_observed_vector_rejects_discrete_distribution() -> None:
+    class DiscretePartial:
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        observed_values = Data.vector(n_obs)
+        y = PartiallyObserved.vector(
+            Poisson(1.0),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+        )
+
+    with pytest.raises(TypeError, match="Discrete distributions cannot be partially observed"):
+        _resolve_model_declaration(DiscretePartial)
 
 
 def test_private_model_declaration_resolution_rejects_data_only_model() -> None:
