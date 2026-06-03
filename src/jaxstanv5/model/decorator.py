@@ -35,7 +35,16 @@ from jaxstanv5.model._expression_errors import (
     non_scalar_distribution_parameter_error,
 )
 from jaxstanv5.model.core import Data, Observed, Param
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef, UnaryOp
+from jaxstanv5.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    ExprNode,
+    IndexOp,
+    ParamRef,
+    UnaryOp,
+    VectorScatterOp,
+)
 
 type ModelClass = type[object]
 type SymbolTable = dict[DeclarationSymbol, str]
@@ -415,6 +424,13 @@ def _validate_index_expr(
         _validate_index_expr(node.base, data, param_shapes)
         _validate_index_expr(node.index, data, param_shapes)
         _validate_single_index_op(node, data, param_shapes)
+    elif isinstance(node, VectorScatterOp):
+        _validate_index_expr(node.length, data, param_shapes)
+        _validate_index_expr(node.observed_idx, data, param_shapes)
+        _validate_index_expr(node.observed_values, data, param_shapes)
+        _validate_index_expr(node.missing_idx, data, param_shapes)
+        _validate_index_expr(node.missing_values, data, param_shapes)
+        _validate_vector_scatter_op(node, data, param_shapes)
 
 
 def _validate_single_index_op(
@@ -456,7 +472,54 @@ def _infer_expr_shape(
         index = _evaluate_data_index_expr(node.index, data)
         _validate_index_value(index, base_shape[0])
         return index.shape + base_shape[1:]
+    if isinstance(node, VectorScatterOp):
+        length = _validate_vector_scatter_op(node, data, param_shapes)
+        return (length,)
     raise TypeError(f"Cannot infer shape for expression node: {type(node).__name__}")
+
+
+def _validate_vector_scatter_op(
+    node: VectorScatterOp,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> int:
+    """Validate one partial-observed vector assembly expression."""
+    length = _resolve_vector_scatter_length(node.length, data)
+    observed_idx = _evaluate_data_index_expr(node.observed_idx, data)
+    missing_idx = _evaluate_data_index_expr(node.missing_idx, data)
+
+    if observed_idx.ndim != 1 or missing_idx.ndim != 1:
+        raise ValueError("Partial-observed indexes must be rank-1 vectors")
+    _validate_index_value(observed_idx, length)
+    _validate_index_value(missing_idx, length)
+
+    observed_shape = _infer_expr_shape(node.observed_values, data, param_shapes)
+    missing_shape = _infer_expr_shape(node.missing_values, data, param_shapes)
+    if observed_shape != (observed_idx.shape[0],):
+        raise ValueError("Partial-observed values must match observed_idx length")
+    if missing_shape != (missing_idx.shape[0],):
+        raise ValueError("Partial-observed free values must match missing_idx length")
+
+    observed_positions = tuple(int(value) for value in observed_idx.tolist())
+    missing_positions = tuple(int(value) for value in missing_idx.tolist())
+    observed_set = set(observed_positions)
+    missing_set = set(missing_positions)
+    if len(observed_set) != len(observed_positions) or len(missing_set) != len(missing_positions):
+        raise ValueError("Partial-observed indexes must not contain duplicates")
+    if observed_set & missing_set:
+        raise ValueError("Partial-observed indexes must be disjoint")
+    if observed_set | missing_set != set(range(length)):
+        raise ValueError("Partial-observed indexes must cover every vector position exactly once")
+    return length
+
+
+def _resolve_vector_scatter_length(node: ExprNode, data: dict[str, jax.Array]) -> int:
+    length_value = _evaluate_data_index_expr(node, data)
+    if length_value.ndim != 0:
+        raise ValueError("Partial-observed vector length must be scalar")
+    if not jnp.issubdtype(length_value.dtype, jnp.integer):
+        raise TypeError("Partial-observed vector length must be integer")
+    return _validate_parameter_size(int(length_value), "Partial-observed vector length")
 
 
 def _evaluate_data_index_expr(node: ExprNode, data: dict[str, jax.Array]) -> jax.Array:
@@ -487,6 +550,8 @@ def _evaluate_data_index_expr(node: ExprNode, data: dict[str, jax.Array]) -> jax
         index = _evaluate_data_index_expr(node.index, data)
         _validate_index_value(index, base.shape[0])
         return base[index]
+    if isinstance(node, VectorScatterOp):
+        raise TypeError("Partial-observed vector assembly cannot be used as an index expression")
     raise TypeError(f"Cannot evaluate index expression node: {type(node).__name__}")
 
 
@@ -617,7 +682,9 @@ def _is_declaration_expr(value: object) -> bool:
 
 def _is_final_expr_node(value: object) -> bool:
     """Return whether ``value`` is already resolved final expression IR."""
-    return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp)
+    return isinstance(
+        value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
+    )
 
 
 def _resolve_symbol(symbol: DeclarationSymbol, symbols: SymbolTable) -> str:

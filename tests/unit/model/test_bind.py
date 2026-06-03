@@ -14,13 +14,15 @@ from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import (
     ModelMeta,
     ResolvedData,
+    ResolvedFreeValue,
     ResolvedObserved,
     ResolvedParam,
+    ResolvedStochasticSite,
     _make_bind,
     _param_count,
     _resolve_param_shape,
 )
-from jaxstanv5.model.expr import DataRef
+from jaxstanv5.model.expr import DataRef, ParamRef, VectorScatterOp
 
 
 class BindFn(Protocol):
@@ -119,6 +121,47 @@ def shaped_chol_meta() -> ModelMeta:
         },
         observed_nodes=(ResolvedObserved("y", Normal(0.0, 1.0)),),
         expressions={},
+    )
+
+
+def test_bind_rejects_overlapping_partial_vector_indexes() -> None:
+    with pytest.raises(ValueError, match="Partial-observed indexes must be disjoint"):
+        bind_meta(
+            partial_vector_meta(),
+            n=3,
+            n_mis=1,
+            obs_idx=jnp.asarray([0, 1]),
+            mis_idx=jnp.asarray([1]),
+            y_obs=jnp.asarray([1.0, 2.0]),
+        )
+
+
+def partial_vector_meta() -> ModelMeta:
+    return ModelMeta(
+        params={},
+        data={
+            "n": ResolvedData(ResolvedDataShapeSchema(())),
+            "n_mis": ResolvedData(ResolvedDataShapeSchema(())),
+            "obs_idx": ResolvedData(ResolvedDataRankSchema(1)),
+            "mis_idx": ResolvedData(ResolvedDataRankSchema(1)),
+            "y_obs": ResolvedData(ResolvedDataRankSchema(1)),
+        },
+        observed_nodes=(),
+        expressions={},
+        free_values={"y": ResolvedFreeValue(constraint=None, size=DataRef("n_mis"))},
+        stochastic_sites=(
+            ResolvedStochasticSite(
+                name="y",
+                distribution=Normal(0.0, 1.0),
+                value=VectorScatterOp(
+                    length=DataRef("n"),
+                    observed_idx=DataRef("obs_idx"),
+                    observed_values=DataRef("y_obs"),
+                    missing_idx=DataRef("mis_idx"),
+                    missing_values=ParamRef("y"),
+                ),
+            ),
+        ),
     )
 
 

@@ -12,7 +12,16 @@ import jax.numpy as jnp
 from jaxstanv5.distributions.core import Distribution
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values, _resolved_stochastic_sites
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ExprNode, IndexOp, ParamRef, UnaryOp
+from jaxstanv5.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    ExprNode,
+    IndexOp,
+    ParamRef,
+    UnaryOp,
+    VectorScatterOp,
+)
 
 _BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
     "+": jnp.add,
@@ -53,12 +62,23 @@ def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
         base = _evaluate_expr(node.base, values)
         index = _evaluate_expr(node.index, values)
         return base[index]
+    if isinstance(node, VectorScatterOp):
+        observed_idx = _evaluate_expr(node.observed_idx, values)
+        observed_values = _evaluate_expr(node.observed_values, values)
+        missing_idx = _evaluate_expr(node.missing_idx, values)
+        missing_values = _evaluate_expr(node.missing_values, values)
+        length = observed_idx.shape[0] + missing_idx.shape[0]
+        dtype = jnp.result_type(observed_values, missing_values)
+        result = jnp.zeros((length,), dtype=dtype)
+        return result.at[observed_idx].set(observed_values).at[missing_idx].set(missing_values)
     raise TypeError(f"Cannot evaluate expression node: {type(node).__name__}")
 
 
 def _is_expr_node(value: object) -> bool:
     """Return whether ``value`` is a final expression IR node."""
-    return isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp)
+    return isinstance(
+        value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
+    )
 
 
 def _evaluate_distribution[DistributionT: Distribution](

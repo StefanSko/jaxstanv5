@@ -5,7 +5,15 @@ from __future__ import annotations
 import jax.numpy as jnp
 
 from jaxstanv5.compiler.core import _evaluate_expr
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
+from jaxstanv5.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    IndexOp,
+    ParamRef,
+    UnaryOp,
+    VectorScatterOp,
+)
 
 
 def test_param_ref_lookup() -> None:
@@ -85,3 +93,23 @@ def test_index_op_with_data_index() -> None:
     }
     result = _evaluate_expr(node, values)
     assert jnp.allclose(result, jnp.array([0.1, 0.3]))
+
+
+def test_vector_scatter_op_assembles_fixed_and_free_coordinates() -> None:
+    node = VectorScatterOp(
+        length=ConstNode(4),
+        observed_idx=DataRef("obs_idx"),
+        observed_values=DataRef("y_obs"),
+        missing_idx=DataRef("mis_idx"),
+        missing_values=ParamRef("y"),
+    )
+    values = {
+        "obs_idx": jnp.asarray([0, 2]),
+        "y_obs": jnp.asarray([1.5, -0.5]),
+        "mis_idx": jnp.asarray([1, 3]),
+        "y": jnp.asarray([0.25, 2.0]),
+    }
+
+    result = _evaluate_expr(node, values)
+
+    assert jnp.allclose(result, jnp.asarray([1.5, 0.25, -0.5, 2.0]))

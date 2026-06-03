@@ -8,7 +8,7 @@ from typing import Protocol
 from jaxstanv5.distributions.core import SymbolicDistributionParameter
 from jaxstanv5.model._expression_errors import array_like_constant_error, is_array_like_constant
 
-type ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp
+type ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
 type BinaryOperator = str
 type UnaryFunction = str
 
@@ -254,9 +254,22 @@ class IndexOp(SymbolicDistributionParameter):
         return IndexOp(self, _to_expr(index))
 
 
+@dataclass(frozen=True)
+class VectorScatterOp(SymbolicDistributionParameter):
+    """Assemble one vector from fixed and free indexed coordinates."""
+
+    length: ExprNode
+    observed_idx: ExprNode
+    observed_values: ExprNode
+    missing_idx: ExprNode
+    missing_values: ExprNode
+
+
 def _to_expr(value: object) -> ExprNode:
     """Convert supported Python values to expression nodes."""
-    if isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp):
+    if isinstance(
+        value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
+    ):
         return value
     if isinstance(value, int | float):
         return ConstNode(value)
