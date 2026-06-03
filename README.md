@@ -71,6 +71,8 @@ The declaration language has three core node types:
   `Data.array(...)` declare known inputs with no likelihood contribution.
 - `Observed(distribution)` declares known input with a likelihood contribution.
   A model may contain one or more observed likelihood sites.
+- `PartiallyObserved.vector(...)` declares one continuous random vector whose
+  coordinates are partly fixed data and partly free NUTS coordinates.
 
 Deterministic expressions are written directly in the class body:
 
@@ -102,6 +104,40 @@ Data declarations are schema-only; they never construct values. Use
 vectors, `Data.matrix()` or `Data.matrix(n, m)` for matrices, and
 `Data.array(rank=...)` or `Data.array(shape=(...))` for higher-rank arrays.
 Rank-only declarations validate rank while allowing any dimension sizes.
+
+For partially observed continuous vectors, pass an explicit index partition rather
+than a NaN-masked vector:
+
+```python
+from jaxstanv5 import PartiallyObserved
+from jaxstanv5.data import PartialVector
+from jaxstanv5.distributions import MultivariateNormal
+
+partial_y = PartialVector.from_nan(raw_y)
+
+@model
+class PartialMvn:
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    chol = Data.matrix(n, n)
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+
+    y = PartiallyObserved.vector(
+        MultivariateNormal(0.0, chol),
+        length=n,
+        observed=observed_values,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+    )
+```
+
+`PartialVector.from_nan(...)` is only a preprocessing helper; the model consumes
+explicit `observed_idx`, `missing_idx`, and `observed_values`. Missing coordinates
+are returned in `result.samples["y"]` in `missing_idx` order. Discrete missing
+latents are not supported by NUTS.
 
 Use `jaxstanv5.math` helpers in model declarations, not raw `jax.numpy`
 functions. Discrete distributions such as `Poisson`, `Binomial`,

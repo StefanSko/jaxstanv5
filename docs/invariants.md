@@ -16,7 +16,11 @@ Core invariants that should remain true as the codebase changes.
   `Data.array(...)` are known inputs with shape/rank schemas and contribute no
   log-density term.
 - `Observed(...)` is known input and contributes a likelihood term.
-- A model has one or more stochastic declarations: `Param` or `Observed`.
+- `PartiallyObserved.vector(...)` contributes one continuous log-density factor
+  over an assembled vector whose observed coordinates are fixed data and whose
+  missing coordinates are free NUTS values.
+- A model has one or more stochastic declarations: `Param`, `Observed`, or
+  `PartiallyObserved`.
 - `Observed` nodes are optional; prior-only models are valid.
 - Declaration aliases are invalid: one declaration object maps to one class
   attribute name.
@@ -46,18 +50,20 @@ Core invariants that should remain true as the codebase changes.
   deferred syntax tokens.
 - Final expression trees may contain explicit unary operation nodes only for
   supported declaration-language unary operations such as `neg`, `exp`, and `sigmoid`.
-- `ModelMeta` contains resolved metadata only, including resolved data schemas.
+- `ModelMeta` contains resolved metadata only, including resolved data schemas,
+  free NUTS values, and stochastic log-density sites.
 - `BoundModel` contains no inference logic.
 
 ## Log density
 
 - The compiler evaluates symbolic distribution arguments before calling
   `Distribution.log_prob(...)`.
-- Log density = constraint Jacobians + parameter priors + all observed
-  likelihood terms.
+- Log density = constraint Jacobians + all stochastic site log-density terms.
+- `Param`, `Observed`, and `PartiallyObserved` lower to stochastic sites plus a
+  free/fixed coordinate partition; they are not separate log-density machinery.
 - Discrete distributions are observed-likelihood distributions only; NUTS
-  parameters are continuous and discrete latent `Param(...)` declarations are
-  rejected.
+  parameters are continuous and discrete latent `Param(...)` or
+  `PartiallyObserved(...)` declarations are rejected.
 - Sampling returns constrained parameter values.
 - Sampling result arrays have shape `(num_chains, num_samples, *param_shape)`.
 - NUTS diagnostics are recorded separately for warmup and post-warmup sampling.
