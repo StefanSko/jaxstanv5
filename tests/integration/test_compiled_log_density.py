@@ -76,6 +76,38 @@ class PoissonLogDensity:
 
 
 @model
+class MatrixColumnPredictor:
+    """Linear model using ordinary matrix-column declaration indexing."""
+
+    x = Data.matrix()
+    alpha = Param(Normal(0, 1))
+    beta = Param(Normal(0, 1))
+    mu = alpha + beta * x[:, 0]
+    y = Observed(Normal(mu, 1))
+
+
+@model
+class MatrixRowAndDataIndexPredictor:
+    """Model exercising row slicing and data/static tuple indexing."""
+
+    n_obs = Data.scalar()
+    x = Data.matrix()
+    row_idx = Data.vector()
+    beta = Param(Normal(0, 1), size=n_obs)
+    y = Observed(Normal(x[0, :] + x[row_idx, 0] + beta, 1))
+
+
+@model
+class SeparatedAdvancedIndexPredictor:
+    """Model with a scalar index before a slice and a data index after it."""
+
+    x = Data.array(rank=3)
+    group_idx = Data.vector()
+    theta = Param(Normal(0, 1))
+    y = Observed(Normal(theta + x[0, :, group_idx][3, :], 1))
+
+
+@model
 class IndexedNormal:
     """Hierarchical normal with data-indexed group effects."""
 
@@ -452,6 +484,68 @@ def test_compiled_log_density_evaluates_data_expressions() -> None:
 
     expected = prior_lp + obs_lp
     assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_matrix_column_indexing() -> None:
+    x_data = jnp.array([[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]])
+    y_data = jnp.array([2.0, 2.7, 4.1])
+    bound = bind_model(MatrixColumnPredictor, x=x_data, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    q = jnp.array([1.0, 0.75])
+    actual = log_prob(q)
+
+    expected = normal_log_prob(jnp.array(1.0), jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(jnp.array(0.75), jnp.array(0.0), jnp.array(1.0))
+    expected += jnp.sum(normal_log_prob(y_data, 1.0 + 0.75 * x_data[:, 0], jnp.array(1.0)))
+
+    assert jnp.allclose(actual, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_row_and_data_tuple_indexing() -> None:
+    x_data = jnp.array([[1.0, 10.0, 100.0], [2.0, 20.0, 200.0]])
+    row_idx = jnp.array([0, 1, 0])
+    y_data = jnp.array([2.5, 22.5, 101.5])
+    bound = bind_model(MatrixRowAndDataIndexPredictor, n_obs=3, x=x_data, row_idx=row_idx, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    beta = jnp.array([0.5, -0.25, 0.75])
+    actual = log_prob(beta)
+
+    expected = jnp.sum(normal_log_prob(beta, jnp.array(0.0), jnp.array(1.0)))
+    expected += jnp.sum(
+        normal_log_prob(y_data, x_data[0, :] + x_data[row_idx, 0] + beta, jnp.array(1.0))
+    )
+
+    assert jnp.allclose(actual, expected, atol=1e-6)
+
+
+def test_bind_rejects_out_of_bounds_second_axis_tuple_indexing() -> None:
+    @model
+    class BadColumnIndex:
+        x = Data.matrix()
+        theta = Param(Normal(0, 1))
+        y = Observed(Normal(theta + x[:, 2], 1))
+
+    with pytest.raises(ValueError, match="axis 1"):
+        bind_model(BadColumnIndex, x=jnp.ones((3, 2)), y=jnp.ones(3))
+
+
+def test_compiled_log_density_evaluates_separated_scalar_slice_data_indexing() -> None:
+    x_data = jnp.arange(30.0).reshape((2, 3, 5))
+    group_idx = jnp.array([0, 2, 4, 1])
+    y_data = jnp.array([1.0, 4.0, 7.0])
+    bound = bind_model(SeparatedAdvancedIndexPredictor, x=x_data, group_idx=group_idx, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    theta = jnp.array(0.25)
+    actual = log_prob(jnp.array([theta]))
+
+    expected = normal_log_prob(theta, jnp.array(0.0), jnp.array(1.0))
+    expected += jnp.sum(
+        normal_log_prob(y_data, theta + x_data[0, :, group_idx][3, :], jnp.array(1.0))
+    )
+    assert jnp.allclose(actual, expected, atol=1e-6)
 
 
 def test_compiled_log_density_evaluates_unary_negation_expression() -> None:

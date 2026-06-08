@@ -40,11 +40,24 @@ def assert_no_final_expr_nodes(value: object) -> None:
         assert_no_final_expr_nodes(value.right)
     elif isinstance(value, DeferredIndexOp):
         assert_no_final_expr_nodes(value.base)
-        assert_no_final_expr_nodes(value.index)
+        assert_no_final_index_nodes(value.index)
     elif isinstance(value, DeferredUnaryOp):
         assert_no_final_expr_nodes(value.operand)
     else:
         assert isinstance(value, Param | Data | int | float)
+
+
+def assert_no_final_index_nodes(value: object) -> None:
+    """Deferred indexes may contain raw Python tuple/slice syntax only before resolution."""
+    assert not isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp)
+
+    if isinstance(value, tuple):
+        for item in value:
+            assert_no_final_index_nodes(item)
+    elif isinstance(value, slice):
+        assert value == slice(None, None, None)
+    else:
+        assert_no_final_expr_nodes(value)
 
 
 def test_declaration_arithmetic_captures_deferred_syntax_not_final_expr_tree() -> None:
@@ -126,6 +139,16 @@ def test_declaration_indexing_and_reverse_ops_stay_deferred() -> None:
     assert beta_plus_two.op == "+"
     assert beta_plus_two.left is beta
     assert beta_plus_two.right == 2.0
+
+
+def test_declaration_tuple_indexing_stays_deferred_until_resolution() -> None:
+    x = Data.matrix()
+
+    indexed = as_deferred_index(x[:, 0])
+
+    assert indexed.base is x
+    assert indexed.index == (slice(None, None, None), 0)
+    assert_no_final_expr_nodes(indexed)
 
 
 def test_declaration_resolution_rejects_unsupported_deferred_operands() -> None:

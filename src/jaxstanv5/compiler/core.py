@@ -17,8 +17,12 @@ from jaxstanv5.model.expr import (
     ConstNode,
     DataRef,
     ExprNode,
+    FullSlice,
     IndexOp,
+    IndexSpec,
+    IndexTuple,
     ParamRef,
+    ScalarIndex,
     UnaryOp,
     VectorScatterOp,
 )
@@ -35,6 +39,26 @@ _UNARY_FUNCTIONS: dict[str, Callable[[jax.Array], jax.Array]] = {
     "neg": jnp.negative,
     "sigmoid": jax.nn.sigmoid,
 }
+
+type EvaluatedIndexAtom = jax.Array | slice
+type EvaluatedIndex = EvaluatedIndexAtom | tuple[EvaluatedIndexAtom, ...]
+
+
+def _evaluate_index_spec(spec: IndexSpec, values: dict[str, jax.Array]) -> EvaluatedIndex:
+    """Evaluate explicit index IR to a JAX-compatible index object."""
+    if isinstance(spec, ScalarIndex):
+        return _evaluate_expr(spec.expr, values)
+    if isinstance(spec, FullSlice):
+        return slice(None)
+    if isinstance(spec, IndexTuple):
+        items: list[EvaluatedIndexAtom] = []
+        for item in spec.items:
+            evaluated = _evaluate_index_spec(item, values)
+            if isinstance(evaluated, tuple):
+                raise TypeError("Nested index tuples are not supported")
+            items.append(evaluated)
+        return tuple(items)
+    raise TypeError(f"Cannot evaluate index spec: {type(spec).__name__}")
 
 
 def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
@@ -60,7 +84,7 @@ def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
         return function(operand)
     if isinstance(node, IndexOp):
         base = _evaluate_expr(node.base, values)
-        index = _evaluate_expr(node.index, values)
+        index = _evaluate_index_spec(node.index, values)
         return base[index]
     if isinstance(node, VectorScatterOp):
         observed_idx = _evaluate_expr(node.observed_idx, values)

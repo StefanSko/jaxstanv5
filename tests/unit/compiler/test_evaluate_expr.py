@@ -9,8 +9,11 @@ from jaxstanv5.model.expr import (
     BinOp,
     ConstNode,
     DataRef,
+    FullSlice,
     IndexOp,
+    IndexTuple,
     ParamRef,
+    ScalarIndex,
     UnaryOp,
     VectorScatterOp,
 )
@@ -79,20 +82,53 @@ def test_unary_negation() -> None:
 
 
 def test_index_op() -> None:
-    node = IndexOp(ParamRef("arr"), ConstNode(0))
+    node = IndexOp(ParamRef("arr"), ScalarIndex(ConstNode(0)))
     values = {"arr": jnp.array([10, 20, 30])}
     result = _evaluate_expr(node, values)
     assert jnp.allclose(result, jnp.array(10))
 
 
 def test_index_op_with_data_index() -> None:
-    node = IndexOp(ParamRef("alpha"), DataRef("idx"))
+    node = IndexOp(ParamRef("alpha"), ScalarIndex(DataRef("idx")))
     values = {
         "alpha": jnp.array([0.1, 0.2, 0.3]),
         "idx": jnp.array([0, 2]),
     }
     result = _evaluate_expr(node, values)
     assert jnp.allclose(result, jnp.array([0.1, 0.3]))
+
+
+def test_index_op_with_matrix_column_tuple_index() -> None:
+    node = IndexOp(DataRef("x"), IndexTuple((FullSlice(), ScalarIndex(ConstNode(0)))))
+    values = {"x": jnp.array([[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]])}
+
+    result = _evaluate_expr(node, values)
+
+    assert jnp.allclose(result, jnp.array([1.0, 2.0, 3.0]))
+
+
+def test_index_op_with_matrix_row_tuple_index() -> None:
+    node = IndexOp(DataRef("x"), IndexTuple((ScalarIndex(ConstNode(1)), FullSlice())))
+    values = {"x": jnp.array([[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]])}
+
+    result = _evaluate_expr(node, values)
+
+    assert jnp.allclose(result, jnp.array([2.0, 20.0]))
+
+
+def test_index_op_with_data_and_static_tuple_index() -> None:
+    node = IndexOp(
+        DataRef("x"),
+        IndexTuple((ScalarIndex(DataRef("row_idx")), ScalarIndex(ConstNode(1)))),
+    )
+    values = {
+        "x": jnp.array([[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]]),
+        "row_idx": jnp.array([0, 2]),
+    }
+
+    result = _evaluate_expr(node, values)
+
+    assert jnp.allclose(result, jnp.array([10.0, 30.0]))
 
 
 def test_vector_scatter_op_assembles_fixed_and_free_coordinates() -> None:

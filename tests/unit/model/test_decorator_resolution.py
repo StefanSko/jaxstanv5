@@ -18,7 +18,17 @@ from jaxstanv5.model.decorator import (
     _resolve_declaration_size,
     _resolve_declarations,
 )
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
+from jaxstanv5.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    FullSlice,
+    IndexOp,
+    IndexTuple,
+    ParamRef,
+    ScalarIndex,
+    UnaryOp,
+)
 
 
 class NormalFields(Protocol):
@@ -121,9 +131,36 @@ def test_resolve_declaration_expr_builds_final_tree_recursively() -> None:
 
     assert resolved == BinOp(
         "+",
-        IndexOp(ParamRef("alpha"), DataRef("group_idx")),
+        IndexOp(ParamRef("alpha"), ScalarIndex(DataRef("group_idx"))),
         ConstNode(1.5),
     )
+
+
+def test_resolve_declaration_expr_normalizes_tuple_and_slice_indexes() -> None:
+    x = Data.matrix()
+    group_idx = Data.vector()
+    expr = x[:, 0] + x[group_idx, 1]
+
+    resolved = _resolve_declaration_expr(
+        expr,
+        {x.symbol: "x", group_idx.symbol: "group_idx"},
+    )
+
+    assert resolved == BinOp(
+        "+",
+        IndexOp(DataRef("x"), IndexTuple((FullSlice(), ScalarIndex(ConstNode(0))))),
+        IndexOp(
+            DataRef("x"),
+            IndexTuple((ScalarIndex(DataRef("group_idx")), ScalarIndex(ConstNode(1)))),
+        ),
+    )
+
+
+def test_resolve_declaration_expr_rejects_partial_slices() -> None:
+    x = Data.matrix()
+
+    with pytest.raises(TypeError, match="Only full slices"):
+        _resolve_declaration_expr(x[1:3, 0], {x.symbol: "x"})
 
 
 def test_resolve_declaration_expr_handles_unary_negation() -> None:
