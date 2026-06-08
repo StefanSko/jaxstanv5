@@ -139,7 +139,7 @@ def _empty_sampler_diagnostics(
     num_warmup: int,
     num_samples: int,
 ) -> SamplerDiagnostics:
-    """Return placeholder diagnostics for parameterless models."""
+    """Return placeholder diagnostics for models with no NUTS coordinates."""
     return SamplerDiagnostics(
         warmup=_empty_diagnostic_trace((num_chains, num_warmup)),
         sampling=_empty_diagnostic_trace((num_chains, num_samples)),
@@ -162,6 +162,16 @@ def _validate_sampler_counts(
     _validate_positive_count(num_chains, name="num_chains")
     _validate_positive_count(num_warmup, name="num_warmup")
     _validate_positive_count(num_samples, name="num_samples")
+
+
+def _empty_unconstrained_samples(
+    shapes: dict[str, tuple[int, ...]],
+    *,
+    num_chains: int,
+    num_samples: int,
+) -> dict[str, jax.Array]:
+    """Return empty sample arrays for declared zero-sized free values."""
+    return {name: jnp.zeros((num_chains, num_samples, *shape)) for name, shape in shapes.items()}
 
 
 def _unflatten_samples(
@@ -320,8 +330,13 @@ class CompiledSampler:
             num_samples=num_samples,
         )
         if self._bound.n_params == 0:
+            unconstrained = _empty_unconstrained_samples(
+                self._bound.param_shapes,
+                num_chains=num_chains,
+                num_samples=num_samples,
+            )
             return SamplerResult(
-                samples={},
+                samples=_constrain_sample_values(unconstrained, self._bound.meta),
                 diagnostics=_empty_sampler_diagnostics(
                     num_chains=num_chains,
                     num_warmup=num_warmup,

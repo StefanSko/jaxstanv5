@@ -5,7 +5,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 from _helpers import bind_model
 
-from jaxstanv5 import Observed, Param, model
+from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.diagnostics import ess, rhat
 from jaxstanv5.distributions import Normal
 from jaxstanv5.inference import compile_sampler, sample
@@ -17,6 +17,14 @@ class SimpleNormal:
 
     mu = Param(Normal(0, 1))
     y = Observed(Normal(mu, 1))
+
+
+@model
+class EmptyVectorPrior:
+    """Prior-only model with a data-dependent zero-sized parameter."""
+
+    n = Data.scalar()
+    theta = Param(Normal(0, 1), size=n)
 
 
 def test_simple_normal_sampling_returns_finite_samples_and_diagnostics() -> None:
@@ -78,3 +86,18 @@ def test_compiled_sampler_reuses_bound_model_for_multiple_runs() -> None:
     assert jnp.all(jnp.isfinite(second.samples["mu"]))
     assert jnp.all(jnp.isfinite(multi_chain.samples["mu"]))
     assert not jnp.allclose(multi_chain.samples["mu"][0], multi_chain.samples["mu"][1])
+
+
+def test_sampling_preserves_data_dependent_zero_sized_parameter() -> None:
+    bound = bind_model(EmptyVectorPrior, n=0)
+
+    result = sample(bound, seed=1, num_warmup=2, num_samples=3)
+
+    assert bound.param_shapes == {"theta": (0,)}
+    assert bound.n_params == 0
+    assert set(result.samples) == {"theta"}
+    assert result.samples["theta"].shape == (1, 3, 0)
+    assert result.diagnostics.warmup.is_divergent.shape == (1, 2)
+    assert result.diagnostics.sampling.is_divergent.shape == (1, 3)
+    assert not jnp.any(result.diagnostics.warmup.is_divergent)
+    assert not jnp.any(result.diagnostics.sampling.is_divergent)
