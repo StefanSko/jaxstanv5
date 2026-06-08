@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from jaxstanv5.constraints.core import Constraint
+from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
 from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
 from jaxstanv5.model._data_schema import (
     DataDimRef,
@@ -785,6 +786,7 @@ def _resolve_declaration_distribution(
 ) -> Distribution:
     """Resolve symbolic distribution fields into final expression nodes."""
     if not is_dataclass(distribution) or isinstance(distribution, type):
+        reject_opaque_symbolic_distribution(distribution)
         return distribution
     resolved = {
         distribution_field.name: _resolve_declaration_distribution_field(
@@ -805,6 +807,7 @@ def _resolve_declaration_distribution_field(value: object, symbols: SymbolTable)
         return _resolve_declaration_distribution(cast(Distribution, value), symbols)
     if is_non_scalar_array_like_constant(value):
         raise non_scalar_distribution_parameter_error()
+    reject_opaque_symbolic_distribution(value)
     return value
 
 

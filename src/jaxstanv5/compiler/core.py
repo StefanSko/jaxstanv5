@@ -9,6 +9,7 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 
+from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
 from jaxstanv5.distributions.core import Distribution
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values, _resolved_stochastic_sites
@@ -111,6 +112,7 @@ def _evaluate_distribution[DistributionT: Distribution](
 ) -> DistributionT:
     """Evaluate expression fields in a distribution to concrete JAX arrays."""
     if not is_dataclass(distribution) or isinstance(distribution, type):
+        reject_opaque_symbolic_distribution(distribution)
         return distribution
 
     resolved: dict[str, object] = {}
@@ -121,6 +123,7 @@ def _evaluate_distribution[DistributionT: Distribution](
         elif is_dataclass(val) and not isinstance(val, type):
             resolved[f.name] = _evaluate_distribution(val, values)
         else:
+            reject_opaque_symbolic_distribution(val)
             resolved[f.name] = val
 
     return cast(DistributionT, type(distribution)(**resolved))

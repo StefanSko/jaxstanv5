@@ -8,7 +8,7 @@ from typing import Protocol, cast
 import pytest
 
 from jaxstanv5.distributions import Binomial, Normal, Poisson
-from jaxstanv5.distributions.core import DistributionParameter
+from jaxstanv5.distributions.core import DistributionParameter, DistributionValue, LogProbability
 from jaxstanv5.math import exp, sigmoid
 from jaxstanv5.model.core import Data, Observed, Param
 from jaxstanv5.model.decorator import (
@@ -67,6 +67,15 @@ def binomial_fields(value: object) -> BinomialFields:
 @dataclass(frozen=True)
 class UnknownExpr:
     value: object
+
+
+@dataclass(frozen=True)
+class CustomShiftedNormal:
+    loc: DistributionParameter
+    scale: DistributionParameter
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return Normal(self.loc, self.scale).log_prob(x)
 
 
 def test_resolve_declarations_resolves_param_data_and_observed_inventory() -> None:
@@ -216,6 +225,19 @@ def test_distribution_resolution_handles_symbolic_fields() -> None:
 
     assert resolved_dist.loc == BinOp("+", ParamRef("alpha"), DataRef("x"))
     assert resolved_dist.scale == ConstNode(2.0)
+
+
+def test_distribution_resolution_handles_custom_dataclass_symbolic_fields() -> None:
+    alpha = Param(Normal(0.0, 1.0))
+
+    resolved = _resolve_declaration_distribution(
+        CustomShiftedNormal(dist_param(alpha), 1.0),
+        {alpha.symbol: "alpha"},
+    )
+
+    assert isinstance(resolved, CustomShiftedNormal)
+    assert resolved.loc == ParamRef("alpha")
+    assert resolved.scale == ConstNode(1.0)
 
 
 def test_distribution_resolution_handles_symbolic_unary_function_fields() -> None:
