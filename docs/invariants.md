@@ -69,6 +69,8 @@ Core invariants that should remain true as the codebase changes.
   must be at least 1 and are validated before backend execution.
 - Sampling result arrays have shape `(num_chains, num_samples, *param_shape)`,
   including declared zero-sized free values.
+- `rhat(...)` and `ess(...)` omit zero-sized sample arrays because they have no
+  scalar coordinates to reduce.
 - NUTS diagnostics are recorded separately for warmup and post-warmup sampling.
 - Diagnostic arrays have shape `(num_chains, num_steps)`, where `num_steps` is
   `num_warmup` for warmup diagnostics and `num_samples` for sampling diagnostics.

@@ -101,3 +101,5 @@ def test_sampling_preserves_data_dependent_zero_sized_parameter() -> None:
     assert result.diagnostics.sampling.is_divergent.shape == (1, 3)
     assert not jnp.any(result.diagnostics.warmup.is_divergent)
     assert not jnp.any(result.diagnostics.sampling.is_divergent)
+    assert rhat(result.samples) == {}
+    assert ess(result.samples) == {}
