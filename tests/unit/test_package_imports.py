@@ -9,3 +9,12 @@ def test_package_imports() -> None:
 
     # Sanity: __init__ should not leak random names
     assert hasattr(jaxstanv5, "__all__")
+
+
+def test_compiler_exports_compile_log_density() -> None:
+    import jaxstanv5.compiler as compiler
+    from jaxstanv5.compiler import compile_log_density
+    from jaxstanv5.compiler.core import compile_log_density as core_compile_log_density
+
+    assert compile_log_density is core_compile_log_density
+    assert compiler.__all__ == ["compile_log_density"]
