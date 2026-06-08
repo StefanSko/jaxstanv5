@@ -55,7 +55,8 @@ sampling_divergences = result.diagnostics.sampling.is_divergent
 
 `result.samples` maps parameter names to JAX arrays with shape
 `(num_chains, num_samples, *param_shape)`. The leading dimension is the chain
-dimension. If `num_chains` is omitted, sampling defaults to one chain.
+dimension. Zero-sized declared parameters are preserved with their zero-length
+parameter axis. If `num_chains` is omitted, sampling defaults to one chain.
 
 `result.diagnostics` records NUTS diagnostics for warmup and post-warmup
 sampling. Diagnostic arrays have shape `(num_chains, num_steps)`. `num_warmup`

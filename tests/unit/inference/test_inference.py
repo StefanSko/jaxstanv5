@@ -169,3 +169,27 @@ def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None
     assert not jnp.any(result.diagnostics.sampling.is_divergent)
     assert jnp.all(jnp.isnan(result.diagnostics.warmup.acceptance_rate))
     assert jnp.all(jnp.isnan(result.diagnostics.sampling.acceptance_rate))
+
+
+def test_compiled_sampler_preserves_zero_sized_parameter_results() -> None:
+    meta = ModelMeta(
+        params={"theta": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, 0)},
+        data={},
+        observed_nodes=(),
+        expressions={},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={},
+        param_shapes={"theta": (0,)},
+        n_params=0,
+    )
+
+    compiled = compile_sampler(bound)
+
+    result = compiled.sample(seed=0, num_warmup=2, num_samples=3, num_chains=4)
+
+    assert set(result.samples) == {"theta"}
+    assert result.samples["theta"].shape == (4, 3, 0)
+    assert result.diagnostics.warmup.is_divergent.shape == (4, 2)
+    assert result.diagnostics.sampling.is_divergent.shape == (4, 3)

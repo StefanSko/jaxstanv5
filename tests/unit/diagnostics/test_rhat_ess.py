@@ -65,6 +65,19 @@ def test_ess_multi_param() -> None:
     assert all(v > 0 for v in result.values())
 
 
+def test_rhat_and_ess_skip_zero_sized_parameters() -> None:
+    key = jax.random.PRNGKey(4)
+    key1, key2 = jax.random.split(key)
+    n = 100
+    samples = {
+        "empty": jnp.zeros((2, n, 0)),
+        "mu": jnp.stack([jax.random.normal(key1, (n,)), jax.random.normal(key2, (n,))]),
+    }
+
+    assert set(rhat(samples)) == {"mu"}
+    assert set(ess(samples)) == {"mu"}
+
+
 def test_rhat_single_chain_splits_internally() -> None:
     """Single chain (1, N) is split in half before computing rhat."""
     key = jax.random.PRNGKey(5)
