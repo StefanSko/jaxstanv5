@@ -9,12 +9,24 @@ import pytest
 
 from jaxstanv5 import model
 from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
+from jaxstanv5.distributions.core import DistributionParameter, DistributionValue, LogProbability
 from jaxstanv5.model.core import Data, Observed, Param, PartiallyObserved
 from jaxstanv5.model.decorator import _resolve_model_declaration
 
 
 def param_size(value: object) -> Data | int | None:
     return cast(Data | int | None, value)
+
+
+class OpaqueShiftedNormal:
+    """Non-dataclass distribution used to test declaration validation."""
+
+    def __init__(self, loc: DistributionParameter, scale: DistributionParameter) -> None:
+        self.loc = loc
+        self.scale = scale
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return Normal(self.loc, self.scale).log_prob(x)
 
 
 def test_bare_data_declaration_is_rejected_with_schema_guidance() -> None:
@@ -67,6 +79,20 @@ def test_model_declaration_rejects_hidden_non_scalar_distribution_parameters() -
     assert "Data.vector" in message
     assert "bind(...)" in message
     assert "ArrayImpl" not in message
+
+
+def test_model_declaration_rejects_opaque_symbolic_distribution_parameters() -> None:
+    with pytest.raises(TypeError) as exc_info:
+
+        @model
+        class OpaqueSymbolicDistributionField:
+            mu = Param(Normal(0.0, 1.0))
+            y = Observed(OpaqueShiftedNormal(mu, 1.0))
+
+    message = str(exc_info.value)
+    assert "Custom distributions with symbolic parameters must be dataclasses" in message
+    assert "OpaqueShiftedNormal" in message
+    assert "@dataclass" in message
 
 
 def test_partially_observed_vector_rejects_rank_only_missing_index_schema() -> None:

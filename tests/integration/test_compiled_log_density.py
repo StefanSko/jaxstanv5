@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
@@ -22,7 +23,19 @@ from jaxstanv5.distributions import (
     OrderedLogistic,
     Poisson,
 )
+from jaxstanv5.distributions.core import DistributionParameter, DistributionValue, LogProbability
 from jaxstanv5.math import exp, sigmoid
+
+
+@dataclass(frozen=True)
+class CustomShiftedNormal:
+    """Custom dataclass distribution with symbolic declaration fields."""
+
+    loc: DistributionParameter
+    scale: DistributionParameter
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return Normal(self.loc, self.scale).log_prob(x)
 
 
 @model
@@ -105,6 +118,14 @@ class SeparatedAdvancedIndexPredictor:
     group_idx = Data.vector()
     theta = Param(Normal(0, 1))
     y = Observed(Normal(theta + x[0, :, group_idx][3, :], 1))
+
+
+@model
+class CustomDataclassDistributionDensity:
+    """Model using a custom dataclass distribution with symbolic fields."""
+
+    mu = Param(Normal(0, 1))
+    y = Observed(CustomShiftedNormal(mu, 1.0))
 
 
 @model
@@ -305,6 +326,18 @@ def test_compiled_log_density_evaluates_unary_expression_likelihood_fields() -> 
         y_data * jnp.log(rate) - rate - jnp.asarray([0.0, math.log(2.0), math.log(6.0)])
     )
     assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_custom_dataclass_distribution_fields() -> None:
+    bound = bind_model(CustomDataclassDistributionDensity, y=jnp.array(0.25))
+    log_prob = compile_log_density(bound)
+
+    mu = jnp.array(0.1)
+    actual = log_prob(jnp.array([mu]))
+
+    expected = normal_log_prob(mu, jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(jnp.array(0.25), mu, jnp.array(1.0))
+    assert jnp.allclose(actual, expected, atol=1e-6)
 
 
 def test_compiled_log_density_evaluates_sigmoid_binomial_likelihood_fields() -> None:

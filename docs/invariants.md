@@ -34,6 +34,9 @@ Core invariants that should remain true as the codebase changes.
   non-scalar inputs must be represented explicitly as shaped `Data` declarations.
 - Non-scalar fixed distribution parameters in model declarations are invalid;
   they must enter through named `Data` declarations.
+- Distributions with symbolic declaration parameters must expose those fields as
+  dataclass fields. Opaque non-dataclass distributions may contain only concrete
+  parameters.
 - Raw JAX/NumPy functions are not declaration-language operations; supported
   symbolic math functions cross the declaration boundary through explicit helper
   nodes.

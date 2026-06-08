@@ -4,11 +4,28 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from jaxstanv5.compiler.core import _evaluate_distribution
 from jaxstanv5.distributions import Binomial, Normal, Poisson
-from jaxstanv5.distributions.core import _concrete_parameter
+from jaxstanv5.distributions.core import (
+    DistributionParameter,
+    DistributionValue,
+    LogProbability,
+    _concrete_parameter,
+)
 from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ParamRef, UnaryOp
+
+
+class OpaqueShiftedNormal:
+    """Non-dataclass distribution used to test defensive evaluation validation."""
+
+    def __init__(self, loc: DistributionParameter, scale: DistributionParameter) -> None:
+        self.loc = loc
+        self.scale = scale
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return Normal(self.loc, self.scale).log_prob(x)
 
 
 def test_scalar_fields_pass_through() -> None:
@@ -19,6 +36,14 @@ def test_scalar_fields_pass_through() -> None:
     assert isinstance(result, Normal)
     assert jnp.allclose(_concrete_parameter(result.loc), jnp.array(0.0))
     assert jnp.allclose(_concrete_parameter(result.scale), jnp.array(1.0))
+
+
+def test_concrete_non_dataclass_distribution_passes_through() -> None:
+    dist = OpaqueShiftedNormal(0.0, 1.0)
+
+    result = _evaluate_distribution(dist, {})
+
+    assert result is dist
 
 
 def test_const_node_fields() -> None:
@@ -94,3 +119,14 @@ def test_log_prob_works_on_evaluated_distribution() -> None:
     lp = evaluated.log_prob(jnp.array(2.0))
     assert lp.shape == ()
     assert jnp.isfinite(lp)
+
+
+def test_evaluate_distribution_rejects_opaque_symbolic_distribution_parameters() -> None:
+    dist = OpaqueShiftedNormal(ParamRef("mu"), 1.0)
+
+    with pytest.raises(TypeError) as exc_info:
+        _evaluate_distribution(dist, {"mu": jnp.array(0.5)})
+
+    message = str(exc_info.value)
+    assert "Custom distributions with symbolic parameters must be dataclasses" in message
+    assert "OpaqueShiftedNormal" in message
