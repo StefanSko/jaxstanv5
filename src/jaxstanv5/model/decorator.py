@@ -489,8 +489,12 @@ def _infer_indexed_shape(
 
     axis = 0
     non_scalar_index_count = 0
+    non_scalar_index_position: int | None = None
+    non_scalar_output_start: int | None = None
+    non_scalar_output_ndim = 0
+    scalar_index_positions: list[int] = []
     result_shape: list[int] = []
-    for item in items:
+    for position, item in enumerate(items):
         if axis >= len(base_shape):
             raise ValueError(f"Too many index items for expression with rank {len(base_shape)}")
         if isinstance(item, FullSlice):
@@ -498,10 +502,15 @@ def _infer_indexed_shape(
         elif isinstance(item, ScalarIndex):
             index_value = _evaluate_data_index_expr(item.expr, data)
             _validate_index_value(index_value, base_shape[axis], axis=axis)
-            if index_value.ndim > 0:
+            if index_value.ndim == 0:
+                scalar_index_positions.append(position)
+            else:
                 non_scalar_index_count += 1
                 if non_scalar_index_count > 1:
                     raise TypeError("Index tuples support at most one non-scalar index expression")
+                non_scalar_index_position = position
+                non_scalar_output_start = len(result_shape)
+                non_scalar_output_ndim = len(index_value.shape)
                 result_shape.extend(index_value.shape)
         elif isinstance(item, IndexTuple):
             raise TypeError("Nested index tuples are not supported")
@@ -510,7 +519,37 @@ def _infer_indexed_shape(
         axis += 1
 
     result_shape.extend(base_shape[axis:])
+    if _advanced_index_shape_moves_to_front(
+        items,
+        scalar_index_positions=tuple(scalar_index_positions),
+        non_scalar_index_position=non_scalar_index_position,
+    ):
+        if non_scalar_output_start is None:
+            raise TypeError("Cannot move missing non-scalar index shape")
+        non_scalar_output_stop = non_scalar_output_start + non_scalar_output_ndim
+        return tuple(
+            result_shape[non_scalar_output_start:non_scalar_output_stop]
+            + result_shape[:non_scalar_output_start]
+            + result_shape[non_scalar_output_stop:]
+        )
     return tuple(result_shape)
+
+
+def _advanced_index_shape_moves_to_front(
+    items: tuple[IndexSpec, ...],
+    *,
+    scalar_index_positions: tuple[int, ...],
+    non_scalar_index_position: int | None,
+) -> bool:
+    """Return whether NumPy/JAX moves the lone array index shape to the front."""
+    if non_scalar_index_position is None:
+        return False
+    for scalar_position in scalar_index_positions:
+        start = min(scalar_position, non_scalar_index_position) + 1
+        stop = max(scalar_position, non_scalar_index_position)
+        if any(isinstance(items[position], FullSlice) for position in range(start, stop)):
+            return True
+    return False
 
 
 def _index_spec_items(spec: IndexSpec) -> tuple[IndexSpec, ...]:

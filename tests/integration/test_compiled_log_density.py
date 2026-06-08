@@ -98,6 +98,16 @@ class MatrixRowAndDataIndexPredictor:
 
 
 @model
+class SeparatedAdvancedIndexPredictor:
+    """Model with a scalar index before a slice and a data index after it."""
+
+    x = Data.array(rank=3)
+    group_idx = Data.vector()
+    theta = Param(Normal(0, 1))
+    y = Observed(Normal(theta + x[0, :, group_idx][3, :], 1))
+
+
+@model
 class IndexedNormal:
     """Hierarchical normal with data-indexed group effects."""
 
@@ -519,6 +529,23 @@ def test_bind_rejects_out_of_bounds_second_axis_tuple_indexing() -> None:
 
     with pytest.raises(ValueError, match="axis 1"):
         bind_model(BadColumnIndex, x=jnp.ones((3, 2)), y=jnp.ones(3))
+
+
+def test_compiled_log_density_evaluates_separated_scalar_slice_data_indexing() -> None:
+    x_data = jnp.arange(30.0).reshape((2, 3, 5))
+    group_idx = jnp.array([0, 2, 4, 1])
+    y_data = jnp.array([1.0, 4.0, 7.0])
+    bound = bind_model(SeparatedAdvancedIndexPredictor, x=x_data, group_idx=group_idx, y=y_data)
+    log_prob = compile_log_density(bound)
+
+    theta = jnp.array(0.25)
+    actual = log_prob(jnp.array([theta]))
+
+    expected = normal_log_prob(theta, jnp.array(0.0), jnp.array(1.0))
+    expected += jnp.sum(
+        normal_log_prob(y_data, theta + x_data[0, :, group_idx][3, :], jnp.array(1.0))
+    )
+    assert jnp.allclose(actual, expected, atol=1e-6)
 
 
 def test_compiled_log_density_evaluates_unary_negation_expression() -> None:
