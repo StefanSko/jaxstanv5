@@ -42,6 +42,19 @@ class SlottedOpaqueShiftedNormal:
         return Normal(self.loc, self.scale).log_prob(x)
 
 
+class PrivateSlottedOpaqueShiftedNormal:
+    """Slotted distribution whose symbolic field uses Python name mangling."""
+
+    __slots__ = ("__loc", "scale")
+
+    def __init__(self, loc: DistributionParameter, scale: DistributionParameter) -> None:
+        self.__loc = loc
+        self.scale = scale
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return Normal(self.__loc, self.scale).log_prob(x)
+
+
 def test_bare_data_declaration_is_rejected_with_schema_guidance() -> None:
     with pytest.raises(TypeError, match="Data.scalar"):
         Data()
@@ -119,6 +132,21 @@ def test_model_declaration_rejects_slotted_opaque_symbolic_distribution_paramete
     message = str(exc_info.value)
     assert "Custom distributions with symbolic parameters must be dataclasses" in message
     assert "SlottedOpaqueShiftedNormal" in message
+
+
+def test_model_declaration_rejects_private_slotted_opaque_symbolic_distribution_parameters() -> (
+    None
+):
+    with pytest.raises(TypeError) as exc_info:
+
+        @model
+        class PrivateSlottedOpaqueSymbolicDistributionField:
+            mu = Param(Normal(0.0, 1.0))
+            y = Observed(PrivateSlottedOpaqueShiftedNormal(mu, 1.0))
+
+    message = str(exc_info.value)
+    assert "Custom distributions with symbolic parameters must be dataclasses" in message
+    assert "PrivateSlottedOpaqueShiftedNormal" in message
 
 
 def test_partially_observed_vector_rejects_rank_only_missing_index_schema() -> None:

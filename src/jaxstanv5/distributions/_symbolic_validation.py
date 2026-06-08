@@ -85,12 +85,20 @@ def _object_slot_names(value: object) -> tuple[str, ...]:
     for cls in type(value).__mro__:
         raw_slots = getattr(cls, "__slots__", ())
         if isinstance(raw_slots, str):
-            _append_slot_name(names, raw_slots)
+            _append_slot_name(names, _slot_attribute_name(cls, raw_slots))
         elif isinstance(raw_slots, Iterable):
             for raw_name in raw_slots:
                 if isinstance(raw_name, str):
-                    _append_slot_name(names, raw_name)
+                    _append_slot_name(names, _slot_attribute_name(cls, raw_name))
     return tuple(names)
+
+
+def _slot_attribute_name(cls: type[object], name: str) -> str:
+    if name.startswith("__") and not name.endswith("__"):
+        class_name = cls.__name__.lstrip("_")
+        if class_name:
+            return f"_{class_name}{name}"
+    return name
 
 
 def _append_slot_name(names: list[str], name: str) -> None:
