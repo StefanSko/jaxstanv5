@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import fields, is_dataclass
 
 from jaxstanv5.distributions.core import SymbolicDistributionParameter
@@ -63,4 +63,38 @@ def _object_attributes(value: object) -> Mapping[str, object] | None:
     attributes = getattr(value, "__dict__", None)
     if isinstance(attributes, Mapping):
         return attributes
-    return None
+    return _slotted_object_attributes(value)
+
+
+def _slotted_object_attributes(value: object) -> dict[str, object] | None:
+    slot_names = _object_slot_names(value)
+    if not slot_names:
+        return None
+
+    attributes: dict[str, object] = {}
+    for name in slot_names:
+        try:
+            attributes[name] = getattr(value, name)
+        except AttributeError:
+            continue
+    return attributes
+
+
+def _object_slot_names(value: object) -> tuple[str, ...]:
+    names: list[str] = []
+    for cls in type(value).__mro__:
+        raw_slots = getattr(cls, "__slots__", ())
+        if isinstance(raw_slots, str):
+            _append_slot_name(names, raw_slots)
+        elif isinstance(raw_slots, Iterable):
+            for raw_name in raw_slots:
+                if isinstance(raw_name, str):
+                    _append_slot_name(names, raw_name)
+    return tuple(names)
+
+
+def _append_slot_name(names: list[str], name: str) -> None:
+    if name in {"__dict__", "__weakref__"}:
+        return
+    if name not in names:
+        names.append(name)
