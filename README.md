@@ -58,8 +58,9 @@ sampling_divergences = result.diagnostics.sampling.is_divergent
 dimension. If `num_chains` is omitted, sampling defaults to one chain.
 
 `result.diagnostics` records NUTS diagnostics for warmup and post-warmup
-sampling. Diagnostic arrays have shape `(num_chains, num_steps)`. Use
-`target_acceptance_rate` on `sample(...)` to tune the NUTS adaptation target.
+sampling. Diagnostic arrays have shape `(num_chains, num_steps)`. `num_warmup`
+and `num_samples` must both be at least 1. Use `target_acceptance_rate` on
+`sample(...)` to tune the NUTS adaptation target.
 
 ## Model declarations
 

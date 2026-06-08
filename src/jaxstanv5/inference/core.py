@@ -146,6 +146,24 @@ def _empty_sampler_diagnostics(
     )
 
 
+def _validate_positive_count(value: int, *, name: str) -> None:
+    """Validate one public sampler count before entering JAX/BlackJAX."""
+    if value < 1:
+        raise ValueError(f"{name} must be at least 1")
+
+
+def _validate_sampler_counts(
+    *,
+    num_chains: int,
+    num_warmup: int,
+    num_samples: int,
+) -> None:
+    """Validate public sampler loop dimensions."""
+    _validate_positive_count(num_chains, name="num_chains")
+    _validate_positive_count(num_warmup, name="num_warmup")
+    _validate_positive_count(num_samples, name="num_samples")
+
+
 def _unflatten_samples(
     flat: jax.Array,
     shapes: dict[str, tuple[int, ...]],
@@ -296,8 +314,11 @@ class CompiledSampler:
         num_chains: int = 1,
     ) -> SamplerResult:
         """Draw posterior samples with the compiled sampler."""
-        if num_chains < 1:
-            raise ValueError("num_chains must be at least 1")
+        _validate_sampler_counts(
+            num_chains=num_chains,
+            num_warmup=num_warmup,
+            num_samples=num_samples,
+        )
         if self._bound.n_params == 0:
             return SamplerResult(
                 samples={},
@@ -427,6 +448,11 @@ def sample(
     SamplerResult
         Drawn samples per parameter.
     """
+    _validate_sampler_counts(
+        num_chains=num_chains,
+        num_warmup=num_warmup,
+        num_samples=num_samples,
+    )
     return compile_sampler(bound, target_acceptance_rate=target_acceptance_rate).sample(
         seed=seed,
         num_warmup=num_warmup,

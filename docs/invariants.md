@@ -65,6 +65,8 @@ Core invariants that should remain true as the codebase changes.
   parameters are continuous and discrete latent `Param(...)` or
   `PartiallyObserved(...)` declarations are rejected.
 - Sampling returns constrained parameter values.
+- Public sampler count arguments (`num_chains`, `num_warmup`, and `num_samples`)
+  must be at least 1 and are validated before backend execution.
 - Sampling result arrays have shape `(num_chains, num_samples, *param_shape)`.
 - NUTS diagnostics are recorded separately for warmup and post-warmup sampling.
 - Diagnostic arrays have shape `(num_chains, num_steps)`, where `num_steps` is

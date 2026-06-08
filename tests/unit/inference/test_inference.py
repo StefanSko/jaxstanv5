@@ -14,6 +14,7 @@ from jaxstanv5.inference.core import (
     _constrain_sample_values,
     _unflatten_samples,
     compile_sampler,
+    sample,
 )
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
@@ -101,58 +102,63 @@ def test_sampler_result_dataclass() -> None:
     assert r.diagnostics is diagnostics
 
 
-def test_compile_sampler_rejects_invalid_target_acceptance_rate() -> None:
+def parameterless_bound() -> BoundModel:
     meta = ModelMeta(
         params={},
         data={},
         observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
         expressions={},
     )
-    bound = BoundModel(
+    return BoundModel(
         meta=meta,
         data={"y": jnp.array(0.0)},
         param_shapes={},
         n_params=0,
     )
 
+
+def test_compile_sampler_rejects_invalid_target_acceptance_rate() -> None:
     with pytest.raises(ValueError, match="target_acceptance_rate"):
-        compile_sampler(bound, target_acceptance_rate=1.0)
+        compile_sampler(parameterless_bound(), target_acceptance_rate=1.0)
 
 
 def test_sample_rejects_non_positive_chain_count() -> None:
-    meta = ModelMeta(
-        params={},
-        data={},
-        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
-        expressions={},
-    )
-    bound = BoundModel(
-        meta=meta,
-        data={"y": jnp.array(0.0)},
-        param_shapes={},
-        n_params=0,
-    )
-    compiled = compile_sampler(bound)
+    compiled = compile_sampler(parameterless_bound())
 
     with pytest.raises(ValueError, match="num_chains"):
         compiled.sample(seed=0, num_warmup=10, num_samples=10, num_chains=0)
 
 
-def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None:
-    meta = ModelMeta(
-        params={},
-        data={},
-        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
-        expressions={},
-    )
-    bound = BoundModel(
-        meta=meta,
-        data={"y": jnp.array(0.0)},
-        param_shapes={},
-        n_params=0,
-    )
+@pytest.mark.parametrize("num_warmup", [0, -1])
+def test_compiled_sampler_rejects_non_positive_warmup_count(num_warmup: int) -> None:
+    compiled = compile_sampler(parameterless_bound())
 
-    compiled = compile_sampler(bound)
+    with pytest.raises(ValueError, match="num_warmup must be at least 1"):
+        compiled.sample(seed=0, num_warmup=num_warmup, num_samples=10)
+
+
+@pytest.mark.parametrize("num_samples", [0, -1])
+def test_compiled_sampler_rejects_non_positive_sample_count(num_samples: int) -> None:
+    compiled = compile_sampler(parameterless_bound())
+
+    with pytest.raises(ValueError, match="num_samples must be at least 1"):
+        compiled.sample(seed=0, num_warmup=10, num_samples=num_samples)
+
+
+@pytest.mark.parametrize("num_warmup", [0, -1])
+def test_sample_rejects_non_positive_warmup_count(num_warmup: int) -> None:
+    with pytest.raises(ValueError, match="num_warmup must be at least 1"):
+        sample(parameterless_bound(), seed=0, num_warmup=num_warmup, num_samples=10)
+
+
+@pytest.mark.parametrize("num_samples", [0, -1])
+def test_sample_rejects_non_positive_sample_count(num_samples: int) -> None:
+    with pytest.raises(ValueError, match="num_samples must be at least 1"):
+        sample(parameterless_bound(), seed=0, num_warmup=10, num_samples=num_samples)
+
+
+def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None:
+    compiled = compile_sampler(parameterless_bound())
 
     result = compiled.sample(seed=0, num_warmup=10, num_samples=10, num_chains=4)
 
