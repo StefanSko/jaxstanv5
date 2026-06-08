@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import NamedTuple, Protocol, cast
 
 import blackjax
@@ -93,6 +94,19 @@ class _DrawSamples(Protocol):
     ) -> tuple[object, _SampleBlock]: ...
 
 
+class _RunChains(Protocol):
+    """JIT-compiled full run for one static sampler run shape."""
+
+    def __call__(
+        self,
+        rng_key: jax.Array,
+        *,
+        num_chains: int,
+        num_warmup: int,
+        num_samples: int,
+    ) -> _ChainSample: ...
+
+
 @dataclass(frozen=True)
 class SamplerResult:
     """Results of MCMC sampling.
@@ -174,14 +188,11 @@ def _empty_unconstrained_samples(
     return {name: jnp.zeros((num_chains, num_samples, *shape)) for name, shape in shapes.items()}
 
 
-def _unflatten_samples(
+def _unflatten_chain_samples(
     flat: jax.Array,
     shapes: dict[str, tuple[int, ...]],
 ) -> dict[str, jax.Array]:
-    """Split flat (num_samples, n_params) into named arrays with chain dim.
-
-    Returns arrays of shape ``(1, num_samples, *param_shape)``.
-    """
+    """Split flat ``(num_samples, n_params)`` values into named arrays."""
     result: dict[str, jax.Array] = {}
     offset = 0
     for name, shape in shapes.items():
@@ -192,10 +203,23 @@ def _unflatten_samples(
             param = flat[:, offset]
         else:
             param = flat[:, offset : offset + size].reshape(flat.shape[0], *shape)
-        # Add chain dimension: (N,) → (1, N), (N, *shape) → (1, N, *shape)
-        result[name] = jnp.expand_dims(param, axis=0)
+        result[name] = param
         offset += size
     return result
+
+
+def _unflatten_samples(
+    flat: jax.Array,
+    shapes: dict[str, tuple[int, ...]],
+) -> dict[str, jax.Array]:
+    """Split flat (num_samples, n_params) into named arrays with chain dim.
+
+    Returns arrays of shape ``(1, num_samples, *param_shape)``.
+    """
+    return {
+        name: jnp.expand_dims(values, axis=0)
+        for name, values in _unflatten_chain_samples(flat, shapes).items()
+    }
 
 
 def _constrain_sample_values(
@@ -214,90 +238,64 @@ def _constrain_sample_values(
     return result
 
 
-def _sample_one_chain(
+def _compile_run_chains(
     bound: BoundModel,
     warmup_run: _WindowAdaptationRun,
     draw_samples: _DrawSamples,
-    rng_key: jax.Array,
-    *,
-    num_warmup: int,
-    num_samples: int,
-) -> _ChainSample:
-    """Draw one NUTS chain for a bound model.
+) -> _RunChains:
+    """Compile the warmup, sampling, and multi-chain run-shape boundary."""
 
-    Sample arrays have shape ``(1, num_samples, *param_shape)``.  The single
-    leading chain axis keeps the one-chain path compatible with stacked
-    multi-chain results.
-    """
-    init_q = jnp.zeros(bound.n_params)
-    warmup_key, sample_key = jax.random.split(rng_key)
+    @partial(jax.jit, static_argnames=("num_chains", "num_warmup", "num_samples"))
+    def run_chains(
+        rng_key: jax.Array,
+        *,
+        num_chains: int,
+        num_warmup: int,
+        num_samples: int,
+    ) -> _ChainSample:
+        init_q = jnp.zeros(bound.n_params)
 
-    (last_state, tuned_params), warmup_info = warmup_run(
-        warmup_key,
-        init_q,
-        num_steps=num_warmup,
-    )
-    warmup_diagnostics = _diagnostic_trace_from_nuts_info(warmup_info.info)
+        def run_one_chain(chain_key: jax.Array) -> _ChainSample:
+            warmup_key, sample_key = jax.random.split(chain_key)
+            (last_state, tuned_params), warmup_info = warmup_run(
+                warmup_key,
+                init_q,
+                num_steps=num_warmup,
+            )
+            warmup_diagnostics = _diagnostic_trace_from_nuts_info(warmup_info.info)
 
-    sample_keys = jax.random.split(sample_key, num_samples)
-    _, sample_block = draw_samples(
-        last_state,
-        sample_keys,
-        tuned_params["step_size"],
-        tuned_params["inverse_mass_matrix"],
-    )
+            sample_keys = jax.random.split(sample_key, num_samples)
+            _, sample_block = draw_samples(
+                last_state,
+                sample_keys,
+                tuned_params["step_size"],
+                tuned_params["inverse_mass_matrix"],
+            )
+            unconstrained = _unflatten_chain_samples(sample_block.positions, bound.param_shapes)
+            return _ChainSample(
+                samples=_constrain_sample_values(unconstrained, bound.meta),
+                diagnostics=SamplerDiagnostics(
+                    warmup=warmup_diagnostics,
+                    sampling=sample_block.diagnostics,
+                ),
+            )
 
-    unconstrained = _unflatten_samples(sample_block.positions, bound.param_shapes)
-    return _ChainSample(
-        samples=_constrain_sample_values(unconstrained, bound.meta),
-        diagnostics=SamplerDiagnostics(
-            warmup=warmup_diagnostics,
-            sampling=sample_block.diagnostics,
-        ),
-    )
+        chain_keys = jax.random.split(rng_key, num_chains)
+        return jax.vmap(run_one_chain)(chain_keys)
 
-
-def _sample_chains(
-    bound: BoundModel,
-    warmup_run: _WindowAdaptationRun,
-    draw_samples: _DrawSamples,
-    rng_key: jax.Array,
-    *,
-    num_chains: int,
-    num_warmup: int,
-    num_samples: int,
-) -> _ChainSample:
-    """Draw independent chains by batching the one-chain sampler."""
-    chain_keys = jax.random.split(rng_key, num_chains)
-
-    def sample_chain(chain_key: jax.Array) -> _ChainSample:
-        return _sample_one_chain(
-            bound,
-            warmup_run,
-            draw_samples,
-            chain_key,
-            num_warmup=num_warmup,
-            num_samples=num_samples,
-        )
-
-    batched = jax.vmap(sample_chain)(chain_keys)
-    return _ChainSample(
-        samples={name: jnp.squeeze(values, axis=1) for name, values in batched.samples.items()},
-        diagnostics=batched.diagnostics,
-    )
+    return cast(_RunChains, run_chains)
 
 
 @dataclass(frozen=True, init=False)
 class CompiledSampler:
     """Reusable NUTS sampler for one bound model shape.
 
-    Compile once for repeated same-shape sampling runs.  The simple ``sample``
-    function remains the one-shot convenience path.
+    Compile model metadata once and lazily JIT each static sampler run shape.
+    The simple ``sample`` function remains the one-shot convenience path.
     """
 
     _bound: BoundModel
-    _warmup_run: _WindowAdaptationRun
-    _draw_samples: _DrawSamples
+    _run_chains: _RunChains
 
     def __init__(self) -> None:
         raise TypeError("Use compile_sampler(...) to create a CompiledSampler")
@@ -306,13 +304,11 @@ class CompiledSampler:
     def _create(
         cls,
         bound: BoundModel,
-        warmup_run: _WindowAdaptationRun,
-        draw_samples: _DrawSamples,
+        run_chains: _RunChains,
     ) -> CompiledSampler:
         sampler = cast(CompiledSampler, object.__new__(cls))
         object.__setattr__(sampler, "_bound", bound)
-        object.__setattr__(sampler, "_warmup_run", warmup_run)
-        object.__setattr__(sampler, "_draw_samples", draw_samples)
+        object.__setattr__(sampler, "_run_chains", run_chains)
         return sampler
 
     def sample(
@@ -345,10 +341,7 @@ class CompiledSampler:
             )
 
         key = jax.random.PRNGKey(seed)
-        chain_sample = _sample_chains(
-            self._bound,
-            self._warmup_run,
-            self._draw_samples,
+        chain_sample = self._run_chains(
             key,
             num_chains=num_chains,
             num_warmup=num_warmup,
@@ -372,25 +365,16 @@ def compile_sampler(
     _validate_target_acceptance_rate(target_acceptance_rate)
     if bound.n_params == 0:
 
-        def warmup_run(
+        def run_chains(
             rng_key: jax.Array,
-            position: jax.Array,
             *,
-            num_steps: int,
-        ) -> tuple[tuple[object, Mapping[str, jax.Array]], _AdaptationInfo]:
-            raise RuntimeError("Parameterless models do not run warmup")
+            num_chains: int,
+            num_warmup: int,
+            num_samples: int,
+        ) -> _ChainSample:
+            raise RuntimeError("Parameterless models do not run NUTS")
 
-        def _draw_samples(
-            state: object,
-            sample_keys: jax.Array,
-            step_size: jax.Array,
-            inverse_mass_matrix: jax.Array,
-        ) -> tuple[object, _SampleBlock]:
-            raise RuntimeError("Parameterless models do not draw samples")
-
-        return CompiledSampler._create(
-            bound=bound, warmup_run=warmup_run, draw_samples=_draw_samples
-        )
+        return CompiledSampler._create(bound=bound, run_chains=run_chains)
 
     log_prob = compile_log_density(bound)
     warmup = blackjax.window_adaptation(
@@ -399,7 +383,7 @@ def compile_sampler(
         is_mass_matrix_diagonal=True,
         target_acceptance_rate=target_acceptance_rate,
     )
-    warmup_run = cast(_WindowAdaptationRun, warmup.run)
+    warmup_run = cast(_WindowAdaptationRun, jax.jit(warmup.run, static_argnames=("num_steps",)))
     nuts_kernel = blackjax.nuts.build_kernel()
 
     @jax.jit
@@ -427,8 +411,11 @@ def compile_sampler(
 
     return CompiledSampler._create(
         bound=bound,
-        warmup_run=warmup_run,
-        draw_samples=cast(_DrawSamples, draw_samples),
+        run_chains=_compile_run_chains(
+            bound=bound,
+            warmup_run=warmup_run,
+            draw_samples=cast(_DrawSamples, draw_samples),
+        ),
     )
 
 
