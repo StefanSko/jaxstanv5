@@ -40,14 +40,20 @@ from jaxstanv5.model.expr import (
     ConstNode,
     DataRef,
     ExprNode,
+    FullSlice,
     IndexOp,
+    IndexSpec,
+    IndexTuple,
     ParamRef,
+    ScalarIndex,
     UnaryOp,
     VectorScatterOp,
 )
 
 type ModelClass = type[object]
 type SymbolTable = dict[DeclarationSymbol, str]
+type EvaluatedIndexAtom = jax.Array | slice
+type EvaluatedIndex = EvaluatedIndexAtom | tuple[EvaluatedIndexAtom, ...]
 
 _INDEX_BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
     "+": jnp.add,
@@ -440,7 +446,7 @@ def _validate_index_expr(
         _validate_index_expr(node.operand, data, param_shapes)
     elif isinstance(node, IndexOp):
         _validate_index_expr(node.base, data, param_shapes)
-        _validate_index_expr(node.index, data, param_shapes)
+        _validate_index_spec_exprs(node.index, data, param_shapes)
         _validate_single_index_op(node, data, param_shapes)
     elif isinstance(node, VectorScatterOp):
         _validate_index_expr(node.length, data, param_shapes)
@@ -451,18 +457,76 @@ def _validate_index_expr(
         _validate_vector_scatter_op(node, data, param_shapes)
 
 
+def _validate_index_spec_exprs(
+    spec: IndexSpec,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate expression subtrees nested inside explicit index IR."""
+    if isinstance(spec, ScalarIndex):
+        _validate_index_expr(spec.expr, data, param_shapes)
+    elif isinstance(spec, FullSlice):
+        return
+    elif isinstance(spec, IndexTuple):
+        for item in spec.items:
+            _validate_index_spec_exprs(item, data, param_shapes)
+    else:
+        raise TypeError(f"Cannot validate index spec: {type(spec).__name__}")
+
+
+def _infer_indexed_shape(
+    base_shape: tuple[int, ...],
+    spec: IndexSpec,
+    data: dict[str, jax.Array],
+) -> tuple[int, ...]:
+    """Infer and validate the result shape of supported declaration indexing."""
+    if not base_shape:
+        raise ValueError("Cannot index scalar expression")
+
+    items = _index_spec_items(spec)
+    if not items:
+        raise TypeError("Empty index tuples are not supported in model declaration expressions")
+
+    axis = 0
+    non_scalar_index_count = 0
+    result_shape: list[int] = []
+    for item in items:
+        if axis >= len(base_shape):
+            raise ValueError(f"Too many index items for expression with rank {len(base_shape)}")
+        if isinstance(item, FullSlice):
+            result_shape.append(base_shape[axis])
+        elif isinstance(item, ScalarIndex):
+            index_value = _evaluate_data_index_expr(item.expr, data)
+            _validate_index_value(index_value, base_shape[axis], axis=axis)
+            if index_value.ndim > 0:
+                non_scalar_index_count += 1
+                if non_scalar_index_count > 1:
+                    raise TypeError("Index tuples support at most one non-scalar index expression")
+                result_shape.extend(index_value.shape)
+        elif isinstance(item, IndexTuple):
+            raise TypeError("Nested index tuples are not supported")
+        else:
+            raise TypeError(f"Cannot infer shape for index spec: {type(item).__name__}")
+        axis += 1
+
+    result_shape.extend(base_shape[axis:])
+    return tuple(result_shape)
+
+
+def _index_spec_items(spec: IndexSpec) -> tuple[IndexSpec, ...]:
+    if isinstance(spec, IndexTuple):
+        return spec.items
+    return (spec,)
+
+
 def _validate_single_index_op(
     node: IndexOp,
     data: dict[str, jax.Array],
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
-    """Validate one concrete first-axis index operation."""
+    """Validate one concrete index operation against all consumed axes."""
     base_shape = _infer_expr_shape(node.base, data, param_shapes)
-    if not base_shape:
-        raise ValueError("Cannot index scalar expression")
-
-    index = _evaluate_data_index_expr(node.index, data)
-    _validate_index_value(index, base_shape[0])
+    _infer_indexed_shape(base_shape, node.index, data)
 
 
 def _infer_expr_shape(
@@ -485,11 +549,7 @@ def _infer_expr_shape(
         return _infer_expr_shape(node.operand, data, param_shapes)
     if isinstance(node, IndexOp):
         base_shape = _infer_expr_shape(node.base, data, param_shapes)
-        if not base_shape:
-            raise ValueError("Cannot index scalar expression")
-        index = _evaluate_data_index_expr(node.index, data)
-        _validate_index_value(index, base_shape[0])
-        return index.shape + base_shape[1:]
+        return _infer_indexed_shape(base_shape, node.index, data)
     if isinstance(node, VectorScatterOp):
         length = _validate_vector_scatter_op(node, data, param_shapes)
         return (length,)
@@ -540,6 +600,23 @@ def _resolve_vector_scatter_length(node: ExprNode, data: dict[str, jax.Array]) -
     return _validate_parameter_size(int(length_value), "Partial-observed vector length")
 
 
+def _evaluate_data_index_spec(spec: IndexSpec, data: dict[str, jax.Array]) -> EvaluatedIndex:
+    """Evaluate explicit index IR that must depend only on data and constants."""
+    if isinstance(spec, ScalarIndex):
+        return _evaluate_data_index_expr(spec.expr, data)
+    if isinstance(spec, FullSlice):
+        return slice(None)
+    if isinstance(spec, IndexTuple):
+        items: list[EvaluatedIndexAtom] = []
+        for item in spec.items:
+            evaluated = _evaluate_data_index_spec(item, data)
+            if isinstance(evaluated, tuple):
+                raise TypeError("Nested index tuples are not supported")
+            items.append(evaluated)
+        return tuple(items)
+    raise TypeError(f"Cannot evaluate index spec: {type(spec).__name__}")
+
+
 def _evaluate_data_index_expr(node: ExprNode, data: dict[str, jax.Array]) -> jax.Array:
     """Evaluate an index expression that must depend only on data and constants."""
     if isinstance(node, DataRef):
@@ -563,22 +640,20 @@ def _evaluate_data_index_expr(node: ExprNode, data: dict[str, jax.Array]) -> jax
         return function(operand)
     if isinstance(node, IndexOp):
         base = _evaluate_data_index_expr(node.base, data)
-        if base.ndim == 0:
-            raise ValueError("Cannot index scalar data expression")
-        index = _evaluate_data_index_expr(node.index, data)
-        _validate_index_value(index, base.shape[0])
+        _infer_indexed_shape(base.shape, node.index, data)
+        index = _evaluate_data_index_spec(node.index, data)
         return base[index]
     if isinstance(node, VectorScatterOp):
         raise TypeError("Partial-observed vector assembly cannot be used as an index expression")
     raise TypeError(f"Cannot evaluate index expression node: {type(node).__name__}")
 
 
-def _validate_index_value(index: jax.Array, base_size: int) -> None:
-    """Validate an integer first-axis index array against one base size."""
+def _validate_index_value(index: jax.Array, base_size: int, *, axis: int = 0) -> None:
+    """Validate an integer index array against one concrete axis size."""
     if not jnp.issubdtype(index.dtype, jnp.integer):
         raise TypeError("Index data must be integer")
     if bool(jnp.any((index < 0) | (index >= base_size))):
-        raise ValueError(f"Index data out of bounds for axis 0 with size {base_size}")
+        raise ValueError(f"Index data out of bounds for axis {axis} with size {base_size}")
 
 
 def _param_count(shape: tuple[int, ...]) -> int:
@@ -694,6 +769,33 @@ def _resolve_declaration_distribution_field(value: object, symbols: SymbolTable)
     return value
 
 
+def _resolve_index_spec(value: object, symbols: SymbolTable) -> IndexSpec:
+    """Resolve raw class-body indexing syntax into explicit final index IR."""
+    if isinstance(value, slice):
+        return _resolve_slice_index_spec(value)
+    if isinstance(value, tuple):
+        if not value:
+            raise TypeError("Empty index tuples are not supported in model declarations")
+        return IndexTuple(tuple(_resolve_index_tuple_item(item, symbols) for item in value))
+    if isinstance(value, bool):
+        raise TypeError("Index constants must be integers, not bool")
+    if isinstance(value, ScalarIndex | FullSlice | IndexTuple):
+        raise TypeError("Final index nodes are not valid in model declarations")
+    return ScalarIndex(_resolve_declaration_expr(value, symbols))
+
+
+def _resolve_index_tuple_item(value: object, symbols: SymbolTable) -> IndexSpec:
+    if isinstance(value, tuple):
+        raise TypeError("Nested index tuples are not supported in model declarations")
+    return _resolve_index_spec(value, symbols)
+
+
+def _resolve_slice_index_spec(value: slice) -> FullSlice:
+    if value.start is None and value.stop is None and value.step is None:
+        return FullSlice()
+    raise TypeError("Only full slices ':' are supported in model declaration indexes")
+
+
 def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
     """Resolve class-body declaration syntax into final expression IR."""
     if isinstance(value, Param):
@@ -724,7 +826,7 @@ def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
     if isinstance(value, DeferredIndexOp):
         return IndexOp(
             _resolve_declaration_expr(value.base, symbols),
-            _resolve_declaration_expr(value.index, symbols),
+            _resolve_index_spec(value.index, symbols),
         )
     raise TypeError(f"Cannot resolve {type(value).__name__} as a declaration expression")
 

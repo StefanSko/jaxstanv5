@@ -46,8 +46,8 @@ Core invariants that should remain true as the codebase changes.
 - `_deferred.py` is private class-body syntax capture.
 - `core.py` does not construct final expression IR.
 - `expr.py` is resolved/final IR only.
-- Final expression trees contain no declaration symbols, raw declarations, or
-  deferred syntax tokens.
+- Final expression trees contain no declaration symbols, raw declarations,
+  deferred syntax tokens, or raw Python tuple/slice indexes.
 - Final expression trees may contain explicit unary operation nodes only for
   supported declaration-language unary operations such as `neg`, `exp`, and `sigmoid`.
 - `ModelMeta` contains resolved metadata only, including resolved data schemas,

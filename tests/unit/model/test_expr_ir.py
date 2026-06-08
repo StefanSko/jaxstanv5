@@ -7,7 +7,17 @@ names.
 import jax.numpy as jnp
 import pytest
 
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
+from jaxstanv5.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    FullSlice,
+    IndexOp,
+    IndexTuple,
+    ParamRef,
+    ScalarIndex,
+    UnaryOp,
+)
 
 
 def test_param_and_data_arithmetic_builds_expression_tree() -> None:
@@ -56,7 +66,17 @@ def test_indexing_builds_index_expression() -> None:
 
     assert isinstance(expr, IndexOp)
     assert expr.base == alpha
-    assert expr.index == group_idx
+    assert expr.index == ScalarIndex(group_idx)
+
+
+def test_tuple_indexing_builds_explicit_index_ir() -> None:
+    x = DataRef("x")
+
+    expr = x[:, 0]
+
+    assert isinstance(expr, IndexOp)
+    assert expr.base == x
+    assert expr.index == IndexTuple((FullSlice(), ScalarIndex(ConstNode(0))))
 
 
 def test_final_expression_rejects_array_like_constants_with_guidance() -> None:

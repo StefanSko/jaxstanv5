@@ -100,6 +100,11 @@ y_successes = Observed(Binomial(trials, probability))
 y_proportion = Observed(Beta(probability * concentration, (1.0 - probability) * concentration))
 ```
 
+Declaration indexing supports integer scalar or data indexes and full-axis
+slices, for example `alpha[group_idx]`, `x[:, 0]`, and `x[group_idx, 0]`.
+General NumPy indexing forms such as partial slices, ellipses, new axes, and
+boolean masks are not part of the declaration language.
+
 Data declarations are schema-only; they never construct values. Use
 `Data.scalar()` for rank-0 inputs, `Data.vector()` or `Data.vector(n)` for
 vectors, `Data.matrix()` or `Data.matrix(n, m)` for matrices, and
