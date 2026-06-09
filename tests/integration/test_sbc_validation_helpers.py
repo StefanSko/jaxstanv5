@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import pytest
-from _validation import (
+from _validation import assert_sbc_rank_uniformity, summarize_projected_draws
+
+from jaxstanv5.validation import (
     ProjectionSpec,
     SbcValidationResult,
-    assert_sbc_rank_uniformity,
     project_vector_draws,
     project_vector_truth,
     projected_sbc_rank,
     scalar_sbc_rank,
-    summarize_projected_draws,
     summarize_sbc_rank_uniformity,
 )
 

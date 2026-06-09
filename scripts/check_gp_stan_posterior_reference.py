@@ -30,9 +30,9 @@ jax.config.update("jax_enable_x64", True)
 logging.getLogger("cmdstanpy").setLevel(logging.WARNING)
 
 if TYPE_CHECKING:
-    from integration._validation import ProjectionSpec
     from jaxstanv5.inference import NutsDiagnosticTrace, SamplerResult
     from jaxstanv5.model.bound import BoundModel
+    from jaxstanv5.validation import ProjectionSpec
 
 
 type FloatVector = tuple[float, ...]
@@ -199,7 +199,7 @@ def _cmdstan_model(stan_file: Path) -> StanPosteriorModel:
 
 
 def _projection_specs(n: int) -> tuple[ProjectionSpec, ...]:
-    from integration._validation import ProjectionSpec
+    from jaxstanv5.validation import ProjectionSpec
 
     first = jnp.zeros((n,), dtype=jnp.float64).at[0].set(1.0)
     middle = jnp.zeros((n,), dtype=jnp.float64).at[n // 2].set(1.0)

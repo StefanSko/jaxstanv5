@@ -119,13 +119,10 @@ def _data_values(config: BetaRegressionSbcConfig) -> Mapping[str, object]:
 
 
 def _run_sbc(config: BetaRegressionSbcConfig) -> tuple[BetaRegressionSbcResult, ...]:
-    from integration._validation import (
-        SbcValidationResult,
-        assert_sbc_rank_uniformity,
-        scalar_sbc_rank,
-    )
+    from integration._validation import assert_sbc_rank_uniformity
     from jaxstanv5.inference import compile_sampler
     from jaxstanv5.simulation import simulate_prior_predictive
+    from jaxstanv5.validation import SbcValidationResult, scalar_sbc_rank
 
     start = time.perf_counter()
     parameters = ("alpha_pop", "beta_pop", "sigma_alpha", "sigma_beta", "log_phi")

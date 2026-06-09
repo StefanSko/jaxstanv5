@@ -24,8 +24,8 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 if TYPE_CHECKING:
-    from integration._validation import ProjectionSpec
     from jaxstanv5.model.bound import BoundModel
+    from jaxstanv5.validation import ProjectionSpec
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,7 @@ def _rbf_covariance(
 
 
 def _projection_specs(n: int) -> tuple[ProjectionSpec, ...]:
-    from integration._validation import ProjectionSpec
+    from jaxstanv5.validation import ProjectionSpec
 
     first = jnp.zeros((n,), dtype=jnp.float64).at[0].set(1.0)
     middle = jnp.zeros((n,), dtype=jnp.float64).at[n // 2].set(1.0)
@@ -137,13 +137,13 @@ def _simulated_values(
 
 
 def _run_projected_sbc(config: GpSbcConfig) -> tuple[GpSbcProjectionResult, ...]:
-    from integration._validation import (
+    from integration._validation import assert_sbc_rank_uniformity
+    from jaxstanv5.inference import compile_sampler
+    from jaxstanv5.validation import (
         SbcValidationResult,
-        assert_sbc_rank_uniformity,
         project_vector_truth,
         projected_sbc_rank,
     )
-    from jaxstanv5.inference import compile_sampler
 
     x = jnp.linspace(-3.0, 3.0, config.n, dtype=jnp.float64)
     covariance = _rbf_covariance(

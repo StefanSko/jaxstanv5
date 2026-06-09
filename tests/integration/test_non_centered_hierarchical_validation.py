@@ -10,9 +10,10 @@ from _validation import (
     ScalarReference,
     draw_validation_chains,
     hierarchical_normal_known_scale_reference,
-    standardized_discrepancy,
     summarize_scalar_draws,
 )
+
+from jaxstanv5.validation import standardized_discrepancy
 
 
 def _assert_draw_mean_matches_reference(
