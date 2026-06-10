@@ -4,6 +4,7 @@ import math
 
 import jax
 import jax.numpy as jnp
+import pytest
 from jax.scipy.linalg import solve_triangular
 
 from jaxstanv5.distributions import MultivariateNormal
@@ -16,6 +17,21 @@ def test_multivariate_normal_log_prob_matches_standard_identity_value() -> None:
 
     expected = -math.log(2.0 * math.pi)
     assert jnp.allclose(actual, expected)
+
+
+def test_multivariate_normal_sample_rejects_non_lower_triangular_scale() -> None:
+    dist = MultivariateNormal(jnp.zeros((2,)), jnp.asarray([[1.0, 0.9], [0.0, 1.0]]))
+
+    with pytest.raises(ValueError, match="lower-triangular"):
+        dist.sample(jax.random.PRNGKey(0))
+
+
+def test_multivariate_normal_log_prob_masks_non_positive_diagonal() -> None:
+    dist = MultivariateNormal(jnp.zeros((2,)), jnp.asarray([[1.0, 0.0], [0.0, -1.0]]))
+
+    actual = dist.log_prob(jnp.asarray([0.0, 0.0]))
+
+    assert actual == -jnp.inf
 
 
 def test_multivariate_normal_log_prob_matches_cholesky_formula() -> None:

@@ -12,6 +12,7 @@ import jax.numpy as jnp
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
 from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
+from jaxstanv5.distributions.multivariate import MultivariateNormal, validate_scale_tril
 from jaxstanv5.model._data_schema import (
     DataDimRef,
     DataDimSymbol,
@@ -304,6 +305,7 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
         }
         n_params = sum(_param_count(shape) for shape in param_shapes.values())
         _validate_bound_index_expressions(meta, data, param_shapes)
+        _validate_bound_distribution_parameters(meta, data)
         return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
     return bind
@@ -428,6 +430,40 @@ def _validate_bound_index_expressions(
         _validate_index_expr(site.value, data, param_shapes)
     for expression in meta.expressions.values():
         _validate_index_expr(expression, data, param_shapes)
+
+
+def _validate_bound_distribution_parameters(meta: ModelMeta, data: dict[str, jax.Array]) -> None:
+    """Validate concrete distribution parameters available at bind time."""
+    for site in _resolved_stochastic_sites(meta):
+        _validate_bound_distribution_parameter(site.name, site.distribution, data)
+
+
+def _validate_bound_distribution_parameter(
+    site_name: str,
+    distribution: Distribution,
+    data: dict[str, jax.Array],
+) -> None:
+    """Validate one distribution's concrete bind-time parameters."""
+    if isinstance(distribution, MultivariateNormal):
+        scale_tril = _evaluate_optional_data_expr(distribution.scale_tril, data)
+        if scale_tril is not None:
+            validate_scale_tril(scale_tril, name=f"{site_name!r} scale_tril")
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return
+    for distribution_field in fields(distribution):
+        value = getattr(distribution, distribution_field.name)
+        if is_dataclass(value) and not isinstance(value, type):
+            _validate_bound_distribution_parameter(site_name, cast(Distribution, value), data)
+
+
+def _evaluate_optional_data_expr(value: object, data: dict[str, jax.Array]) -> jax.Array | None:
+    """Evaluate a data/constant expression, or return None for parameter-dependent values."""
+    if _is_final_expr_node(value):
+        try:
+            return _evaluate_data_index_expr(cast(ExprNode, value), data)
+        except TypeError:
+            return None
+    return jnp.asarray(value)
 
 
 def _validate_distribution_index_expressions(
