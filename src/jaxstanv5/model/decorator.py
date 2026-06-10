@@ -9,8 +9,10 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
+from jaxstanv5.distributions.continuous import Beta, Exponential, HalfNormal, Uniform
 from jaxstanv5.distributions.core import DiscreteDistribution, Distribution, SampleableDistribution
 from jaxstanv5.distributions.counts import (
     Bernoulli,
@@ -206,6 +208,11 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                     "use them for Observed likelihoods or marginalize discrete latents"
                 )
             size = _resolve_declaration_size(value.size, symbols)
+            _validate_param_prior_constraint(
+                name=name,
+                distribution=distribution,
+                constraint=value.constraint,
+            )
             params[name] = ResolvedParam(
                 distribution=distribution,
                 constraint=value.constraint,
@@ -268,6 +275,95 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
         free_values=free_values,
         stochastic_sites=tuple(stochastic_sites),
     )
+
+
+def _validate_param_prior_constraint(
+    *,
+    name: str,
+    distribution: Distribution,
+    constraint: Constraint | None,
+) -> None:
+    """Validate known concrete prior supports against explicit constraints."""
+    if isinstance(distribution, Exponential | HalfNormal):
+        if not isinstance(constraint, Positive):
+            raise TypeError(
+                f"Parameter {name!r} prior has support (0, inf); declare "
+                f"Param({type(distribution).__name__}(...), constraint=Positive())"
+            )
+        return
+
+    if isinstance(distribution, Beta):
+        if not isinstance(constraint, UnitInterval):
+            raise TypeError(
+                f"Parameter {name!r} prior has support (0, 1); declare "
+                "Param(Beta(...), constraint=UnitInterval())"
+            )
+        return
+
+    if isinstance(distribution, Uniform):
+        bounds = _concrete_uniform_bounds(distribution)
+        if bounds is None:
+            return
+        low, high = bounds
+        if _constraint_matches_uniform_support(constraint, low=low, high=high):
+            return
+        raise TypeError(
+            f"Parameter {name!r} Uniform prior has support ({low}, {high}); declare "
+            f"Param(Uniform({low}, {high}), constraint=Interval({low}, {high}))"
+        )
+
+
+def _concrete_uniform_bounds(distribution: Uniform) -> tuple[float, float] | None:
+    """Return concrete scalar Uniform bounds, or None for symbolic bounds."""
+    low = _concrete_scalar_bound(distribution.low)
+    high = _concrete_scalar_bound(distribution.high)
+    if low is None or high is None:
+        return None
+    return (low, high)
+
+
+def _concrete_scalar_bound(value: object) -> float | None:
+    """Return a concrete scalar distribution bound after declaration resolution."""
+    if isinstance(value, ConstNode):
+        return float(value.value)
+    if _is_final_expr_node(value):
+        return None
+    array = jnp.asarray(value)
+    if array.ndim != 0:
+        return None
+    return float(array)
+
+
+def _constraint_matches_uniform_support(
+    constraint: Constraint | None,
+    *,
+    low: float,
+    high: float,
+) -> bool:
+    """Return whether a Uniform prior has an explicit compatible constraint."""
+    if (
+        _same_scalar_bound(low, 0.0)
+        and _same_scalar_bound(high, 1.0)
+        and isinstance(constraint, UnitInterval)
+    ):
+        return True
+    if isinstance(constraint, Interval):
+        return _same_scalar_bound(constraint.lower, low) and _same_scalar_bound(
+            constraint.upper, high
+        )
+    return False
+
+
+def _same_scalar_bound(left: float, right: float) -> bool:
+    """Compare scalar bounds exactly at JAX's canonical float resolution.
+
+    The compiled log density evaluates bounds at JAX's default float dtype
+    (float32, or float64 under ``jax_enable_x64``), so equality at that
+    resolution absorbs scalar dtype roundoff of one written value while
+    rejecting every difference representable in the compiled dtype.
+    """
+    dtype = jnp.result_type(float)
+    return float(jnp.asarray(left, dtype)) == float(jnp.asarray(right, dtype))
 
 
 def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, ExprNode]:
