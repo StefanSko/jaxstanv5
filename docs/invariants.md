@@ -24,6 +24,10 @@ Core invariants that should remain true as the codebase changes.
 - `Observed` nodes are optional; prior-only models are valid.
 - Declaration aliases are invalid: one declaration object maps to one class
   attribute name.
+- Declaration classes have no base class other than `object`. A model's meaning
+  is local to one decorated class body so that model text stays statically
+  parseable by a standalone validator; inheritance is rejected at `@model` time
+  even when the base class carries no declarations.
 
 ## Phase boundaries
 

@@ -136,6 +136,7 @@ class _ResolvedDeclarations:
 
 def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
     """Resolve a declaration class into final model metadata."""
+    _reject_declaration_inheritance(cls)
     symbols = _collect_declaration_symbols(cls)
     declarations = _resolve_declarations(cls, symbols)
     expressions = _resolve_expressions(cls, symbols)
@@ -147,6 +148,18 @@ def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
         expressions=expressions,
         free_values=declarations.free_values,
         stochastic_sites=declarations.stochastic_sites,
+    )
+
+
+def _reject_declaration_inheritance(cls: ModelClass) -> None:
+    """Reject base classes so model meaning stays local to one class body."""
+    if cls.__bases__ == (object,):
+        return
+    base_names = ", ".join(repr(base.__name__) for base in cls.__bases__ if base is not object)
+    raise TypeError(
+        f"Model declaration classes must not use inheritance: {cls.__name__!r} "
+        f"inherits from {base_names}. All declarations must live in the decorated "
+        "class body; inherited declarations would be silently ignored otherwise"
     )
 
 
