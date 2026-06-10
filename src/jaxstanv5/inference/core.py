@@ -294,10 +294,12 @@ def _sample_chains(
 
 @dataclass(frozen=True, init=False)
 class CompiledSampler:
-    """Reusable NUTS sampler for one bound model shape.
+    """NUTS sampler compiled for one concrete bound model.
 
-    Compile once for repeated same-shape sampling runs.  The simple ``sample``
-    function remains the one-shot convenience path.
+    Bound data is closed over by the compiled log density, so this object is
+    reusable only for repeated runs of the same ``BoundModel`` data. Distinct
+    ``num_warmup``, ``num_samples``, or ``num_chains`` values may trigger
+    additional backend compilation.
     """
 
     _bound: BoundModel
@@ -373,7 +375,12 @@ def compile_sampler(
     *,
     target_acceptance_rate: float = 0.8,
 ) -> CompiledSampler:
-    """Compile a reusable NUTS sampler for one bound model shape."""
+    """Compile NUTS machinery for one concrete bound model.
+
+    The bound model's data is part of the compiled log-density closure. Reusing
+    the returned sampler avoids rebuilding the Python sampler wrapper, but new
+    loop sizes may still retrace/recompile backend executables.
+    """
     _validate_target_acceptance_rate(target_acceptance_rate)
     if bound.n_params == 0:
 
