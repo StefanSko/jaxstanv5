@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import pytest
 
 from jaxstanv5 import Data, Observed, Param, PartiallyObserved, model
-from jaxstanv5.constraints import Ordered, Positive
+from jaxstanv5.constraints import Interval, Ordered, Positive
 from jaxstanv5.distributions import MultivariateNormal, Normal, OrderedLogistic, Uniform
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation import simulate_prior_predictive
@@ -36,9 +36,9 @@ class PositiveScalePrior:
 
 @model
 class PositiveUniformPrior:
-    """Positive-constrained Uniform prior-only model."""
+    """Explicitly interval-constrained Uniform prior-only model."""
 
-    theta = Param(Uniform(-1.0, 2.0), constraint=Positive())
+    theta = Param(Uniform(0.0, 2.0), constraint=Interval(0.0, 2.0))
 
 
 class UnsupportedDistribution:
