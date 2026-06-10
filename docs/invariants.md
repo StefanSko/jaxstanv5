@@ -55,6 +55,14 @@ Core invariants that should remain true as the codebase changes.
   supported declaration-language unary operations such as `neg`, `exp`, and `sigmoid`.
 - `ModelMeta` contains resolved metadata only, including resolved data schemas,
   free NUTS values, and stochastic log-density sites.
+- `ModelMeta` is the serialization boundary: `jaxstanv5.ir` round-trips resolved
+  metadata only, executes no user code on decode, and uses only the standard
+  library.
+- Serialized IR node tags, not Python class names, are the wire contract; tag,
+  field, or encoding changes require regenerated golden files and a format
+  version decision (see `docs/ir-format-v1.md`).
+- A model reconstructed with `bindable_from_meta(...)` is indistinguishable
+  downstream from one produced by `@model`.
 - `BoundModel` contains no inference logic.
 
 ## Log density
@@ -62,6 +70,8 @@ Core invariants that should remain true as the codebase changes.
 - The compiler evaluates symbolic distribution arguments before calling
   `Distribution.log_prob(...)`.
 - Log density = constraint Jacobians + all stochastic site log-density terms.
+- The flat unconstrained parameter vector packs free values in the insertion
+  order of `free_values`, or of `params` when `free_values` is empty.
 - `Param`, `Observed`, and `PartiallyObserved` lower to stochastic sites plus a
   free/fixed coordinate partition; they are not separate log-density machinery.
 - Discrete distributions are observed-likelihood distributions only; NUTS
