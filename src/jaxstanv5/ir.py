@@ -1,0 +1,391 @@
+"""IR serialization for resolved model metadata (``jaxstanv5_ir`` version 1).
+
+The wire format is a versioned JSON document over the closed inventory of
+resolved model-metadata dataclasses. Registered dataclasses encode as tagged
+objects, ordered ``dict[str, ...]`` fields encode as ``{"name", "value"}``
+entry arrays in insertion order, and tuples encode as plain arrays. The tag
+vocabulary, not Python class names, is the cross-language contract.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, fields, is_dataclass
+from enum import Enum
+from typing import cast, get_origin, get_type_hints
+
+from jaxstanv5.constraints import Interval, Ordered, Positive, UnitInterval
+from jaxstanv5.distributions import (
+    Bernoulli,
+    Beta,
+    BetaBinomial,
+    Binomial,
+    Exponential,
+    HalfNormal,
+    MultivariateNormal,
+    NegativeBinomial,
+    Normal,
+    OrderedLogistic,
+    Poisson,
+    StudentT,
+    Uniform,
+)
+from jaxstanv5.model._data_schema import (
+    DataDimRef,
+    ResolvedDataRankSchema,
+    ResolvedDataShapeSchema,
+)
+from jaxstanv5.model.decorator import (
+    ModelMeta,
+    ResolvedData,
+    ResolvedFreeValue,
+    ResolvedObserved,
+    ResolvedParam,
+    ResolvedStochasticSite,
+)
+from jaxstanv5.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    FullSlice,
+    IndexOp,
+    IndexTuple,
+    ParamRef,
+    ScalarIndex,
+    UnaryOp,
+    VectorScatterOp,
+)
+
+IR_VERSION = 1
+
+_VERSION_KEY = "jaxstanv5_ir"
+_MODEL_KEY = "model"
+_NODE_KEY = "node"
+
+type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
+
+
+class IRSerializationError(Exception):
+    """Base error for IR serialization and deserialization failures."""
+
+
+class NonFiniteConstant(IRSerializationError):
+    """A non-finite float was found while encoding model metadata."""
+
+
+class UnserializableDistribution(IRSerializationError):
+    """A distribution is not registered for IR serialization."""
+
+
+class UnserializableValue(IRSerializationError):
+    """A leaf value has no IR encoding."""
+
+
+class UnsupportedIRVersion(IRSerializationError):
+    """The document version is missing or not readable by this build."""
+
+
+class UnknownNodeTag(IRSerializationError):
+    """A document node tag is not in the registry."""
+
+
+class MalformedIRDocument(IRSerializationError):
+    """The document structure violates the IR format."""
+
+
+class _FieldKind(Enum):
+    """How a registered node field is represented in the IR document."""
+
+    MAP = "map"
+    TUPLE = "tuple"
+    VALUE = "value"
+
+
+@dataclass(frozen=True)
+class _NodeSpec:
+    """Registered IR node class with its wire tag and field kinds."""
+
+    cls: type
+    tag: str
+    field_kinds: tuple[tuple[str, _FieldKind], ...]
+
+
+_NODE_SPECS_BY_TAG: dict[str, _NodeSpec] = {}
+_NODE_SPECS_BY_CLASS: dict[type, _NodeSpec] = {}
+
+
+def register_node(cls: type, *, tag: str | None = None) -> None:
+    """Register a dataclass as a tagged IR node.
+
+    The tag defaults to the class name; pass ``tag=...`` to keep the wire
+    vocabulary stable across Python class renames.
+    """
+    if not is_dataclass(cls):
+        raise TypeError(
+            f"IR node classes must be dataclasses; {cls.__name__} is not. "
+            "Decorate it with @dataclass(frozen=True)."
+        )
+    node_tag = cls.__name__ if tag is None else tag
+    existing = _NODE_SPECS_BY_TAG.get(node_tag)
+    if existing is not None:
+        if existing.cls is cls:
+            return
+        raise ValueError(
+            f"IR node tag {node_tag!r} is already registered to {existing.cls.__name__}. "
+            "Pass register_node(cls, tag=...) with a unique tag."
+        )
+    registered = _NODE_SPECS_BY_CLASS.get(cls)
+    if registered is not None:
+        raise ValueError(
+            f"{cls.__name__} is already registered as IR tag {registered.tag!r}; "
+            "one class maps to one tag."
+        )
+    spec = _NodeSpec(cls=cls, tag=node_tag, field_kinds=_classify_fields(cls))
+    _NODE_SPECS_BY_TAG[node_tag] = spec
+    _NODE_SPECS_BY_CLASS[cls] = spec
+
+
+def _classify_fields(cls: type) -> tuple[tuple[str, _FieldKind], ...]:
+    """Record each constructor field's wire representation once, at registration."""
+    if not is_dataclass(cls):
+        raise TypeError(f"Cannot classify fields of non-dataclass {cls.__name__}")
+    hints = get_type_hints(cls)
+    kinds: list[tuple[str, _FieldKind]] = []
+    for field in fields(cls):
+        if not field.init:
+            continue
+        if field.name == _NODE_KEY:
+            raise ValueError(
+                f"IR node classes cannot have a field named {_NODE_KEY!r}: {cls.__name__}. "
+                "Rename the field before registering the class."
+            )
+        kinds.append((field.name, _field_kind(hints[field.name])))
+    return tuple(kinds)
+
+
+def _field_kind(hint: object) -> _FieldKind:
+    origin = get_origin(hint)
+    if origin is dict:
+        return _FieldKind.MAP
+    if origin is tuple:
+        return _FieldKind.TUPLE
+    return _FieldKind.VALUE
+
+
+def meta_to_dict(meta: ModelMeta) -> dict[str, JsonValue]:
+    """Encode resolved model metadata into a versioned IR document."""
+    return {_VERSION_KEY: IR_VERSION, _MODEL_KEY: _encode_value(meta)}
+
+
+def _encode_value(value: object) -> JsonValue:
+    if value is None or isinstance(value, bool | int | str):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise NonFiniteConstant(
+                f"Non-finite constant {value!r} cannot be encoded: strict JSON has no "
+                "inf/nan tokens. Replace it with a finite constant in the model declaration."
+            )
+        return value
+    if isinstance(value, dict):
+        return _encode_map(cast("dict[object, object]", value))
+    if isinstance(value, tuple):
+        return [_encode_value(item) for item in value]
+    spec = _NODE_SPECS_BY_CLASS.get(type(value))
+    if spec is not None:
+        return _encode_node(value, spec)
+    if hasattr(value, "log_prob"):
+        raise UnserializableDistribution(
+            f"Distribution {type(value).__name__!r} is not registered for IR serialization. "
+            "Decorate it with @dataclass(frozen=True) and call "
+            f"jaxstanv5.ir.register_distribution({type(value).__name__}), "
+            "or replace it with a built-in distribution."
+        )
+    raise UnserializableValue(
+        f"Values of type {type(value).__name__!r} have no IR encoding. Use Python "
+        "int/float/str/bool scalars, expression nodes, or registered dataclass nodes."
+    )
+
+
+def _encode_map(value: dict[object, object]) -> list[JsonValue]:
+    entries: list[JsonValue] = []
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise UnserializableValue(
+                f"IR map keys must be strings, got {type(key).__name__!r}. "
+                "Use string-keyed dictionaries in resolved model metadata."
+            )
+        entries.append({"name": key, "value": _encode_value(item)})
+    return entries
+
+
+def _encode_node(value: object, spec: _NodeSpec) -> dict[str, JsonValue]:
+    encoded: dict[str, JsonValue] = {_NODE_KEY: spec.tag}
+    for name, _kind in spec.field_kinds:
+        encoded[name] = _encode_value(getattr(value, name))
+    return encoded
+
+
+def meta_from_dict(document: object) -> ModelMeta:
+    """Decode a versioned IR document into resolved model metadata."""
+    if not isinstance(document, dict):
+        raise MalformedIRDocument(
+            f"IR documents must be JSON objects, got {type(document).__name__!r}. "
+            "Pass the parsed top-level object of a jaxstanv5_ir file."
+        )
+    envelope = cast("dict[str, object]", document)
+    version = envelope.get(_VERSION_KEY)
+    if version != IR_VERSION:
+        raise UnsupportedIRVersion(
+            f"Unsupported IR document version {version!r}; this build reads "
+            f"{_VERSION_KEY} version {IR_VERSION}. Regenerate the document with "
+            "meta_to_dict(...) or use a jaxstanv5 build that reads this version."
+        )
+    if _MODEL_KEY not in envelope:
+        raise MalformedIRDocument(
+            f"IR documents must contain a {_MODEL_KEY!r} key holding the encoded model."
+        )
+    decoded = _decode_node(envelope[_MODEL_KEY])
+    if not isinstance(decoded, ModelMeta):
+        raise MalformedIRDocument(
+            f"The top-level {_MODEL_KEY!r} node must decode to ModelMeta, "
+            f"got {type(decoded).__name__!r}."
+        )
+    return decoded
+
+
+def _decode_node(value: object) -> object:
+    if not isinstance(value, dict):
+        raise MalformedIRDocument(
+            f"IR nodes must be JSON objects with a {_NODE_KEY!r} tag, got {type(value).__name__!r}."
+        )
+    encoded = cast("dict[str, object]", value)
+    tag = encoded.get(_NODE_KEY)
+    if not isinstance(tag, str):
+        raise MalformedIRDocument(
+            f"IR node objects must carry a string {_NODE_KEY!r} tag; got keys {sorted(encoded)}."
+        )
+    spec = _NODE_SPECS_BY_TAG.get(tag)
+    if spec is None:
+        raise UnknownNodeTag(
+            f"Unknown IR node tag {tag!r}. Import and register the package that defines it "
+            "(jaxstanv5.ir.register_distribution(...)) before decoding, or restrict the "
+            "document to the built-in tags listed in docs/ir-v1-tags.md."
+        )
+    expected = {name for name, _kind in spec.field_kinds}
+    present = set(encoded) - {_NODE_KEY}
+    missing = expected - present
+    extra = present - expected
+    if missing:
+        raise MalformedIRDocument(f"IR node {tag!r} is missing fields: {sorted(missing)}")
+    if extra:
+        raise MalformedIRDocument(f"IR node {tag!r} has unexpected fields: {sorted(extra)}")
+    kwargs = {
+        name: _decode_field(encoded[name], kind, tag=tag, field_name=name)
+        for name, kind in spec.field_kinds
+    }
+    return spec.cls(**kwargs)
+
+
+def _decode_field(value: object, kind: _FieldKind, *, tag: str, field_name: str) -> object:
+    if kind is _FieldKind.MAP:
+        return _decode_map(value, tag=tag, field_name=field_name)
+    if kind is _FieldKind.TUPLE:
+        if not isinstance(value, list):
+            raise MalformedIRDocument(
+                f"Field {field_name!r} of IR node {tag!r} must be an array, "
+                f"got {type(value).__name__!r}."
+            )
+        return tuple(_decode_value(item) for item in value)
+    return _decode_value(value)
+
+
+def _decode_map(value: object, *, tag: str, field_name: str) -> dict[str, object]:
+    if not isinstance(value, list):
+        raise MalformedIRDocument(
+            f"Field {field_name!r} of IR node {tag!r} must be an array of "
+            f"name/value entries, got {type(value).__name__!r}."
+        )
+    decoded: dict[str, object] = {}
+    for entry in value:
+        if not isinstance(entry, dict) or set(entry) != {"name", "value"}:
+            raise MalformedIRDocument(
+                f"Entries of field {field_name!r} of IR node {tag!r} must be objects "
+                'with exactly the keys "name" and "value".'
+            )
+        pair = cast("dict[str, object]", entry)
+        name = pair["name"]
+        if not isinstance(name, str):
+            raise MalformedIRDocument(
+                f"Entry names in field {field_name!r} of IR node {tag!r} must be strings."
+            )
+        if name in decoded:
+            raise MalformedIRDocument(
+                f"Field {field_name!r} of IR node {tag!r} has a duplicate entry name {name!r}."
+            )
+        decoded[name] = _decode_value(pair["value"])
+    return decoded
+
+
+def _decode_value(value: object) -> object:
+    if isinstance(value, dict):
+        return _decode_node(value)
+    if isinstance(value, list):
+        raise MalformedIRDocument(
+            "Arrays are only valid as tuple or map fields of IR nodes; "
+            "a bare array has no IR meaning here."
+        )
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    raise MalformedIRDocument(f"Values of type {type(value).__name__!r} have no IR decoding.")
+
+
+_BUILTIN_NODE_CLASSES: tuple[type, ...] = (
+    # Expression nodes
+    ParamRef,
+    DataRef,
+    ConstNode,
+    BinOp,
+    UnaryOp,
+    IndexOp,
+    VectorScatterOp,
+    # Index specifications
+    ScalarIndex,
+    FullSlice,
+    IndexTuple,
+    # Resolved data schemas
+    DataDimRef,
+    ResolvedDataShapeSchema,
+    ResolvedDataRankSchema,
+    # Resolved declarations
+    ResolvedParam,
+    ResolvedData,
+    ResolvedObserved,
+    ResolvedFreeValue,
+    ResolvedStochasticSite,
+    ModelMeta,
+    # Constraints
+    Positive,
+    Interval,
+    UnitInterval,
+    Ordered,
+    # Built-in distributions
+    Normal,
+    HalfNormal,
+    StudentT,
+    Exponential,
+    Uniform,
+    Beta,
+    Bernoulli,
+    Poisson,
+    Binomial,
+    BetaBinomial,
+    NegativeBinomial,
+    MultivariateNormal,
+    OrderedLogistic,
+)
+
+for _builtin in _BUILTIN_NODE_CLASSES:
+    register_node(_builtin)
+
+_CORE_PROFILE_TAGS: tuple[str, ...] = tuple(_NODE_SPECS_BY_TAG)
