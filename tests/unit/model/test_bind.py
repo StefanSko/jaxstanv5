@@ -290,6 +290,42 @@ def test_bind_rejects_ordered_logistic_observation_outside_category_range() -> N
         bind_meta(meta, cutpoints=jnp.asarray([-1.0, 1.0]), y=jnp.asarray(3.0))
 
 
+def test_bind_rejects_non_lower_triangular_mvn_scale_tril_data() -> None:
+    dist = MultivariateNormal(0.0, DataRef("chol"))
+    meta = ModelMeta(
+        params={},
+        data={"chol": ResolvedData(ResolvedDataRankSchema(2))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        stochastic_sites=(ResolvedStochasticSite("y", dist, DataRef("y")),),
+    )
+
+    with pytest.raises(ValueError, match="jnp.linalg.cholesky"):
+        bind_meta(
+            meta,
+            chol=jnp.asarray([[1.0, 0.5], [0.0, 1.0]]),
+            y=jnp.zeros((2,)),
+        )
+
+
+def test_bind_rejects_non_positive_mvn_scale_tril_diagonal_data() -> None:
+    dist = MultivariateNormal(0.0, DataRef("chol"))
+    meta = ModelMeta(
+        params={},
+        data={"chol": ResolvedData(ResolvedDataRankSchema(2))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        stochastic_sites=(ResolvedStochasticSite("y", dist, DataRef("y")),),
+    )
+
+    with pytest.raises(ValueError, match="strictly positive"):
+        bind_meta(
+            meta,
+            chol=jnp.asarray([[1.0, 0.0], [0.0, -1.0]]),
+            y=jnp.zeros((2,)),
+        )
+
+
 def test_resolve_param_shape_rejects_negative_literal_size() -> None:
     with pytest.raises(ValueError, match="Parameter size must be non-negative"):
         _resolve_param_shape(-1, {})

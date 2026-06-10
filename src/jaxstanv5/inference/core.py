@@ -164,6 +164,11 @@ def _validate_sampler_counts(
     _validate_positive_count(num_samples, name="num_samples")
 
 
+def _draw_initial_position(rng_key: jax.Array, n_params: int) -> jax.Array:
+    """Draw one overdispersed unconstrained initial position."""
+    return jax.random.uniform(rng_key, (n_params,), minval=-2.0, maxval=2.0)
+
+
 def _empty_unconstrained_samples(
     shapes: dict[str, tuple[int, ...]],
     *,
@@ -229,8 +234,8 @@ def _sample_one_chain(
     leading chain axis keeps the one-chain path compatible with stacked
     multi-chain results.
     """
-    init_q = jnp.zeros(bound.n_params)
-    warmup_key, sample_key = jax.random.split(rng_key)
+    init_key, warmup_key, sample_key = jax.random.split(rng_key, 3)
+    init_q = _draw_initial_position(init_key, bound.n_params)
 
     (last_state, tuned_params), warmup_info = warmup_run(
         warmup_key,
@@ -289,10 +294,12 @@ def _sample_chains(
 
 @dataclass(frozen=True, init=False)
 class CompiledSampler:
-    """Reusable NUTS sampler for one bound model shape.
+    """NUTS sampler compiled for one concrete bound model.
 
-    Compile once for repeated same-shape sampling runs.  The simple ``sample``
-    function remains the one-shot convenience path.
+    Bound data is closed over by the compiled log density, so this object is
+    reusable only for repeated runs of the same ``BoundModel`` data. Distinct
+    ``num_warmup``, ``num_samples``, or ``num_chains`` values may trigger
+    additional backend compilation.
     """
 
     _bound: BoundModel
@@ -368,7 +375,12 @@ def compile_sampler(
     *,
     target_acceptance_rate: float = 0.8,
 ) -> CompiledSampler:
-    """Compile a reusable NUTS sampler for one bound model shape."""
+    """Compile NUTS machinery for one concrete bound model.
+
+    The bound model's data is part of the compiled log-density closure. Reusing
+    the returned sampler avoids rebuilding the Python sampler wrapper, but new
+    loop sizes may still retrace/recompile backend executables.
+    """
     _validate_target_acceptance_rate(target_acceptance_rate)
     if bound.n_params == 0:
 

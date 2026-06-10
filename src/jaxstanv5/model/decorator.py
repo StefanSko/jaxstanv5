@@ -19,6 +19,7 @@ from jaxstanv5.distributions.counts import (
     NegativeBinomial,
     Poisson,
 )
+from jaxstanv5.distributions.multivariate import MultivariateNormal, validate_scale_tril
 from jaxstanv5.distributions.ordinal import OrderedLogistic
 from jaxstanv5.model._data_schema import (
     DataDimRef,
@@ -315,6 +316,7 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
         _validate_bound_index_expressions(meta, data, param_shapes)
         _validate_stochastic_site_shapes(meta, data, param_shapes)
         _validate_observed_discrete_values(meta, data, param_shapes)
+        _validate_bound_distribution_parameters(meta, data)
         return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
     return bind
@@ -586,6 +588,30 @@ def _validate_value_range(
 def _validate_value_array_upper_bound(name: str, value: jax.Array, upper: jax.Array) -> None:
     if bool(jnp.any(value > upper)):
         raise ValueError(f"Observed site {name!r} values must be <= total_count")
+
+
+def _validate_bound_distribution_parameters(meta: ModelMeta, data: dict[str, jax.Array]) -> None:
+    """Validate concrete distribution parameters available at bind time."""
+    for site in _resolved_stochastic_sites(meta):
+        _validate_bound_distribution_parameter(site.name, site.distribution, data)
+
+
+def _validate_bound_distribution_parameter(
+    site_name: str,
+    distribution: Distribution,
+    data: dict[str, jax.Array],
+) -> None:
+    """Validate one distribution's concrete bind-time parameters."""
+    if isinstance(distribution, MultivariateNormal):
+        scale_tril = _evaluate_optional_data_expr(distribution.scale_tril, data)
+        if scale_tril is not None:
+            validate_scale_tril(scale_tril, name=f"{site_name!r} scale_tril")
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return
+    for distribution_field in fields(distribution):
+        value = getattr(distribution, distribution_field.name)
+        if is_dataclass(value) and not isinstance(value, type):
+            _validate_bound_distribution_parameter(site_name, cast(Distribution, value), data)
 
 
 def _evaluate_optional_data_expr(value: object, data: dict[str, jax.Array]) -> jax.Array | None:
