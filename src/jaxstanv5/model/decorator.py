@@ -339,8 +339,6 @@ def _constraint_matches_uniform_support(
         and isinstance(constraint, UnitInterval)
     ):
         return True
-    if isinstance(constraint, Positive):
-        return high > 0.0
     if isinstance(constraint, Interval):
         return _same_scalar_bound(constraint.lower, low) and _same_scalar_bound(
             constraint.upper, high

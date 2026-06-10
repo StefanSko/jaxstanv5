@@ -254,7 +254,7 @@ def test_private_model_declaration_resolution_requires_unit_interval_for_beta_pr
     [
         (UnitInterval(), True),
         (Interval(0.0, 1.0), True),
-        (Positive(), True),
+        (Positive(), False),
         (Interval(-1.0, 1.0), False),
     ],
 )
