@@ -37,6 +37,14 @@ def test_poisson_log_prob_is_negative_infinity_outside_support() -> None:
     assert jnp.isfinite(zero_rate_gradient)
 
 
+def test_poisson_log_prob_gradient_supports_integer_observed_values() -> None:
+    value = jnp.asarray(3, dtype=jnp.int32)
+
+    gradient = jax.grad(lambda rate: Poisson(rate).log_prob(value))(2.0)
+
+    assert jnp.allclose(gradient, 3.0 / 2.0 - 1.0)
+
+
 def test_poisson_log_prob_broadcasts_over_vector_inputs() -> None:
     dist = Poisson(jnp.asarray([1.0, 2.0]))
     values = jnp.asarray([0.0, 3.0])

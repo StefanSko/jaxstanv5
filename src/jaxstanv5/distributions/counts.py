@@ -79,7 +79,8 @@ class Poisson(DiscreteDistribution):
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise Poisson log-probability mass for ``x``."""
         rate = self._rate()
-        value = jnp.asarray(x)
+        dtype = jnp.result_type(rate, 1.0)
+        value = jnp.asarray(x, dtype=dtype)
         integer_support = value == jnp.floor(value)
         valid_rate = rate > 0.0
         support = (value >= 0.0) & integer_support & valid_rate
