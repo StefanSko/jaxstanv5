@@ -89,6 +89,17 @@ class OrderedLogistic(DiscreteDistribution):
         sample_shape: tuple[int, ...] = (),
     ) -> jax.Array:
         """Draw zero-based ordinal category labels with leading sample dimensions."""
+        _, cutpoints = self._eta_cutpoints()
+        if cutpoints.ndim == 0:
+            raise ValueError("OrderedLogistic cutpoints must be a vector")
+        ordered = jnp.all(cutpoints[..., 1:] > cutpoints[..., :-1])
+        try:
+            if not bool(ordered):
+                raise ValueError("OrderedLogistic cutpoints must be strictly increasing")
+        except jax.errors.TracerBoolConversionError:
+            pass
         probabilities = self._category_probabilities()
-        logits = jnp.log(jnp.broadcast_to(probabilities, sample_shape + probabilities.shape))
+        dtype = jnp.result_type(probabilities, 1.0)
+        safe_probabilities = jnp.clip(probabilities, jnp.finfo(dtype).tiny, 1.0)
+        logits = jnp.log(jnp.broadcast_to(safe_probabilities, sample_shape + probabilities.shape))
         return jax.random.categorical(key, logits=logits, axis=-1).astype(jnp.int32)

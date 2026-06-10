@@ -43,8 +43,11 @@ class Normal:
         """Return element-wise normal log-density for ``x``."""
         loc, scale = self._loc_scale()
         value = jnp.asarray(x)
-        standardized = (value - loc) / scale
-        return -0.5 * standardized**2 - jnp.log(scale) - 0.5 * math.log(2.0 * math.pi)
+        support = scale > 0.0
+        safe_scale = jnp.where(support, scale, 1.0)
+        standardized = (value - loc) / safe_scale
+        log_density = -0.5 * standardized**2 - jnp.log(safe_scale) - 0.5 * math.log(2.0 * math.pi)
+        return jnp.where(support, log_density, -jnp.inf)
 
     def sample(
         self,
@@ -89,9 +92,11 @@ class HalfNormal:
         """Return element-wise Half-Normal log-density for ``x``."""
         scale = self._scale()
         value = jnp.asarray(x)
-        standardized = value / scale
-        log_density = 0.5 * math.log(2.0 / math.pi) - jnp.log(scale) - 0.5 * standardized**2
-        return jnp.where(value >= 0.0, log_density, -jnp.inf)
+        valid_scale = scale > 0.0
+        safe_scale = jnp.where(valid_scale, scale, 1.0)
+        standardized = value / safe_scale
+        log_density = 0.5 * math.log(2.0 / math.pi) - jnp.log(safe_scale) - 0.5 * standardized**2
+        return jnp.where((value >= 0.0) & valid_scale, log_density, -jnp.inf)
 
     def sample(
         self,
@@ -143,14 +148,18 @@ class StudentT:
         """Return element-wise Student-t log-density for ``x``."""
         df, loc, scale = self._params()
         value = jnp.asarray(x)
-        standardized = (value - loc) / scale
-        return (
-            gammaln(0.5 * (df + 1.0))
-            - gammaln(0.5 * df)
-            - 0.5 * jnp.log(df * math.pi)
-            - jnp.log(scale)
-            - 0.5 * (df + 1.0) * jnp.log1p(standardized**2 / df)
+        valid_params = (df > 0.0) & (scale > 0.0)
+        safe_df = jnp.where(df > 0.0, df, 1.0)
+        safe_scale = jnp.where(scale > 0.0, scale, 1.0)
+        standardized = (value - loc) / safe_scale
+        log_density = (
+            gammaln(0.5 * (safe_df + 1.0))
+            - gammaln(0.5 * safe_df)
+            - 0.5 * jnp.log(safe_df * math.pi)
+            - jnp.log(safe_scale)
+            - 0.5 * (safe_df + 1.0) * jnp.log1p(standardized**2 / safe_df)
         )
+        return jnp.where(valid_params, log_density, -jnp.inf)
 
     def sample(
         self,
@@ -185,7 +194,10 @@ class Exponential:
         """Return element-wise Exponential log-density for ``x``."""
         rate = self._rate()
         value = jnp.asarray(x)
-        return jnp.where(value >= 0.0, jnp.log(rate) - rate * value, -jnp.inf)
+        valid_rate = rate > 0.0
+        safe_rate = jnp.where(valid_rate, rate, 1.0)
+        log_density = jnp.log(safe_rate) - safe_rate * value
+        return jnp.where((value >= 0.0) & valid_rate, log_density, -jnp.inf)
 
     def sample(
         self,
@@ -235,8 +247,10 @@ class Uniform:
         """Return element-wise uniform log-density for ``x``."""
         low, high = self._low_high()
         value = jnp.asarray(x)
-        in_support = (value >= low) & (value <= high)
-        return jnp.where(in_support, -jnp.log(high - low), -jnp.inf)
+        valid_bounds = high > low
+        safe_width = jnp.where(valid_bounds, high - low, 1.0)
+        in_support = (value >= low) & (value <= high) & valid_bounds
+        return jnp.where(in_support, -jnp.log(safe_width), -jnp.inf)
 
     def sample(
         self,
