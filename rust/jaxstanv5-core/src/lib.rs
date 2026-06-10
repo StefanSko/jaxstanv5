@@ -11,6 +11,7 @@
 #![deny(unsafe_code)]
 
 pub mod error;
+pub mod ir;
 pub mod json;
 
 pub use error::Error;
