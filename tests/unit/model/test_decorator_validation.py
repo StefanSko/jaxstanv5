@@ -295,6 +295,39 @@ def test_private_model_declaration_resolution_rejects_aliased_data_declarations(
         _resolve_model_declaration(AliasedData)
 
 
+def test_model_declaration_rejects_base_class_with_declarations() -> None:
+    class Base:
+        alpha = Param(Normal(0.0, 1.0))
+        x = Data.vector()
+
+    with pytest.raises(TypeError, match="must not use inheritance"):
+
+        @model
+        class Child(Base):
+            y = Observed(Normal(0.0, 1.0))
+
+
+def test_model_declaration_rejects_declaration_free_base_class() -> None:
+    class Mixin:
+        note = "no declarations here"
+
+    with pytest.raises(TypeError, match="must not use inheritance"):
+
+        @model
+        class WithMixin(Mixin):
+            y = Observed(Normal(0.0, 1.0))
+
+
+def test_model_declaration_accepts_explicit_object_base() -> None:
+    @model
+    class ExplicitObjectBase(object):  # noqa: UP004
+        y = Observed(Normal(0.0, 1.0))
+
+    meta = _resolve_model_declaration(ExplicitObjectBase)
+
+    assert tuple(node.name for node in meta.observed_nodes) == ("y",)
+
+
 def test_private_model_declaration_resolution_rejects_aliased_observed_declarations() -> None:
     class AliasedObserved:
         y = Observed(Normal(0.0, 1.0))
