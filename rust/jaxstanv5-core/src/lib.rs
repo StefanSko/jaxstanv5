@@ -13,5 +13,6 @@
 pub mod error;
 pub mod ir;
 pub mod json;
+pub mod special;
 
 pub use error::Error;
