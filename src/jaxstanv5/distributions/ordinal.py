@@ -92,8 +92,12 @@ class OrderedLogistic(DiscreteDistribution):
         _, cutpoints = self._eta_cutpoints()
         if cutpoints.ndim == 0:
             raise ValueError("OrderedLogistic cutpoints must be a vector")
-        if not bool(jnp.all(cutpoints[..., 1:] > cutpoints[..., :-1])):
-            raise ValueError("OrderedLogistic cutpoints must be strictly increasing")
+        ordered = jnp.all(cutpoints[..., 1:] > cutpoints[..., :-1])
+        try:
+            if not bool(ordered):
+                raise ValueError("OrderedLogistic cutpoints must be strictly increasing")
+        except jax.errors.TracerBoolConversionError:
+            pass
         probabilities = self._category_probabilities()
         dtype = jnp.result_type(probabilities, 1.0)
         safe_probabilities = jnp.clip(probabilities, jnp.finfo(dtype).tiny, 1.0)

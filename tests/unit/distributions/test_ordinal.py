@@ -98,6 +98,16 @@ def test_ordered_logistic_sample_rejects_unordered_cutpoints() -> None:
         dist.sample(jax.random.PRNGKey(1), sample_shape=(10,))
 
 
+def test_ordered_logistic_sample_remains_jittable() -> None:
+    @jax.jit
+    def draw(cutpoints: jax.Array) -> jax.Array:
+        return OrderedLogistic(0.0, cutpoints).sample(jax.random.PRNGKey(3), sample_shape=(4,))
+
+    sample = draw(jnp.asarray([-1.0, 1.0]))
+
+    assert sample.shape == (4,)
+
+
 def test_ordered_logistic_sample_clamps_tiny_negative_probabilities_before_log() -> None:
     cutpoints = jnp.asarray([0.0, jnp.finfo(jnp.float32).tiny])
     dist = OrderedLogistic(jnp.asarray(0.0, dtype=jnp.float32), cutpoints)
