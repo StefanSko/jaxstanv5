@@ -10,9 +10,14 @@
 
 #![deny(unsafe_code)]
 
+pub mod density;
 pub mod error;
 pub mod ir;
 pub mod json;
+pub mod linalg;
+pub mod model;
 pub mod special;
+pub mod tape;
+pub mod tensor;
 
 pub use error::Error;
