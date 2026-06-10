@@ -8,8 +8,25 @@ import jax.numpy as jnp
 import pytest
 
 from jaxstanv5 import model
-from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
-from jaxstanv5.distributions.core import DistributionParameter, DistributionValue, LogProbability
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
+from jaxstanv5.constraints.core import Constraint
+from jaxstanv5.distributions import (
+    Beta,
+    BetaBinomial,
+    Binomial,
+    Exponential,
+    HalfNormal,
+    NegativeBinomial,
+    Normal,
+    Poisson,
+    Uniform,
+)
+from jaxstanv5.distributions.core import (
+    Distribution,
+    DistributionParameter,
+    DistributionValue,
+    LogProbability,
+)
 from jaxstanv5.model.core import Data, Observed, Param, PartiallyObserved
 from jaxstanv5.model.decorator import _resolve_model_declaration
 
@@ -202,6 +219,66 @@ def test_private_model_declaration_resolution_accepts_multiple_observed_declarat
     meta = _resolve_model_declaration(MultipleObserved)
 
     assert tuple(node.name for node in meta.observed_nodes) == ("y", "z")
+
+
+def test_model_resolution_requires_positive_constraint_for_positive_priors() -> None:
+    class MissingConstraint:
+        sigma = Param(Exponential(1.0))
+
+    with pytest.raises(TypeError, match="support \\(0, inf\\).*Positive"):
+        _resolve_model_declaration(MissingConstraint)
+
+
+@pytest.mark.parametrize("distribution", [Exponential(1.0), HalfNormal(1.0)])
+def test_private_model_declaration_resolution_accepts_positive_prior_constraint(
+    distribution: Distribution,
+) -> None:
+    class ValidPositivePrior:
+        sigma = Param(distribution, constraint=Positive())
+
+    meta = _resolve_model_declaration(ValidPositivePrior)
+
+    assert tuple(meta.params) == ("sigma",)
+
+
+def test_private_model_declaration_resolution_requires_unit_interval_for_beta_prior() -> None:
+    class MissingConstraint:
+        theta = Param(Beta(2.0, 2.0))
+
+    with pytest.raises(TypeError, match="support \\(0, 1\\).*UnitInterval"):
+        _resolve_model_declaration(MissingConstraint)
+
+
+@pytest.mark.parametrize(
+    ("constraint", "accepted"),
+    [(UnitInterval(), True), (Interval(0.0, 1.0), True), (Interval(-1.0, 1.0), False)],
+)
+def test_private_model_declaration_resolution_validates_uniform_prior_constraint(
+    constraint: Constraint,
+    accepted: bool,
+) -> None:
+    class UniformPrior:
+        theta = Param(Uniform(0.0, 1.0), constraint=constraint)
+
+    if accepted:
+        meta = _resolve_model_declaration(UniformPrior)
+        assert tuple(meta.params) == ("theta",)
+    else:
+        with pytest.raises(TypeError, match="Uniform prior has support"):
+            _resolve_model_declaration(UniformPrior)
+
+
+def test_private_model_declaration_resolution_skips_symbolic_uniform_bound_constraint_check() -> (
+    None
+):
+    class SymbolicUniformBounds:
+        low = Data.scalar()
+        high = Data.scalar()
+        theta = Param(Uniform(low, high))
+
+    meta = _resolve_model_declaration(SymbolicUniformBounds)
+
+    assert tuple(meta.params) == ("theta",)
 
 
 def test_private_model_declaration_resolution_rejects_discrete_parameter_priors() -> None:
