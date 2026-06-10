@@ -23,13 +23,18 @@ def validate_scale_tril(scale_tril: jax.Array, *, name: str = "scale_tril") -> N
         raise ValueError(f"{name} must be a matrix or batched matrix")
     if scale_tril.shape[-1] != scale_tril.shape[-2]:
         raise ValueError(f"{name} must be square")
-    if not bool(jnp.allclose(scale_tril, jnp.tril(scale_tril))):
+    diagonal = jnp.diagonal(scale_tril, axis1=-2, axis2=-1)
+    try:
+        lower_triangular = bool(jnp.allclose(scale_tril, jnp.tril(scale_tril)))
+        positive_diagonal = bool(jnp.all(diagonal > 0.0))
+    except jax.errors.TracerBoolConversionError:
+        return
+    if not lower_triangular:
         raise ValueError(
             f"{name} must be lower-triangular; use jnp.linalg.cholesky(cov) "
             "when starting from a covariance matrix"
         )
-    diagonal = jnp.diagonal(scale_tril, axis1=-2, axis2=-1)
-    if not bool(jnp.all(diagonal > 0.0)):
+    if not positive_diagonal:
         raise ValueError(f"{name} diagonal entries must be strictly positive")
 
 

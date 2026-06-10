@@ -111,6 +111,16 @@ def test_multivariate_normal_event_shape_matches_cholesky_dimension() -> None:
     assert dist.event_shape() == (4,)
 
 
+def test_multivariate_normal_sample_remains_jittable() -> None:
+    @jax.jit
+    def draw(scale_tril: jax.Array) -> jax.Array:
+        return MultivariateNormal(0.0, scale_tril).sample(jax.random.PRNGKey(0))
+
+    sample = draw(jnp.eye(3))
+
+    assert sample.shape == (3,)
+
+
 def test_multivariate_normal_sample_draws_one_event_vector() -> None:
     dist = MultivariateNormal(0.0, jnp.eye(3))
 
