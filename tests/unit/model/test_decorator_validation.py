@@ -285,6 +285,14 @@ def test_private_model_declaration_resolution_matches_scalar_array_uniform_bound
     assert tuple(meta.params) == ("theta",)
 
 
+def test_private_model_declaration_resolution_rejects_near_but_unequal_uniform_bounds() -> None:
+    class NearUniformPrior:
+        theta = Param(Uniform(0.0, 1e-8), constraint=Interval(0.0, 1e-7))
+
+    with pytest.raises(TypeError, match="Uniform prior has support"):
+        _resolve_model_declaration(NearUniformPrior)
+
+
 def test_model_resolution_skips_symbolic_uniform_bound_constraint_check() -> None:
     class SymbolicUniformBounds:
         low = Data.scalar()

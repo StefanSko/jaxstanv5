@@ -348,7 +348,7 @@ def _constraint_matches_uniform_support(
 
 def _same_scalar_bound(left: float, right: float) -> bool:
     """Compare user-written scalar bounds across Python/JAX scalar dtypes."""
-    return math.isclose(left, right, rel_tol=1e-6, abs_tol=1e-7)
+    return math.isclose(left, right, rel_tol=1e-6, abs_tol=0.0)
 
 
 def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, ExprNode]:
