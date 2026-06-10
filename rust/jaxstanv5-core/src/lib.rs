@@ -10,12 +10,17 @@
 
 #![deny(unsafe_code)]
 
+pub mod adapt;
 pub mod density;
+pub mod diagnostics;
 pub mod error;
 pub mod ir;
 pub mod json;
 pub mod linalg;
 pub mod model;
+pub mod nuts;
+pub mod rng;
+pub mod sampler;
 pub mod special;
 pub mod tape;
 pub mod tensor;
