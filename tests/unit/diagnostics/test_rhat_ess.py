@@ -90,14 +90,15 @@ def test_rhat_single_chain_splits_internally() -> None:
     assert 0.95 < result["mu"] < 1.10  # split rhat ≈ 1.0 for i.i.d. draws
 
 
-def test_rhat_multi_chain_pass_through() -> None:
-    """Multiple chains (4, N) are passed through to BlackJAX unchanged."""
+def test_rhat_multi_chain_splits_every_chain() -> None:
+    """Split R-hat detects identical within-chain trends across multiple chains."""
     key = jax.random.PRNGKey(6)
     keys = jax.random.split(key, 4)
-    n = 250
-    chains = [jax.random.normal(k, (n,)) for k in keys]
-    samples = {"mu": jnp.stack(chains)}  # (4, 250)
+    n = 1000
+    trend = jnp.linspace(-3.0, 3.0, n)
+    chains = [jax.random.normal(k, (n,)) + trend for k in keys]
+    samples = {"mu": jnp.stack(chains)}
 
     result = rhat(samples)
     assert "mu" in result
-    assert 0.95 < result["mu"] < 1.10  # 4 good chains → rhat ≈ 1.0
+    assert result["mu"] > 1.5

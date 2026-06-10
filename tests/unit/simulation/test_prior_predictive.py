@@ -248,6 +248,20 @@ def test_simulate_prior_predictive_draws_fixed_kernel_gp_shapes() -> None:
     assert result.observed["y"].shape == (5, 3)
 
 
+def test_simulate_prior_predictive_rejects_non_lower_triangular_mvn_scale_tril_data() -> None:
+    with pytest.raises(ValueError, match="jnp.linalg.cholesky"):
+        simulate_prior_predictive(
+            FixedKernelGpPriorPredictive,
+            seed=44,
+            num_samples=5,
+            data={
+                "n": 3,
+                "chol": jnp.asarray([[1.0, 0.5, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+                "obs_sd": 0.2,
+            },
+        )
+
+
 def test_simulate_prior_predictive_rejects_wrong_shaped_data() -> None:
     with pytest.raises(ValueError, match="Data 'chol' has wrong shape"):
         simulate_prior_predictive(

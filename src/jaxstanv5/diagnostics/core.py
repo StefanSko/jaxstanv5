@@ -7,17 +7,13 @@ import jax.numpy as jnp
 from blackjax.diagnostics import effective_sample_size, potential_scale_reduction
 
 
-def _ensure_multi_chain(arr: jax.Array, chain_axis: int = 0) -> jax.Array:
-    """If ``arr`` has only one chain, split it in half along the draw axis."""
-    if arr.shape[chain_axis] > 1:
-        return arr
-    # Squeeze out the singleton chain dimension, split draws in half
-    flat = jnp.squeeze(arr, axis=chain_axis)
-    n_draws = flat.shape[0]
+def _split_chains(arr: jax.Array) -> jax.Array:
+    """Split every chain in half along the draw axis, dropping an odd final draw."""
+    n_draws = arr.shape[1]
     half = n_draws // 2
-    first = flat[:half]
-    second = flat[half : 2 * half]
-    return jnp.stack([first, second], axis=0)
+    first = arr[:, :half]
+    second = arr[:, half : 2 * half]
+    return jnp.concatenate([first, second], axis=0)
 
 
 def _has_sample_values(arr: jax.Array) -> bool:
@@ -40,7 +36,7 @@ def rhat(samples: dict[str, jax.Array]) -> dict[str, float]:
         parameter arrays are omitted because they have no scalar coordinates.
     """
     return {
-        name: float(jnp.max(potential_scale_reduction(_ensure_multi_chain(arr))))
+        name: float(jnp.max(potential_scale_reduction(_split_chains(arr))))
         for name, arr in samples.items()
         if _has_sample_values(arr)
     }
