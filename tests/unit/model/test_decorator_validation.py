@@ -268,9 +268,19 @@ def test_private_model_declaration_resolution_validates_uniform_prior_constraint
             _resolve_model_declaration(UniformPrior)
 
 
-def test_private_model_declaration_resolution_skips_symbolic_uniform_bound_constraint_check() -> (
-    None
-):
+def test_private_model_declaration_resolution_matches_scalar_array_uniform_bounds() -> None:
+    lower = jnp.asarray(0.1, dtype=jnp.float32)
+    upper = jnp.asarray(0.9, dtype=jnp.float32)
+
+    class ScalarArrayUniformPrior:
+        theta = Param(Uniform(lower, upper), constraint=Interval(0.1, 0.9))
+
+    meta = _resolve_model_declaration(ScalarArrayUniformPrior)
+
+    assert tuple(meta.params) == ("theta",)
+
+
+def test_model_resolution_skips_symbolic_uniform_bound_constraint_check() -> None:
     class SymbolicUniformBounds:
         low = Data.scalar()
         high = Data.scalar()

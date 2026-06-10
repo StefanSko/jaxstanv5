@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import cast
@@ -332,11 +333,22 @@ def _constraint_matches_uniform_support(
     high: float,
 ) -> bool:
     """Return whether an explicit interval constraint matches a Uniform prior."""
-    if low == 0.0 and high == 1.0 and isinstance(constraint, UnitInterval):
+    if (
+        _same_scalar_bound(low, 0.0)
+        and _same_scalar_bound(high, 1.0)
+        and isinstance(constraint, UnitInterval)
+    ):
         return True
     if isinstance(constraint, Interval):
-        return constraint.lower == low and constraint.upper == high
+        return _same_scalar_bound(constraint.lower, low) and _same_scalar_bound(
+            constraint.upper, high
+        )
     return False
+
+
+def _same_scalar_bound(left: float, right: float) -> bool:
+    """Compare user-written scalar bounds across Python/JAX scalar dtypes."""
+    return math.isclose(left, right, rel_tol=1e-6, abs_tol=1e-7)
 
 
 def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, ExprNode]:
