@@ -147,6 +147,21 @@ def register_node(cls: type, *, tag: str | None = None) -> None:
     _NODE_SPECS_BY_CLASS[cls] = spec
 
 
+def register_distribution(cls: type, *, tag: str | None = None) -> None:
+    """Register a user distribution dataclass for IR serialization.
+
+    Documents using extension tags are consumable only by Python processes
+    that imported the registering package; non-Python consumers reject them.
+    """
+    if not is_dataclass(cls):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must be a dataclass to be IR-serializable. "
+            "Decorate it with @dataclass(frozen=True) before calling "
+            "jaxstanv5.ir.register_distribution, or replace it with a built-in distribution."
+        )
+    register_node(cls, tag=tag)
+
+
 def _classify_fields(cls: type) -> tuple[tuple[str, _FieldKind], ...]:
     """Record each constructor field's wire representation once, at registration."""
     if not is_dataclass(cls):
