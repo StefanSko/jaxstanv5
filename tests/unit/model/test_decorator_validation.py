@@ -251,7 +251,12 @@ def test_private_model_declaration_resolution_requires_unit_interval_for_beta_pr
 
 @pytest.mark.parametrize(
     ("constraint", "accepted"),
-    [(UnitInterval(), True), (Interval(0.0, 1.0), True), (Interval(-1.0, 1.0), False)],
+    [
+        (UnitInterval(), True),
+        (Interval(0.0, 1.0), True),
+        (Positive(), True),
+        (Interval(-1.0, 1.0), False),
+    ],
 )
 def test_private_model_declaration_resolution_validates_uniform_prior_constraint(
     constraint: Constraint,

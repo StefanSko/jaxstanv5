@@ -332,13 +332,15 @@ def _constraint_matches_uniform_support(
     low: float,
     high: float,
 ) -> bool:
-    """Return whether an explicit interval constraint matches a Uniform prior."""
+    """Return whether a Uniform prior has an explicit compatible constraint."""
     if (
         _same_scalar_bound(low, 0.0)
         and _same_scalar_bound(high, 1.0)
         and isinstance(constraint, UnitInterval)
     ):
         return True
+    if isinstance(constraint, Positive):
+        return high > 0.0
     if isinstance(constraint, Interval):
         return _same_scalar_bound(constraint.lower, low) and _same_scalar_bound(
             constraint.upper, high
