@@ -12,6 +12,7 @@ from jaxstanv5.inference.core import (
     SamplerDiagnostics,
     SamplerResult,
     _constrain_sample_values,
+    _draw_initial_position,
     _unflatten_samples,
     compile_sampler,
     sample,
@@ -82,6 +83,15 @@ def test_constrain_sample_values_applies_parameter_constraints() -> None:
     constrained = _constrain_sample_values(samples, meta)
 
     assert jnp.allclose(constrained["sigma"], jnp.array([[1.0, 2.0]]))
+
+
+def test_draw_initial_position_jitters_on_unconstrained_scale() -> None:
+    position = _draw_initial_position(jnp.asarray([0, 1], dtype=jnp.uint32), 128)
+
+    assert position.shape == (128,)
+    assert jnp.all(position >= -2.0)
+    assert jnp.all(position <= 2.0)
+    assert not jnp.allclose(position, jnp.zeros_like(position))
 
 
 def test_sampler_result_dataclass() -> None:

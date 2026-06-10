@@ -164,6 +164,11 @@ def _validate_sampler_counts(
     _validate_positive_count(num_samples, name="num_samples")
 
 
+def _draw_initial_position(rng_key: jax.Array, n_params: int) -> jax.Array:
+    """Draw one overdispersed unconstrained initial position."""
+    return jax.random.uniform(rng_key, (n_params,), minval=-2.0, maxval=2.0)
+
+
 def _empty_unconstrained_samples(
     shapes: dict[str, tuple[int, ...]],
     *,
@@ -229,8 +234,8 @@ def _sample_one_chain(
     leading chain axis keeps the one-chain path compatible with stacked
     multi-chain results.
     """
-    init_q = jnp.zeros(bound.n_params)
-    warmup_key, sample_key = jax.random.split(rng_key)
+    init_key, warmup_key, sample_key = jax.random.split(rng_key, 3)
+    init_q = _draw_initial_position(init_key, bound.n_params)
 
     (last_state, tuned_params), warmup_info = warmup_run(
         warmup_key,
