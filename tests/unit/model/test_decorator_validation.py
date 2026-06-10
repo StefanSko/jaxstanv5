@@ -293,6 +293,17 @@ def test_private_model_declaration_resolution_rejects_near_but_unequal_uniform_b
         _resolve_model_declaration(NearUniformPrior)
 
 
+def test_private_model_declaration_resolution_rejects_shifted_large_uniform_bounds() -> None:
+    class LargeUniformPrior:
+        theta = Param(
+            Uniform(1_000_000.0, 1_000_001.0),
+            constraint=Interval(1_000_000.5, 1_000_001.5),
+        )
+
+    with pytest.raises(TypeError, match="Uniform prior has support"):
+        _resolve_model_declaration(LargeUniformPrior)
+
+
 def test_model_resolution_skips_symbolic_uniform_bound_constraint_check() -> None:
     class SymbolicUniformBounds:
         low = Data.scalar()

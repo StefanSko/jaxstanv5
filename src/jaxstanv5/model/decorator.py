@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import cast
@@ -356,8 +355,13 @@ def _constraint_matches_uniform_support(
 
 
 def _same_scalar_bound(left: float, right: float) -> bool:
-    """Compare user-written scalar bounds across Python/JAX scalar dtypes."""
-    return math.isclose(left, right, rel_tol=1e-6, abs_tol=0.0)
+    """Compare scalar bounds exactly at float32 resolution.
+
+    The compiled log density evaluates bounds in JAX's default float32, so
+    equality at that resolution absorbs Python-float vs float32-array roundoff
+    of one written value while rejecting every representable difference.
+    """
+    return float(jnp.float32(left)) == float(jnp.float32(right))
 
 
 def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, ExprNode]:
