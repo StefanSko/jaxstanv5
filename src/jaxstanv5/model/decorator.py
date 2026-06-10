@@ -11,8 +11,16 @@ import jax.numpy as jnp
 
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
-from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
+from jaxstanv5.distributions.core import DiscreteDistribution, Distribution, SampleableDistribution
+from jaxstanv5.distributions.counts import (
+    Bernoulli,
+    BetaBinomial,
+    Binomial,
+    NegativeBinomial,
+    Poisson,
+)
 from jaxstanv5.distributions.multivariate import MultivariateNormal, validate_scale_tril
+from jaxstanv5.distributions.ordinal import OrderedLogistic
 from jaxstanv5.model._data_schema import (
     DataDimRef,
     DataDimSymbol,
@@ -298,6 +306,7 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
             raise ValueError(f"Unexpected model data: {sorted(extra)}")
 
         data = {name: jnp.asarray(value) for name, value in values.items()}
+        _validate_finite_bound_values(data)
         _validate_declared_data_values(meta, {name: data[name] for name in meta.data})
         param_shapes = {
             name: _resolve_param_shape(value.size, data)
@@ -305,6 +314,8 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
         }
         n_params = sum(_param_count(shape) for shape in param_shapes.values())
         _validate_bound_index_expressions(meta, data, param_shapes)
+        _validate_stochastic_site_shapes(meta, data, param_shapes)
+        _validate_observed_discrete_values(meta, data, param_shapes)
         _validate_bound_distribution_parameters(meta, data)
         return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
@@ -362,6 +373,18 @@ def _normalize_declared_data_values(
     data = {name: jnp.asarray(value) for name, value in raw_values.items()}
     _validate_declared_data_values(meta, data)
     return data
+
+
+def _validate_finite_bound_values(data: dict[str, jax.Array]) -> None:
+    """Reject NaN or infinite bound data before compilation/sampling."""
+    for name, value in data.items():
+        if bool(jnp.any(jnp.isnan(value))):
+            raise ValueError(
+                f"Bound value {name!r} contains NaN; use PartialVector.from_nan(...) "
+                "and PartiallyObserved for missing values"
+            )
+        if bool(jnp.any(~jnp.isfinite(value))):
+            raise ValueError(f"Bound value {name!r} contains non-finite values")
 
 
 def _validate_declared_data_values(meta: ModelMeta, data: dict[str, jax.Array]) -> None:
@@ -430,6 +453,141 @@ def _validate_bound_index_expressions(
         _validate_index_expr(site.value, data, param_shapes)
     for expression in meta.expressions.values():
         _validate_index_expr(expression, data, param_shapes)
+
+
+def _validate_stochastic_site_shapes(
+    meta: ModelMeta,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Reject stochastic-site broadcasting that would expand the site value."""
+    for site in _resolved_stochastic_sites(meta):
+        value_shape = _infer_expr_shape(site.value, data, param_shapes)
+        distribution_shape = _distribution_value_shape(site.distribution, data, param_shapes)
+        if distribution_shape is None:
+            continue
+        try:
+            broadcast_shape = jnp.broadcast_shapes(value_shape, distribution_shape)
+        except ValueError as exc:
+            raise ValueError(
+                f"Stochastic site {site.name!r} value shape {value_shape} is incompatible "
+                f"with distribution shape {distribution_shape}"
+            ) from exc
+        if broadcast_shape != value_shape:
+            raise ValueError(
+                f"Stochastic site {site.name!r} value shape {value_shape} would broadcast to "
+                f"{broadcast_shape} against distribution shape {distribution_shape}; declare an "
+                "explicit matching size or data shape"
+            )
+
+
+def _distribution_value_shape(
+    distribution: Distribution,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> tuple[int, ...] | None:
+    """Return batch+event shape for sampleable distributions, or None if unknown."""
+    shaped_distribution = _shape_stub_distribution(distribution, data, param_shapes)
+    if not isinstance(shaped_distribution, SampleableDistribution):
+        return None
+    return shaped_distribution.batch_shape() + shaped_distribution.event_shape()
+
+
+def _shape_stub_distribution[DistributionT: Distribution](
+    distribution: DistributionT,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> DistributionT:
+    """Replace expression fields by zero arrays with inferred bind-time shapes."""
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return distribution
+    resolved: dict[str, object] = {}
+    for distribution_field in fields(distribution):
+        value = getattr(distribution, distribution_field.name)
+        if _is_final_expr_node(value):
+            shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
+            resolved[distribution_field.name] = jnp.zeros(shape)
+        elif is_dataclass(value) and not isinstance(value, type):
+            resolved[distribution_field.name] = _shape_stub_distribution(
+                cast(Distribution, value),
+                data,
+                param_shapes,
+            )
+        else:
+            resolved[distribution_field.name] = value
+    return cast(DistributionT, type(distribution)(**resolved))
+
+
+def _validate_observed_discrete_values(
+    meta: ModelMeta,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate concrete observed values for discrete likelihoods."""
+    for site in _resolved_stochastic_sites(meta):
+        if not isinstance(site.distribution, DiscreteDistribution):
+            continue
+        value = _evaluate_data_index_expr(site.value, data)
+        _validate_integer_observed_value(site.name, value)
+        _validate_discrete_observed_support(site.name, site.distribution, value, data, param_shapes)
+
+
+def _validate_integer_observed_value(name: str, value: jax.Array) -> None:
+    if bool(jnp.any(value != jnp.floor(value))):
+        raise ValueError(f"Observed site {name!r} contains non-integer values")
+
+
+def _validate_discrete_observed_support(
+    name: str,
+    distribution: Distribution,
+    value: jax.Array,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    if isinstance(distribution, Bernoulli):
+        _validate_value_range(name, value, low=0.0, high=1.0)
+    elif isinstance(distribution, Poisson | NegativeBinomial):
+        _validate_value_range(name, value, low=0.0, high=None)
+    elif isinstance(distribution, Binomial | BetaBinomial):
+        _validate_value_range(name, value, low=0.0, high=None)
+        total_count = _evaluate_optional_data_expr(distribution.total_count, data)
+        if total_count is not None:
+            _validate_value_array_upper_bound(name, value, total_count)
+    elif isinstance(distribution, OrderedLogistic):
+        _validate_value_range(name, value, low=0.0, high=None)
+        cutpoint_shape = _distribution_field_shape(distribution.cutpoints, data, param_shapes)
+        if cutpoint_shape:
+            _validate_value_range(name, value, low=0.0, high=float(cutpoint_shape[-1]))
+
+
+def _distribution_field_shape(
+    value: object,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> tuple[int, ...]:
+    if _is_final_expr_node(value):
+        return _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
+    return jnp.asarray(value).shape
+
+
+def _validate_value_range(
+    name: str,
+    value: jax.Array,
+    *,
+    low: float,
+    high: float | None,
+) -> None:
+    below = value < low
+    above = jnp.zeros(value.shape, dtype=bool) if high is None else value > high
+    if bool(jnp.any(below | above)):
+        if high is None:
+            raise ValueError(f"Observed site {name!r} values must be >= {low}")
+        raise ValueError(f"Observed site {name!r} values must be between {low} and {high}")
+
+
+def _validate_value_array_upper_bound(name: str, value: jax.Array, upper: jax.Array) -> None:
+    if bool(jnp.any(value > upper)):
+        raise ValueError(f"Observed site {name!r} values must be <= total_count")
 
 
 def _validate_bound_distribution_parameters(meta: ModelMeta, data: dict[str, jax.Array]) -> None:

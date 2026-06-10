@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from jaxstanv5.distributions import MultivariateNormal, Normal
+from jaxstanv5.distributions import Binomial, MultivariateNormal, Normal, OrderedLogistic
 from jaxstanv5.model._data_schema import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import (
@@ -90,6 +90,16 @@ def test_bind_converts_data_to_arrays_and_resolves_all_parameter_shapes() -> Non
     assert bound.n_params == 6
 
 
+def test_bind_rejects_nan_bound_values() -> None:
+    with pytest.raises(ValueError, match="contains NaN"):
+        bind_meta(make_meta(), x=jnp.asarray([jnp.nan]), n=1, y=jnp.asarray([0.0]))
+
+
+def test_bind_rejects_infinite_bound_values() -> None:
+    with pytest.raises(ValueError, match="non-finite"):
+        bind_meta(make_meta(), x=jnp.asarray([1.0]), n=1, y=jnp.asarray([jnp.inf]))
+
+
 def test_bind_rejects_wrong_data_rank() -> None:
     with pytest.raises(ValueError, match="Data 'x' has wrong rank"):
         bind_meta(make_meta(), x=jnp.asarray(1.0), n=3, y=jnp.asarray([0.0, 1.0]))
@@ -163,6 +173,121 @@ def partial_vector_meta() -> ModelMeta:
             ),
         ),
     )
+
+
+def test_bind_rejects_observed_values_that_expand_against_distribution_shape() -> None:
+    meta = ModelMeta(
+        params={"alpha": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=None)},
+        data={"x": ResolvedData(ResolvedDataRankSchema(1))},
+        observed_nodes=(ResolvedObserved("y", Normal(DataRef("x"), 1.0)),),
+        expressions={},
+        stochastic_sites=(
+            ResolvedStochasticSite("alpha", Normal(0.0, 1.0), ParamRef("alpha")),
+            ResolvedStochasticSite("y", Normal(DataRef("x"), 1.0), DataRef("y")),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="would broadcast"):
+        bind_meta(meta, x=jnp.arange(5.0), y=jnp.ones((5, 1)))
+
+
+def test_bind_rejects_scalar_parameter_with_vector_batch_prior() -> None:
+    meta = ModelMeta(
+        params={"beta": ResolvedParam(Normal(DataRef("x"), 1.0), constraint=None, size=None)},
+        data={"x": ResolvedData(ResolvedDataRankSchema(1))},
+        observed_nodes=(),
+        expressions={},
+        free_values={"beta": ResolvedFreeValue(constraint=None, size=None)},
+        stochastic_sites=(
+            ResolvedStochasticSite("beta", Normal(DataRef("x"), 1.0), ParamRef("beta")),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="would broadcast"):
+        bind_meta(meta, x=jnp.arange(3.0))
+
+
+def test_bind_rejects_multivariate_parameter_without_event_size() -> None:
+    meta = ModelMeta(
+        params={
+            "theta": ResolvedParam(
+                MultivariateNormal(jnp.zeros((2,)), jnp.eye(2)),
+                constraint=None,
+                size=None,
+            )
+        },
+        data={},
+        observed_nodes=(),
+        expressions={},
+        free_values={"theta": ResolvedFreeValue(constraint=None, size=None)},
+        stochastic_sites=(
+            ResolvedStochasticSite(
+                "theta",
+                MultivariateNormal(jnp.zeros((2,)), jnp.eye(2)),
+                ParamRef("theta"),
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="would broadcast"):
+        bind_meta(meta)
+
+
+def test_bind_accepts_vector_parameter_with_scalar_iid_prior() -> None:
+    meta = ModelMeta(
+        params={"beta": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=3)},
+        data={},
+        observed_nodes=(),
+        expressions={},
+        free_values={"beta": ResolvedFreeValue(constraint=None, size=3)},
+        stochastic_sites=(ResolvedStochasticSite("beta", Normal(0.0, 1.0), ParamRef("beta")),),
+    )
+
+    bound = bind_meta(meta)
+
+    assert bound.param_shapes == {"beta": (3,)}
+
+
+def test_bind_rejects_non_integer_discrete_observation() -> None:
+    dist = Binomial(5.0, 0.5)
+    meta = ModelMeta(
+        params={},
+        data={},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        stochastic_sites=(ResolvedStochasticSite("y", dist, DataRef("y")),),
+    )
+
+    with pytest.raises(ValueError, match="non-integer"):
+        bind_meta(meta, y=jnp.asarray(2.5))
+
+
+def test_bind_rejects_binomial_observation_above_concrete_total_count() -> None:
+    dist = Binomial(DataRef("n"), 0.5)
+    meta = ModelMeta(
+        params={},
+        data={"n": ResolvedData(ResolvedDataShapeSchema(()))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        stochastic_sites=(ResolvedStochasticSite("y", dist, DataRef("y")),),
+    )
+
+    with pytest.raises(ValueError, match="total_count"):
+        bind_meta(meta, n=5, y=jnp.asarray(6.0))
+
+
+def test_bind_rejects_ordered_logistic_observation_outside_category_range() -> None:
+    dist = OrderedLogistic(0.0, DataRef("cutpoints"))
+    meta = ModelMeta(
+        params={},
+        data={"cutpoints": ResolvedData(ResolvedDataRankSchema(1))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        stochastic_sites=(ResolvedStochasticSite("y", dist, DataRef("y")),),
+    )
+
+    with pytest.raises(ValueError, match="between"):
+        bind_meta(meta, cutpoints=jnp.asarray([-1.0, 1.0]), y=jnp.asarray(3.0))
 
 
 def test_bind_rejects_non_lower_triangular_mvn_scale_tril_data() -> None:
