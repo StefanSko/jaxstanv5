@@ -9,6 +9,7 @@ vocabulary, not Python class names, is the cross-language contract.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
@@ -42,6 +43,7 @@ from jaxstanv5.model.decorator import (
     ResolvedObserved,
     ResolvedParam,
     ResolvedStochasticSite,
+    _make_bind,
 )
 from jaxstanv5.model.expr import (
     BinOp,
@@ -224,6 +226,34 @@ def _encode_node(value: object, spec: _NodeSpec) -> dict[str, JsonValue]:
     for name, _kind in spec.field_kinds:
         encoded[name] = _encode_value(getattr(value, name))
     return encoded
+
+
+def canonical_bytes(meta: ModelMeta) -> bytes:
+    """Return the canonical UTF-8 JSON bytes of the IR document.
+
+    The model hash is ``sha256(canonical_bytes(meta))``, computed by the
+    producer at write time. Consumers hash the file as received and never
+    re-serialize to hash.
+    """
+    return json.dumps(
+        meta_to_dict(meta),
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def bindable_from_meta(meta: ModelMeta) -> type[object]:
+    """Return a bindable model class equivalent to one produced by ``@model``.
+
+    Everything downstream of ``bind`` is unchanged and unaware of which path
+    produced the metadata.
+    """
+    namespace: dict[str, object] = {
+        "_model_meta": meta,
+        "bind": classmethod(_make_bind(meta)),
+    }
+    return type("IRModel", (object,), namespace)
 
 
 def meta_from_dict(document: object) -> ModelMeta:
