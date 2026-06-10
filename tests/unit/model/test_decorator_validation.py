@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -302,6 +303,19 @@ def test_private_model_declaration_resolution_rejects_shifted_large_uniform_boun
 
     with pytest.raises(TypeError, match="Uniform prior has support"):
         _resolve_model_declaration(LargeUniformPrior)
+
+
+def test_private_model_declaration_resolution_compares_uniform_bounds_at_x64_resolution() -> None:
+    jax.config.update("jax_enable_x64", True)
+    try:
+
+        class X64UniformPrior:
+            theta = Param(Uniform(0.0, 1.0 + 1e-12), constraint=UnitInterval())
+
+        with pytest.raises(TypeError, match="Uniform prior has support"):
+            _resolve_model_declaration(X64UniformPrior)
+    finally:
+        jax.config.update("jax_enable_x64", False)
 
 
 def test_model_resolution_skips_symbolic_uniform_bound_constraint_check() -> None:

@@ -355,13 +355,15 @@ def _constraint_matches_uniform_support(
 
 
 def _same_scalar_bound(left: float, right: float) -> bool:
-    """Compare scalar bounds exactly at float32 resolution.
+    """Compare scalar bounds exactly at JAX's canonical float resolution.
 
-    The compiled log density evaluates bounds in JAX's default float32, so
-    equality at that resolution absorbs Python-float vs float32-array roundoff
-    of one written value while rejecting every representable difference.
+    The compiled log density evaluates bounds at JAX's default float dtype
+    (float32, or float64 under ``jax_enable_x64``), so equality at that
+    resolution absorbs scalar dtype roundoff of one written value while
+    rejecting every difference representable in the compiled dtype.
     """
-    return float(jnp.float32(left)) == float(jnp.float32(right))
+    dtype = jnp.result_type(float)
+    return float(jnp.asarray(left, dtype)) == float(jnp.asarray(right, dtype))
 
 
 def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, ExprNode]:
