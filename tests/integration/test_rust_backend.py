@@ -14,17 +14,16 @@ import json
 import math
 import shutil
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol, cast
 
 import jax
 import pytest
 
-jax.config.update("jax_enable_x64", True)
-
-from jaxstanv5.inference import sample  # noqa: E402
-from jaxstanv5.ir import bindable_from_meta, meta_from_dict  # noqa: E402
-from jaxstanv5.model.bound import BoundModel  # noqa: E402
+from jaxstanv5.inference import sample
+from jaxstanv5.ir import bindable_from_meta, meta_from_dict
+from jaxstanv5.model.bound import BoundModel
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 FIXTURE = REPO_ROOT / "tests" / "golden_ir" / "fixtures" / "linear_regression.json"
@@ -37,6 +36,17 @@ NUM_CHAINS = 2
 
 class _BindableModel(Protocol):
     def bind(self, **values: object) -> BoundModel: ...
+
+
+@pytest.fixture
+def jax_x64() -> Iterator[None]:
+    """Enable x64 only for this test and restore the global JAX setting."""
+    previous = bool(jax.config.read("jax_enable_x64"))
+    jax.config.update("jax_enable_x64", True)
+    try:
+        yield
+    finally:
+        jax.config.update("jax_enable_x64", previous)
 
 
 @pytest.fixture(scope="module")
@@ -112,7 +122,11 @@ def _python_reference() -> dict[str, tuple[float, float]]:
     return summaries
 
 
-def test_rust_backend_matches_jax_posterior(jstan_binary: Path, tmp_path: Path) -> None:
+def test_rust_backend_matches_jax_posterior(
+    jstan_binary: Path,
+    tmp_path: Path,
+    jax_x64: None,
+) -> None:
     header, draws, trailer = _run_jstan(jstan_binary, tmp_path)
 
     assert header["draws_format"] == "v0-provisional"
@@ -145,6 +159,4 @@ def test_rust_backend_matches_jax_posterior(jstan_binary: Path, tmp_path: Path) 
             f"{name}: rust mean {rust_mean:.4f} vs jax mean {ref_mean:.4f} "
             f"(tolerance {tolerance:.4f})"
         )
-        assert 0.7 < rust_sd / ref_sd < 1.4, (
-            f"{name}: rust sd {rust_sd:.4f} vs jax sd {ref_sd:.4f}"
-        )
+        assert 0.7 < rust_sd / ref_sd < 1.4, f"{name}: rust sd {rust_sd:.4f} vs jax sd {ref_sd:.4f}"
