@@ -3,9 +3,25 @@
 This directory is intentionally prepared as the seed of a separate project named
 **Bayesite**.
 
-Bayesite should become an embeddable Rust runtime for Bayesian models encoded as
-serialized IR. `jaxstanv5` remains the current reference Python producer; the
-Rust project should not be merged into `jaxstanv5/main`.
+Bayesite should become a single-static-binary, agent-operable Bayesian workflow
+engine for models encoded as serialized IR. `jaxstanv5` remains the current
+reference Python producer; the Rust project should not be merged into
+`jaxstanv5/main`.
+
+Endgame command surface:
+
+```sh
+bayesite sample
+bayesite diagnose
+bayesite prior-predictive
+bayesite recover
+bayesite sbc
+```
+
+The intent is that an agent can download one binary and run the Bayesian
+workflow from the CLI without Python, `uvx`, NumPy, or any runtime dependency
+graph. Bayesite should be the SQLite-like artifact for Bayesian workflow, not a
+library that requires a host language environment on the agent path.
 
 ## Source state
 
@@ -132,7 +148,8 @@ release process. Until then:
 
 Bayesite should be framed as:
 
-> an embeddable, SQLite-like Bayesian runtime for serialized model IR.
+> a single-file, agent-operable, SQLite-like Bayesian workflow engine for
+> serialized model IR.
 
 Not as:
 
@@ -140,13 +157,30 @@ Not as:
 
 Strong defaults:
 
-- IR consumer/runtime only.
-- NUTS only.
+- IR consumer/runtime first; no Rust model declaration language unless explicitly
+  designed.
+- Agent workflow commands are first-class: `sample`, `diagnose`,
+  `prior-predictive`, `recover`, and `sbc`.
+- NUTS only for posterior sampling.
 - zero-dependency core.
 - first-class wasm.
-- stable CLI/wasm/protocol boundaries.
-- no workflow/reporting/platform scope.
+- stable CLI/wasm/protocol boundaries with machine-readable output.
 - no hidden network, filesystem, clock, or entropy in core runtime.
+- no Python, package manager, NumPy, or runtime dependency graph on the default
+  agent execution path.
+
+Keep a hard boundary between the runtime and workflow layers:
+
+```text
+core runtime:
+  decode IR -> bind data -> logp/grad -> NUTS -> diagnostics
+
+workflow CLI:
+  sample -> diagnose -> prior-predictive -> recover -> sbc
+```
+
+The workflow CLI may own artifacts and command ergonomics. It must not pollute
+core evaluation/sampling semantics.
 
 ## Validation after extraction
 

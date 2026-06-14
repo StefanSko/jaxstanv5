@@ -2,11 +2,12 @@
 
 ## Project identity
 
-This directory is the seed for **Bayesite**: an embeddable, SQLite-like
-Bayesian inference runtime for serialized model IR.
+This directory is the seed for **Bayesite**: a single-static-binary,
+agent-operable, SQLite-like Bayesian workflow engine for serialized model IR.
 
-Bayesite consumes a stable, code-free IR and runs inference. It is not a model
-declaration frontend, workflow platform, reporting system, plotting toolkit, or
+Bayesite consumes a stable, code-free IR and provides the command-line workflow
+an agent can use without Python, `uvx`, NumPy, or a dependency graph on the
+execution path. It is not a model declaration frontend, plotting toolkit, or
 multi-algorithm playground.
 
 Current seed compatibility:
@@ -23,6 +24,10 @@ envelope is a deliberate v2 format decision.
 
 - Consume IR; do not add a Rust model declaration language unless explicitly
   redesigned.
+- Provide an agent-operable CLI workflow: `sample`, `diagnose`,
+  `prior-predictive`, `recover`, and `sbc`.
+- Keep the default agent path to one downloaded binary: no Python, no package
+  manager, no NumPy question, and no runtime dependency graph.
 - Run NUTS only unless there is an explicit design decision to expand scope.
 - Keep the Rust core embeddable and SQLite-like: small, auditable, deterministic,
   offline-capable, and suitable for sandboxed use.
@@ -52,6 +57,22 @@ Important IR rules:
 - `data` plus `observed_nodes` define required bind inputs.
 - Consumers hash received canonical bytes; do not reserialize just to hash.
 - Unknown non-core tags fail explicitly with `UnknownNodeTag`.
+
+## Workflow CLI target
+
+The endgame CLI is a single binary with machine-readable commands:
+
+```sh
+bayesite sample           --model model.json --data data.json --out fit.jsonl
+bayesite diagnose         --fit fit.jsonl
+bayesite prior-predictive --model model.json --data data.json --out pp.jsonl
+bayesite recover          --model model.json --scenario scenario.json
+bayesite sbc              --model model.json --scenario scenario.json --replicates 100
+```
+
+The workflow layer may orchestrate artifacts, but it must not blur core runtime
+phases or hide state. Standard output/error should remain stable,
+machine-readable, and repair-oriented for agents.
 
 ## Runtime architecture
 
