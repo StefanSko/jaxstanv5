@@ -12,6 +12,19 @@ of provenance (hash the bytes, record the hash in run manifests), makes
 resolved declarations diffable, and provides a code-free construction path
 (`meta_from_dict` runs no user code).
 
+## Known downstream consumers
+
+[Bayesite](https://github.com/StefanSko/bayesite) is a known external Rust
+runtime/workflow binary that consumes this IR. The relationship is intentionally
+through serialized IR documents and golden fixtures only.
+
+Bayesite is not a dependency of `jaxstanv5`, and `jaxstanv5`'s public workflow
+remains Python model declaration -> bind data -> sample with NUTS.
+
+Changes to tags, field lists, encoding rules, or resolved execution metadata
+should be treated as downstream compatibility decisions and require golden-file
+diffs plus an IR version decision.
+
 ## Envelope
 
 ```json

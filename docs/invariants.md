@@ -62,6 +62,9 @@ Core invariants that should remain true as the codebase changes.
 - `ModelMeta` is the serialization boundary: `jaxstanv5.ir` round-trips resolved
   metadata only, executes no user code on decode, and uses only the standard
   library.
+- External runtimes such as Bayesite consume serialized `ModelMeta` through the
+  IR/golden-fixture boundary only; they are not `jaxstanv5` runtime dependencies
+  and must not require Python objects or user-code execution.
 - Serialized IR node tags, not Python class names, are the wire contract; tag,
   field, or encoding changes require regenerated golden files and a format
   version decision (see `docs/ir-format-v1.md`).
