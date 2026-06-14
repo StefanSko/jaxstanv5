@@ -4,12 +4,30 @@ from __future__ import annotations
 
 from typing import cast
 
+import jax
 import jax.numpy as jnp
 import pytest
 
 from jaxstanv5 import model
-from jaxstanv5.distributions import BetaBinomial, Binomial, NegativeBinomial, Normal, Poisson
-from jaxstanv5.distributions.core import DistributionParameter, DistributionValue, LogProbability
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
+from jaxstanv5.constraints.core import Constraint
+from jaxstanv5.distributions import (
+    Beta,
+    BetaBinomial,
+    Binomial,
+    Exponential,
+    HalfNormal,
+    NegativeBinomial,
+    Normal,
+    Poisson,
+    Uniform,
+)
+from jaxstanv5.distributions.core import (
+    Distribution,
+    DistributionParameter,
+    DistributionValue,
+    LogProbability,
+)
 from jaxstanv5.model.core import Data, Observed, Param, PartiallyObserved
 from jaxstanv5.model.decorator import _resolve_model_declaration
 
@@ -204,6 +222,113 @@ def test_private_model_declaration_resolution_accepts_multiple_observed_declarat
     assert tuple(node.name for node in meta.observed_nodes) == ("y", "z")
 
 
+def test_model_resolution_requires_positive_constraint_for_positive_priors() -> None:
+    class MissingConstraint:
+        sigma = Param(Exponential(1.0))
+
+    with pytest.raises(TypeError, match="support \\(0, inf\\).*Positive"):
+        _resolve_model_declaration(MissingConstraint)
+
+
+@pytest.mark.parametrize("distribution", [Exponential(1.0), HalfNormal(1.0)])
+def test_private_model_declaration_resolution_accepts_positive_prior_constraint(
+    distribution: Distribution,
+) -> None:
+    class ValidPositivePrior:
+        sigma = Param(distribution, constraint=Positive())
+
+    meta = _resolve_model_declaration(ValidPositivePrior)
+
+    assert tuple(meta.params) == ("sigma",)
+
+
+def test_private_model_declaration_resolution_requires_unit_interval_for_beta_prior() -> None:
+    class MissingConstraint:
+        theta = Param(Beta(2.0, 2.0))
+
+    with pytest.raises(TypeError, match="support \\(0, 1\\).*UnitInterval"):
+        _resolve_model_declaration(MissingConstraint)
+
+
+@pytest.mark.parametrize(
+    ("constraint", "accepted"),
+    [
+        (UnitInterval(), True),
+        (Interval(0.0, 1.0), True),
+        (Positive(), False),
+        (Interval(-1.0, 1.0), False),
+    ],
+)
+def test_private_model_declaration_resolution_validates_uniform_prior_constraint(
+    constraint: Constraint,
+    accepted: bool,
+) -> None:
+    class UniformPrior:
+        theta = Param(Uniform(0.0, 1.0), constraint=constraint)
+
+    if accepted:
+        meta = _resolve_model_declaration(UniformPrior)
+        assert tuple(meta.params) == ("theta",)
+    else:
+        with pytest.raises(TypeError, match="Uniform prior has support"):
+            _resolve_model_declaration(UniformPrior)
+
+
+def test_private_model_declaration_resolution_matches_scalar_array_uniform_bounds() -> None:
+    lower = jnp.asarray(0.1, dtype=jnp.float32)
+    upper = jnp.asarray(0.9, dtype=jnp.float32)
+
+    class ScalarArrayUniformPrior:
+        theta = Param(Uniform(lower, upper), constraint=Interval(0.1, 0.9))
+
+    meta = _resolve_model_declaration(ScalarArrayUniformPrior)
+
+    assert tuple(meta.params) == ("theta",)
+
+
+def test_private_model_declaration_resolution_rejects_near_but_unequal_uniform_bounds() -> None:
+    class NearUniformPrior:
+        theta = Param(Uniform(0.0, 1e-8), constraint=Interval(0.0, 1e-7))
+
+    with pytest.raises(TypeError, match="Uniform prior has support"):
+        _resolve_model_declaration(NearUniformPrior)
+
+
+def test_private_model_declaration_resolution_rejects_shifted_large_uniform_bounds() -> None:
+    class LargeUniformPrior:
+        theta = Param(
+            Uniform(1_000_000.0, 1_000_001.0),
+            constraint=Interval(1_000_000.5, 1_000_001.5),
+        )
+
+    with pytest.raises(TypeError, match="Uniform prior has support"):
+        _resolve_model_declaration(LargeUniformPrior)
+
+
+def test_private_model_declaration_resolution_compares_uniform_bounds_at_x64_resolution() -> None:
+    jax.config.update("jax_enable_x64", True)
+    try:
+
+        class X64UniformPrior:
+            theta = Param(Uniform(0.0, 1.0 + 1e-12), constraint=UnitInterval())
+
+        with pytest.raises(TypeError, match="Uniform prior has support"):
+            _resolve_model_declaration(X64UniformPrior)
+    finally:
+        jax.config.update("jax_enable_x64", False)
+
+
+def test_model_resolution_skips_symbolic_uniform_bound_constraint_check() -> None:
+    class SymbolicUniformBounds:
+        low = Data.scalar()
+        high = Data.scalar()
+        theta = Param(Uniform(low, high))
+
+    meta = _resolve_model_declaration(SymbolicUniformBounds)
+
+    assert tuple(meta.params) == ("theta",)
+
+
 def test_private_model_declaration_resolution_rejects_discrete_parameter_priors() -> None:
     class DiscreteLatent:
         count = Param(Poisson(1.0))
@@ -293,6 +418,39 @@ def test_private_model_declaration_resolution_rejects_aliased_data_declarations(
 
     with pytest.raises(ValueError, match="Declaration aliases are not supported"):
         _resolve_model_declaration(AliasedData)
+
+
+def test_model_declaration_rejects_base_class_with_declarations() -> None:
+    class Base:
+        alpha = Param(Normal(0.0, 1.0))
+        x = Data.vector()
+
+    with pytest.raises(TypeError, match="must not use inheritance"):
+
+        @model
+        class Child(Base):
+            y = Observed(Normal(0.0, 1.0))
+
+
+def test_model_declaration_rejects_declaration_free_base_class() -> None:
+    class Mixin:
+        note = "no declarations here"
+
+    with pytest.raises(TypeError, match="must not use inheritance"):
+
+        @model
+        class WithMixin(Mixin):
+            y = Observed(Normal(0.0, 1.0))
+
+
+def test_model_declaration_accepts_explicit_object_base() -> None:
+    @model
+    class ExplicitObjectBase(object):  # noqa: UP004
+        y = Observed(Normal(0.0, 1.0))
+
+    meta = _resolve_model_declaration(ExplicitObjectBase)
+
+    assert tuple(node.name for node in meta.observed_nodes) == ("y",)
 
 
 def test_private_model_declaration_resolution_rejects_aliased_observed_declarations() -> None:

@@ -24,6 +24,10 @@ Core invariants that should remain true as the codebase changes.
 - `Observed` nodes are optional; prior-only models are valid.
 - Declaration aliases are invalid: one declaration object maps to one class
   attribute name.
+- Declaration classes have no base class other than `object`. A model's meaning
+  is local to one decorated class body so that model text stays statically
+  parseable by a standalone validator; inheritance is rejected at `@model` time
+  even when the base class carries no declarations.
 
 ## Phase boundaries
 
@@ -63,6 +67,9 @@ Core invariants that should remain true as the codebase changes.
   version decision (see `docs/ir-format-v1.md`).
 - A model reconstructed with `bindable_from_meta(...)` is indistinguishable
   downstream from one produced by `@model`.
+- In serialized `ModelMeta`, `free_values` defines flat NUTS state layout,
+  `stochastic_sites` defines log-density factors, and `data` plus
+  `observed_nodes` define required bind inputs.
 - `BoundModel` contains no inference logic.
 
 ## Log density

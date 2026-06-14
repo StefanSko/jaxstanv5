@@ -95,7 +95,7 @@ def register_node(cls: type, *, tag: str | None = None) -> None:
             return
         raise ValueError(
             f"IR node tag {node_tag!r} is already registered to {existing.cls.__name__}. "
-            "Pass register_node(cls, tag=...) with a unique tag."
+            "Pass a unique IR tag when registering the class."
         )
     registered = NODE_SPECS_BY_CLASS.get(cls)
     if registered is not None:

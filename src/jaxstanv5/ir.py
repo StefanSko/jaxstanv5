@@ -22,7 +22,9 @@ from jaxstanv5._ir_registry import (
     NODE_SPECS_BY_TAG,
     FieldKind,
     NodeSpec,
-    register_node,
+)
+from jaxstanv5._ir_registry import (
+    register_node as _register_node,
 )
 from jaxstanv5.model.decorator import ModelMeta, _make_bind
 
@@ -40,7 +42,6 @@ __all__ = [
     "meta_from_dict",
     "meta_to_dict",
     "register_distribution",
-    "register_node",
     "render_ir_v1_tag_spec",
 ]
 
@@ -92,7 +93,7 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
             "Decorate it with @dataclass(frozen=True) before calling "
             "jaxstanv5.ir.register_distribution, or replace it with a built-in distribution."
         )
-    register_node(cls, tag=tag)
+    _register_node(cls, tag=tag)
 
 
 def meta_to_dict(meta: ModelMeta) -> dict[str, JsonValue]:

@@ -34,6 +34,14 @@ def test_standard_normal_log_prob_matches_expected_scalar_value() -> None:
     assert jnp.allclose(actual, expected)
 
 
+def test_normal_invalid_scale_returns_negative_infinity_with_finite_gradient() -> None:
+    value = Normal(0.0, -1.0).log_prob(jnp.asarray(0.0))
+    gradient = jax.grad(lambda scale: Normal(0.0, scale).log_prob(jnp.asarray(0.0)))(0.0)
+
+    assert value == -jnp.inf
+    assert jnp.isfinite(gradient)
+
+
 def test_normal_log_prob_broadcasts_over_vector_inputs() -> None:
     dist = Normal(0.0, 2.0)
     values = jnp.asarray([0.0, 2.0])
@@ -107,8 +115,12 @@ def test_half_normal_log_prob_is_negative_infinity_outside_support() -> None:
     dist = HalfNormal(2.0)
 
     actual = dist.log_prob(jnp.asarray(-0.1))
+    invalid_scale = HalfNormal(-1.0).log_prob(jnp.asarray(0.1))
+    gradient = jax.grad(lambda scale: HalfNormal(scale).log_prob(jnp.asarray(0.1)))(0.0)
 
     assert actual == -jnp.inf
+    assert invalid_scale == -jnp.inf
+    assert jnp.isfinite(gradient)
 
 
 def test_half_normal_log_prob_broadcasts_over_vector_inputs() -> None:
@@ -172,6 +184,20 @@ def test_student_t_log_prob_matches_expected_scalar_value() -> None:
     assert jnp.allclose(actual, expected)
 
 
+def test_student_t_invalid_parameters_return_negative_infinity_with_finite_gradients() -> None:
+    invalid_df = StudentT(-1.0, 0.0, 1.0).log_prob(jnp.asarray(0.0))
+    invalid_scale = StudentT(4.0, 0.0, -1.0).log_prob(jnp.asarray(0.0))
+    df_gradient = jax.grad(lambda df: StudentT(df, 0.0, 1.0).log_prob(jnp.asarray(0.0)))(0.0)
+    scale_gradient = jax.grad(lambda scale: StudentT(4.0, 0.0, scale).log_prob(jnp.asarray(0.0)))(
+        0.0
+    )
+
+    assert invalid_df == -jnp.inf
+    assert invalid_scale == -jnp.inf
+    assert jnp.isfinite(df_gradient)
+    assert jnp.isfinite(scale_gradient)
+
+
 def test_student_t_log_prob_broadcasts_over_vector_inputs() -> None:
     dist = StudentT(jnp.asarray([4.0, 8.0]), 1.0, jnp.asarray([1.0, 2.0]))
     values = jnp.asarray([1.5, -0.5])
@@ -228,8 +254,12 @@ def test_exponential_log_prob_is_negative_infinity_outside_support() -> None:
     dist = Exponential(2.0)
 
     actual = dist.log_prob(jnp.asarray(-0.1))
+    invalid_rate = Exponential(-1.0).log_prob(jnp.asarray(0.1))
+    gradient = jax.grad(lambda rate: Exponential(rate).log_prob(jnp.asarray(0.1)))(0.0)
 
     assert actual == -jnp.inf
+    assert invalid_rate == -jnp.inf
+    assert jnp.isfinite(gradient)
 
 
 def test_exponential_log_prob_broadcasts_over_vector_inputs() -> None:
@@ -288,6 +318,14 @@ def test_uniform_log_prob_matches_expected_values() -> None:
     expected_inside = -math.log(4.0)
     expected = jnp.asarray([-jnp.inf, expected_inside, expected_inside, expected_inside, -jnp.inf])
     assert jnp.allclose(actual, expected)
+
+
+def test_uniform_invalid_bounds_return_negative_infinity_with_finite_gradients() -> None:
+    value = Uniform(1.0, 0.0).log_prob(jnp.asarray(0.5))
+    gradient = jax.grad(lambda high: Uniform(0.0, high).log_prob(jnp.asarray(0.5)))(0.0)
+
+    assert value == -jnp.inf
+    assert jnp.isfinite(gradient)
 
 
 def test_uniform_sample_is_deterministic_and_broadcasts_shape() -> None:

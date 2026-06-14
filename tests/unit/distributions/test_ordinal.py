@@ -91,6 +91,34 @@ def test_ordered_logistic_batch_shape_broadcasts_eta_and_cutpoint_batch_shape() 
     assert dist.batch_shape() == (2, 3)
 
 
+def test_ordered_logistic_sample_rejects_unordered_cutpoints() -> None:
+    dist = OrderedLogistic(0.0, jnp.asarray([2.0, -2.0]))
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        dist.sample(jax.random.PRNGKey(1), sample_shape=(10,))
+
+
+def test_ordered_logistic_sample_remains_jittable() -> None:
+    @jax.jit
+    def draw(cutpoints: jax.Array) -> jax.Array:
+        return OrderedLogistic(0.0, cutpoints).sample(jax.random.PRNGKey(3), sample_shape=(4,))
+
+    sample = draw(jnp.asarray([-1.0, 1.0]))
+
+    assert sample.shape == (4,)
+
+
+def test_ordered_logistic_sample_clamps_tiny_negative_probabilities_before_log() -> None:
+    cutpoints = jnp.asarray([0.0, jnp.finfo(jnp.float32).tiny])
+    dist = OrderedLogistic(jnp.asarray(0.0, dtype=jnp.float32), cutpoints)
+
+    sample = dist.sample(jax.random.PRNGKey(2), sample_shape=(10,))
+
+    assert sample.shape == (10,)
+    assert jnp.all(sample >= 0)
+    assert jnp.all(sample <= 2)
+
+
 def test_ordered_logistic_sample_is_deterministic_for_seed() -> None:
     dist = OrderedLogistic(jnp.asarray([-1.0, 0.0, 1.0]), jnp.asarray([-0.5, 0.75]))
     key = jax.random.PRNGKey(123)

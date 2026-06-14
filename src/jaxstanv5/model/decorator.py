@@ -9,9 +9,20 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
-from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
+from jaxstanv5.distributions.continuous import Beta, Exponential, HalfNormal, Uniform
+from jaxstanv5.distributions.core import DiscreteDistribution, Distribution, SampleableDistribution
+from jaxstanv5.distributions.counts import (
+    Bernoulli,
+    BetaBinomial,
+    Binomial,
+    NegativeBinomial,
+    Poisson,
+)
+from jaxstanv5.distributions.multivariate import MultivariateNormal, validate_scale_tril
+from jaxstanv5.distributions.ordinal import OrderedLogistic
 from jaxstanv5.model._data_schema import (
     DataDimRef,
     DataDimSymbol,
@@ -136,6 +147,7 @@ class _ResolvedDeclarations:
 
 def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
     """Resolve a declaration class into final model metadata."""
+    _reject_declaration_inheritance(cls)
     symbols = _collect_declaration_symbols(cls)
     declarations = _resolve_declarations(cls, symbols)
     expressions = _resolve_expressions(cls, symbols)
@@ -147,6 +159,18 @@ def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
         expressions=expressions,
         free_values=declarations.free_values,
         stochastic_sites=declarations.stochastic_sites,
+    )
+
+
+def _reject_declaration_inheritance(cls: ModelClass) -> None:
+    """Reject base classes so model meaning stays local to one class body."""
+    if cls.__bases__ == (object,):
+        return
+    base_names = ", ".join(repr(base.__name__) for base in cls.__bases__ if base is not object)
+    raise TypeError(
+        f"Model declaration classes must not use inheritance: {cls.__name__!r} "
+        f"inherits from {base_names}. All declarations must live in the decorated "
+        "class body; inherited declarations would be silently ignored otherwise"
     )
 
 
@@ -184,6 +208,11 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                     "use them for Observed likelihoods or marginalize discrete latents"
                 )
             size = _resolve_declaration_size(value.size, symbols)
+            _validate_param_prior_constraint(
+                name=name,
+                distribution=distribution,
+                constraint=value.constraint,
+            )
             params[name] = ResolvedParam(
                 distribution=distribution,
                 constraint=value.constraint,
@@ -248,6 +277,95 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
     )
 
 
+def _validate_param_prior_constraint(
+    *,
+    name: str,
+    distribution: Distribution,
+    constraint: Constraint | None,
+) -> None:
+    """Validate known concrete prior supports against explicit constraints."""
+    if isinstance(distribution, Exponential | HalfNormal):
+        if not isinstance(constraint, Positive):
+            raise TypeError(
+                f"Parameter {name!r} prior has support (0, inf); declare "
+                f"Param({type(distribution).__name__}(...), constraint=Positive())"
+            )
+        return
+
+    if isinstance(distribution, Beta):
+        if not isinstance(constraint, UnitInterval):
+            raise TypeError(
+                f"Parameter {name!r} prior has support (0, 1); declare "
+                "Param(Beta(...), constraint=UnitInterval())"
+            )
+        return
+
+    if isinstance(distribution, Uniform):
+        bounds = _concrete_uniform_bounds(distribution)
+        if bounds is None:
+            return
+        low, high = bounds
+        if _constraint_matches_uniform_support(constraint, low=low, high=high):
+            return
+        raise TypeError(
+            f"Parameter {name!r} Uniform prior has support ({low}, {high}); declare "
+            f"Param(Uniform({low}, {high}), constraint=Interval({low}, {high}))"
+        )
+
+
+def _concrete_uniform_bounds(distribution: Uniform) -> tuple[float, float] | None:
+    """Return concrete scalar Uniform bounds, or None for symbolic bounds."""
+    low = _concrete_scalar_bound(distribution.low)
+    high = _concrete_scalar_bound(distribution.high)
+    if low is None or high is None:
+        return None
+    return (low, high)
+
+
+def _concrete_scalar_bound(value: object) -> float | None:
+    """Return a concrete scalar distribution bound after declaration resolution."""
+    if isinstance(value, ConstNode):
+        return float(value.value)
+    if _is_final_expr_node(value):
+        return None
+    array = jnp.asarray(value)
+    if array.ndim != 0:
+        return None
+    return float(array)
+
+
+def _constraint_matches_uniform_support(
+    constraint: Constraint | None,
+    *,
+    low: float,
+    high: float,
+) -> bool:
+    """Return whether a Uniform prior has an explicit compatible constraint."""
+    if (
+        _same_scalar_bound(low, 0.0)
+        and _same_scalar_bound(high, 1.0)
+        and isinstance(constraint, UnitInterval)
+    ):
+        return True
+    if isinstance(constraint, Interval):
+        return _same_scalar_bound(constraint.lower, low) and _same_scalar_bound(
+            constraint.upper, high
+        )
+    return False
+
+
+def _same_scalar_bound(left: float, right: float) -> bool:
+    """Compare scalar bounds exactly at JAX's canonical float resolution.
+
+    The compiled log density evaluates bounds at JAX's default float dtype
+    (float32, or float64 under ``jax_enable_x64``), so equality at that
+    resolution absorbs scalar dtype roundoff of one written value while
+    rejecting every difference representable in the compiled dtype.
+    """
+    dtype = jnp.result_type(float)
+    return float(jnp.asarray(left, dtype)) == float(jnp.asarray(right, dtype))
+
+
 def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, ExprNode]:
     """Resolve top-level derived declaration expressions into final IR."""
     expressions: dict[str, ExprNode] = {}
@@ -284,6 +402,7 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
             raise ValueError(f"Unexpected model data: {sorted(extra)}")
 
         data = {name: jnp.asarray(value) for name, value in values.items()}
+        _validate_finite_bound_values(data)
         _validate_declared_data_values(meta, {name: data[name] for name in meta.data})
         param_shapes = {
             name: _resolve_param_shape(value.size, data)
@@ -291,6 +410,9 @@ def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
         }
         n_params = sum(_param_count(shape) for shape in param_shapes.values())
         _validate_bound_index_expressions(meta, data, param_shapes)
+        _validate_stochastic_site_shapes(meta, data, param_shapes)
+        _validate_observed_discrete_values(meta, data, param_shapes)
+        _validate_bound_distribution_parameters(meta, data)
         return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
     return bind
@@ -347,6 +469,18 @@ def _normalize_declared_data_values(
     data = {name: jnp.asarray(value) for name, value in raw_values.items()}
     _validate_declared_data_values(meta, data)
     return data
+
+
+def _validate_finite_bound_values(data: dict[str, jax.Array]) -> None:
+    """Reject NaN or infinite bound data before compilation/sampling."""
+    for name, value in data.items():
+        if bool(jnp.any(jnp.isnan(value))):
+            raise ValueError(
+                f"Bound value {name!r} contains NaN; use PartialVector.from_nan(...) "
+                "and PartiallyObserved for missing values"
+            )
+        if bool(jnp.any(~jnp.isfinite(value))):
+            raise ValueError(f"Bound value {name!r} contains non-finite values")
 
 
 def _validate_declared_data_values(meta: ModelMeta, data: dict[str, jax.Array]) -> None:
@@ -415,6 +549,175 @@ def _validate_bound_index_expressions(
         _validate_index_expr(site.value, data, param_shapes)
     for expression in meta.expressions.values():
         _validate_index_expr(expression, data, param_shapes)
+
+
+def _validate_stochastic_site_shapes(
+    meta: ModelMeta,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Reject stochastic-site broadcasting that would expand the site value."""
+    for site in _resolved_stochastic_sites(meta):
+        value_shape = _infer_expr_shape(site.value, data, param_shapes)
+        distribution_shape = _distribution_value_shape(site.distribution, data, param_shapes)
+        if distribution_shape is None:
+            continue
+        try:
+            broadcast_shape = jnp.broadcast_shapes(value_shape, distribution_shape)
+        except ValueError as exc:
+            raise ValueError(
+                f"Stochastic site {site.name!r} value shape {value_shape} is incompatible "
+                f"with distribution shape {distribution_shape}"
+            ) from exc
+        if broadcast_shape != value_shape:
+            raise ValueError(
+                f"Stochastic site {site.name!r} value shape {value_shape} would broadcast to "
+                f"{broadcast_shape} against distribution shape {distribution_shape}; declare an "
+                "explicit matching size or data shape"
+            )
+
+
+def _distribution_value_shape(
+    distribution: Distribution,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> tuple[int, ...] | None:
+    """Return batch+event shape for sampleable distributions, or None if unknown."""
+    shaped_distribution = _shape_stub_distribution(distribution, data, param_shapes)
+    if not isinstance(shaped_distribution, SampleableDistribution):
+        return None
+    return shaped_distribution.batch_shape() + shaped_distribution.event_shape()
+
+
+def _shape_stub_distribution[DistributionT: Distribution](
+    distribution: DistributionT,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> DistributionT:
+    """Replace expression fields by zero arrays with inferred bind-time shapes."""
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return distribution
+    resolved: dict[str, object] = {}
+    for distribution_field in fields(distribution):
+        value = getattr(distribution, distribution_field.name)
+        if _is_final_expr_node(value):
+            shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
+            resolved[distribution_field.name] = jnp.zeros(shape)
+        elif is_dataclass(value) and not isinstance(value, type):
+            resolved[distribution_field.name] = _shape_stub_distribution(
+                cast(Distribution, value),
+                data,
+                param_shapes,
+            )
+        else:
+            resolved[distribution_field.name] = value
+    return cast(DistributionT, type(distribution)(**resolved))
+
+
+def _validate_observed_discrete_values(
+    meta: ModelMeta,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate concrete observed values for discrete likelihoods."""
+    for site in _resolved_stochastic_sites(meta):
+        if not isinstance(site.distribution, DiscreteDistribution):
+            continue
+        value = _evaluate_data_index_expr(site.value, data)
+        _validate_integer_observed_value(site.name, value)
+        _validate_discrete_observed_support(site.name, site.distribution, value, data, param_shapes)
+
+
+def _validate_integer_observed_value(name: str, value: jax.Array) -> None:
+    if bool(jnp.any(value != jnp.floor(value))):
+        raise ValueError(f"Observed site {name!r} contains non-integer values")
+
+
+def _validate_discrete_observed_support(
+    name: str,
+    distribution: Distribution,
+    value: jax.Array,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    if isinstance(distribution, Bernoulli):
+        _validate_value_range(name, value, low=0.0, high=1.0)
+    elif isinstance(distribution, Poisson | NegativeBinomial):
+        _validate_value_range(name, value, low=0.0, high=None)
+    elif isinstance(distribution, Binomial | BetaBinomial):
+        _validate_value_range(name, value, low=0.0, high=None)
+        total_count = _evaluate_optional_data_expr(distribution.total_count, data)
+        if total_count is not None:
+            _validate_value_array_upper_bound(name, value, total_count)
+    elif isinstance(distribution, OrderedLogistic):
+        _validate_value_range(name, value, low=0.0, high=None)
+        cutpoint_shape = _distribution_field_shape(distribution.cutpoints, data, param_shapes)
+        if cutpoint_shape:
+            _validate_value_range(name, value, low=0.0, high=float(cutpoint_shape[-1]))
+
+
+def _distribution_field_shape(
+    value: object,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> tuple[int, ...]:
+    if _is_final_expr_node(value):
+        return _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
+    return jnp.asarray(value).shape
+
+
+def _validate_value_range(
+    name: str,
+    value: jax.Array,
+    *,
+    low: float,
+    high: float | None,
+) -> None:
+    below = value < low
+    above = jnp.zeros(value.shape, dtype=bool) if high is None else value > high
+    if bool(jnp.any(below | above)):
+        if high is None:
+            raise ValueError(f"Observed site {name!r} values must be >= {low}")
+        raise ValueError(f"Observed site {name!r} values must be between {low} and {high}")
+
+
+def _validate_value_array_upper_bound(name: str, value: jax.Array, upper: jax.Array) -> None:
+    if bool(jnp.any(value > upper)):
+        raise ValueError(f"Observed site {name!r} values must be <= total_count")
+
+
+def _validate_bound_distribution_parameters(meta: ModelMeta, data: dict[str, jax.Array]) -> None:
+    """Validate concrete distribution parameters available at bind time."""
+    for site in _resolved_stochastic_sites(meta):
+        _validate_bound_distribution_parameter(site.name, site.distribution, data)
+
+
+def _validate_bound_distribution_parameter(
+    site_name: str,
+    distribution: Distribution,
+    data: dict[str, jax.Array],
+) -> None:
+    """Validate one distribution's concrete bind-time parameters."""
+    if isinstance(distribution, MultivariateNormal):
+        scale_tril = _evaluate_optional_data_expr(distribution.scale_tril, data)
+        if scale_tril is not None:
+            validate_scale_tril(scale_tril, name=f"{site_name!r} scale_tril")
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return
+    for distribution_field in fields(distribution):
+        value = getattr(distribution, distribution_field.name)
+        if is_dataclass(value) and not isinstance(value, type):
+            _validate_bound_distribution_parameter(site_name, cast(Distribution, value), data)
+
+
+def _evaluate_optional_data_expr(value: object, data: dict[str, jax.Array]) -> jax.Array | None:
+    """Evaluate a data/constant expression, or return None for parameter-dependent values."""
+    if _is_final_expr_node(value):
+        try:
+            return _evaluate_data_index_expr(cast(ExprNode, value), data)
+        except TypeError:
+            return None
+    return jnp.asarray(value)
 
 
 def _validate_distribution_index_expressions(

@@ -18,7 +18,6 @@ from jaxstanv5.ir import (
     meta_from_dict,
     meta_to_dict,
     register_distribution,
-    register_node,
 )
 from jaxstanv5.model.decorator import (
     ModelMeta,
@@ -105,8 +104,8 @@ def test_register_distribution_rejects_non_dataclass_with_repair_instruction() -
         register_distribution(_PlainDistribution)
 
 
-def test_register_node_supports_explicit_tag_override() -> None:
-    register_node(_RenamedLaplace, tag="Laplace")
+def test_register_distribution_supports_explicit_tag_override() -> None:
+    register_distribution(_RenamedLaplace, tag="Laplace")
     meta = _meta_with(_RenamedLaplace(0.5))
 
     document = meta_to_dict(meta)
@@ -123,13 +122,16 @@ def test_register_node_supports_explicit_tag_override() -> None:
     assert meta_from_dict(document) == meta
 
 
-def test_register_node_rejects_tag_collisions() -> None:
+def test_register_distribution_rejects_tag_collisions() -> None:
     @dataclass(frozen=True)
     class Normal:
         rate: float
 
+        def log_prob(self, x: DistributionValue) -> LogProbability:
+            raise NotImplementedError
+
     with pytest.raises(ValueError, match="'Normal' is already registered"):
-        register_node(Normal)
+        register_distribution(Normal)
 
 
 def test_registered_distribution_still_rejects_non_finite_fields() -> None:

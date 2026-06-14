@@ -62,6 +62,26 @@ dataclass type hints), never guessed from the JSON shape. An empty array in
 a `map` field decodes to an empty dict; in a `tuple` field, to an empty
 tuple.
 
+## `ModelMeta` field roles
+
+`ModelMeta` carries both declaration metadata and the resolved execution
+metadata needed by backends. Consumers must not re-run declaration
+resolution from the declaration-shaped fields.
+
+- `free_values` defines the flat unconstrained NUTS state layout. If it is
+  empty, consumers use `params` as the legacy layout source.
+- `stochastic_sites` defines the log-density factors and their value
+  expressions. If it is empty, consumers may derive the legacy param and
+  observed sites from `params` and `observed_nodes`.
+- `data` defines schemas for declared `Data` inputs.
+- `observed_nodes` records observed declarations and their required bind
+  input names. When `stochastic_sites` is populated, it is not the source of
+  log-density factors.
+- `params` records declared `Param` metadata. When `free_values` is
+  populated, it is not the source of flat parameter packing order.
+- `expressions` records named derived expressions for metadata, inspection,
+  and validation; stochastic-site expressions are self-contained.
+
 ## Canonical bytes and hashing
 
 The canonical serialization is:

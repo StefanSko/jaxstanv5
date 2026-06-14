@@ -28,9 +28,21 @@ def test_poisson_log_prob_is_negative_infinity_outside_support() -> None:
 
     negative = dist.log_prob(jnp.asarray(-1.0))
     fractional = dist.log_prob(jnp.asarray(1.5))
+    zero_rate = Poisson(0.0).log_prob(jnp.asarray(0.0))
+    zero_rate_gradient = jax.grad(lambda rate: Poisson(rate).log_prob(jnp.asarray(0.0)))(0.0)
 
     assert negative == -jnp.inf
     assert fractional == -jnp.inf
+    assert zero_rate == -jnp.inf
+    assert jnp.isfinite(zero_rate_gradient)
+
+
+def test_poisson_log_prob_gradient_supports_integer_observed_values() -> None:
+    value = jnp.asarray(3, dtype=jnp.int32)
+
+    gradient = jax.grad(lambda rate: Poisson(rate).log_prob(value))(2.0)
+
+    assert jnp.allclose(gradient, 3.0 / 2.0 - 1.0)
 
 
 def test_poisson_log_prob_broadcasts_over_vector_inputs() -> None:
@@ -312,6 +324,21 @@ def test_beta_binomial_sample_broadcasts_distribution_shape_after_sample_shape()
     assert samples.shape == (2, 3)
     assert jnp.all(samples >= 0.0)
     assert jnp.all(samples <= jnp.asarray([2.0, 3.0, 4.0]))
+
+
+def test_discrete_distribution_samples_have_integer_dtype() -> None:
+    key = jax.random.PRNGKey(789)
+    distributions = (
+        Bernoulli(0.5),
+        Poisson(2.0),
+        Binomial(10.0, 0.5),
+        BetaBinomial(10.0, 2.0, 3.0),
+        NegativeBinomial(3.0, 2.0),
+    )
+
+    for dist in distributions:
+        sample = dist.sample(key, sample_shape=(2,))
+        assert jnp.issubdtype(sample.dtype, jnp.integer)
 
 
 def test_negative_binomial_log_prob_matches_expected_scalar_value() -> None:

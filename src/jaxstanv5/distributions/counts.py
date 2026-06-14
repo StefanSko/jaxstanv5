@@ -79,10 +79,13 @@ class Poisson(DiscreteDistribution):
     def log_prob(self, x: DistributionValue) -> LogProbability:
         """Return element-wise Poisson log-probability mass for ``x``."""
         rate = self._rate()
-        value = jnp.asarray(x)
+        dtype = jnp.result_type(rate, 1.0)
+        value = jnp.asarray(x, dtype=dtype)
         integer_support = value == jnp.floor(value)
-        support = (value >= 0.0) & integer_support & (rate > 0.0)
-        log_mass = value * jnp.log(rate) - rate - gammaln(value + 1.0)
+        valid_rate = rate > 0.0
+        support = (value >= 0.0) & integer_support & valid_rate
+        safe_rate = jnp.where(valid_rate, rate, 1.0)
+        log_mass = xlogy(value, safe_rate) - safe_rate - gammaln(value + 1.0)
         return jnp.where(support, log_mass, -jnp.inf)
 
     def sample(
@@ -150,7 +153,7 @@ class Binomial(DiscreteDistribution):
             n=self._total_count(),
             p=self._probs(),
             shape=sample_shape + self.batch_shape(),
-        )
+        ).astype(jnp.int32)
 
 
 @dataclass(frozen=True)
@@ -217,13 +220,13 @@ class BetaBinomial(DiscreteDistribution):
         """Draw Beta-binomial samples with leading ``sample_shape`` dimensions."""
         probability_key, count_key = jax.random.split(key)
         shape = sample_shape + self.batch_shape()
-        probability = jax.random.beta(count_key, a=self._alpha(), b=self._beta(), shape=shape)
+        probability = jax.random.beta(probability_key, a=self._alpha(), b=self._beta(), shape=shape)
         return jax.random.binomial(
-            probability_key,
+            count_key,
             n=self._total_count(),
             p=probability,
             shape=shape,
-        )
+        ).astype(jnp.int32)
 
 
 @dataclass(frozen=True)
