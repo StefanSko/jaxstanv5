@@ -1,14 +1,18 @@
 """Ordered vector constraint."""
 
 from dataclasses import dataclass
-
-import jax.numpy as jnp
+from typing import TYPE_CHECKING
 
 from jaxstanv5.constraints.core import (
     ConstrainedValue,
     LogAbsDetJacobian,
     UnconstrainedValue,
 )
+
+if TYPE_CHECKING:
+    import jax.numpy as jnp
+else:
+    from jaxstanv5._jax_lazy import jnp
 
 
 @dataclass(frozen=True)

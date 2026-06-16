@@ -1,13 +1,10 @@
-"""Core constraint types and transforms."""
+"""Core constraint metadata protocols and value aliases."""
 
 from typing import Protocol
 
-import jax
-from jax.typing import ArrayLike
-
-type ConstrainedValue = ArrayLike
-type UnconstrainedValue = ArrayLike
-type LogAbsDetJacobian = jax.Array
+type ConstrainedValue = object
+type UnconstrainedValue = object
+type LogAbsDetJacobian = object
 
 
 class Constraint(Protocol):

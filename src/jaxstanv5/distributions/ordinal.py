@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-import jax
-import jax.numpy as jnp
+from typing import TYPE_CHECKING
 
 from jaxstanv5.distributions.core import (
     DiscreteDistribution,
@@ -14,6 +12,12 @@ from jaxstanv5.distributions.core import (
     LogProbability,
     _concrete_parameter,
 )
+
+if TYPE_CHECKING:
+    import jax
+    import jax.numpy as jnp
+else:
+    from jaxstanv5._jax_lazy import jax, jnp
 
 
 @dataclass(frozen=True)

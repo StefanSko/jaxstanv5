@@ -100,13 +100,17 @@ wheels = [
 name = "jaxstanv5"
 version = "0.1.0"
 source = { editable = "." }
-dependencies = [
+
+[package.optional-dependencies]
+jax = [
     { name = "blackjax" },
     { name = "jax" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "blackjax" },
+    { name = "jax" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "ty" },
@@ -114,12 +118,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "blackjax", specifier = ">=1.2.0" },
-    { name = "jax", specifier = ">=0.6.0" },
+    { name = "blackjax", marker = "extra == 'jax'", specifier = ">=1.2.0" },
+    { name = "jax", marker = "extra == 'jax'", specifier = ">=0.6.0" },
 ]
+provides-extras = ["jax"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "blackjax", specifier = ">=1.2.0" },
+    { name = "jax", specifier = ">=0.6.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "ruff", specifier = ">=0.13.0" },
     { name = "ty", specifier = ">=0.0.1a20" },

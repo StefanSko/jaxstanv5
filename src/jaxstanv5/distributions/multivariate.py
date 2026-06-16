@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-
-import jax
-import jax.numpy as jnp
-from jax.scipy.linalg import solve_triangular
+from typing import TYPE_CHECKING
 
 from jaxstanv5.distributions.core import (
     DistributionParameter,
@@ -15,6 +12,15 @@ from jaxstanv5.distributions.core import (
     LogProbability,
     _concrete_parameter,
 )
+
+if TYPE_CHECKING:
+    import jax
+    import jax.numpy as jnp
+    from jax.scipy.linalg import solve_triangular
+else:
+    from jaxstanv5._jax_lazy import jax, jnp, lazy_function
+
+    solve_triangular = lazy_function("jax.scipy.linalg", "solve_triangular")
 
 
 def validate_scale_tril(scale_tril: jax.Array, *, name: str = "scale_tril") -> None:

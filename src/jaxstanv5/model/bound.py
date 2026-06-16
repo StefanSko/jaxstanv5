@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import jax
-
 from jaxstanv5.model.decorator import ModelMeta
 
 
@@ -14,6 +12,6 @@ class BoundModel:
     """Model metadata plus concrete data and resolved parameter shapes."""
 
     meta: ModelMeta
-    data: dict[str, jax.Array]
+    data: dict[str, object]
     param_shapes: dict[str, tuple[int, ...]]
     n_params: int

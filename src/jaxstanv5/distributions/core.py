@@ -1,9 +1,6 @@
-"""Core distribution types."""
+"""Core distribution metadata protocols and type aliases."""
 
 from typing import Protocol, cast, runtime_checkable
-
-import jax
-from jax.typing import ArrayLike
 
 
 class SymbolicDistributionParameter:
@@ -14,14 +11,14 @@ class DiscreteDistribution:
     """Marker for discrete distributions, which cannot be latent NUTS parameters."""
 
 
-type DistributionValue = ArrayLike
-type DistributionParameter = ArrayLike | SymbolicDistributionParameter
-type LogProbability = jax.Array
+type DistributionValue = object
+type DistributionParameter = object | SymbolicDistributionParameter
+type LogProbability = object
 
 
-def _concrete_parameter(value: DistributionParameter) -> ArrayLike:
+def _concrete_parameter(value: DistributionParameter) -> object:
     """Treat a distribution field as concrete after symbolic field evaluation."""
-    return cast(ArrayLike, value)
+    return cast(object, value)
 
 
 class Distribution(Protocol):
@@ -46,10 +43,10 @@ class SampleableDistribution(Distribution, Protocol):
 
     def sample(
         self,
-        key: jax.Array,
+        key: object,
         *,
         sample_shape: tuple[int, ...] = (),
-    ) -> jax.Array:
+    ) -> object:
         """Draw samples with leading ``sample_shape`` dimensions."""
         ...
 
@@ -58,10 +55,10 @@ class SampleableDistribution(Distribution, Protocol):
 class InverseCdfDistribution(SampleableDistribution, Protocol):
     """Scalar distribution supporting inverse-CDF restricted sampling."""
 
-    def cdf(self, x: DistributionValue) -> jax.Array:
+    def cdf(self, x: DistributionValue) -> object:
         """Return element-wise cumulative probability at ``x``."""
         ...
 
-    def icdf(self, p: DistributionValue) -> jax.Array:
+    def icdf(self, p: DistributionValue) -> object:
         """Return element-wise inverse cumulative probability at ``p``."""
         ...

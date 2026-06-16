@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-
-import jax
-import jax.numpy as jnp
-from jax.scipy.special import gammaln, ndtr, ndtri
+from typing import TYPE_CHECKING
 
 from jaxstanv5.distributions.core import (
     DistributionParameter,
@@ -15,6 +12,17 @@ from jaxstanv5.distributions.core import (
     LogProbability,
     _concrete_parameter,
 )
+
+if TYPE_CHECKING:
+    import jax
+    import jax.numpy as jnp
+    from jax.scipy.special import gammaln, ndtr, ndtri
+else:
+    from jaxstanv5._jax_lazy import jax, jnp, lazy_function
+
+    gammaln = lazy_function("jax.scipy.special", "gammaln")
+    ndtr = lazy_function("jax.scipy.special", "ndtr")
+    ndtri = lazy_function("jax.scipy.special", "ndtri")
 
 
 @dataclass(frozen=True)

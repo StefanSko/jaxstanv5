@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-
-import jax
-import jax.numpy as jnp
+from typing import TYPE_CHECKING
 
 from jaxstanv5.constraints.core import (
     ConstrainedValue,
     LogAbsDetJacobian,
     UnconstrainedValue,
 )
+
+if TYPE_CHECKING:
+    import jax
+    import jax.numpy as jnp
+else:
+    from jaxstanv5._jax_lazy import jax, jnp
 
 
 @dataclass(frozen=True)

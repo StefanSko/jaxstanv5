@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import cast
+from operator import add, mul, sub, truediv
+from typing import TYPE_CHECKING, cast
 
-import jax
-import jax.numpy as jnp
+if TYPE_CHECKING:
+    import jax
+    import jax.numpy as jnp
+else:
+    from jaxstanv5._jax_lazy import jax, jnp
 
 from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import Constraint
@@ -64,20 +68,33 @@ from jaxstanv5.model.expr import (
 
 type ModelClass = type[object]
 type SymbolTable = dict[DeclarationSymbol, str]
-type EvaluatedIndexAtom = jax.Array | slice
+type EvaluatedIndexAtom = object | slice
 type EvaluatedIndex = EvaluatedIndexAtom | tuple[EvaluatedIndexAtom, ...]
 
-_INDEX_BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
-    "+": jnp.add,
-    "-": jnp.subtract,
-    "*": jnp.multiply,
-    "/": jnp.divide,
+_INDEX_BINOPS: dict[str, Callable[[object, object], object]] = {
+    "+": add,
+    "-": sub,
+    "*": mul,
+    "/": truediv,
 }
 
-_INDEX_UNARY_FUNCTIONS: dict[str, Callable[[jax.Array], jax.Array]] = {
-    "exp": jnp.exp,
-    "neg": jnp.negative,
-    "sigmoid": jax.nn.sigmoid,
+
+def _index_exp(value: object) -> object:
+    return jnp.exp(value)
+
+
+def _index_neg(value: object) -> object:
+    return jnp.negative(value)
+
+
+def _index_sigmoid(value: object) -> object:
+    return jax.nn.sigmoid(value)
+
+
+_INDEX_UNARY_FUNCTIONS: dict[str, Callable[[object], object]] = {
+    "exp": _index_exp,
+    "neg": _index_neg,
+    "sigmoid": _index_sigmoid,
 }
 
 
