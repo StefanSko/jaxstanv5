@@ -1,6 +1,10 @@
 """Core distribution metadata protocols and type aliases."""
 
-from typing import Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+
+if TYPE_CHECKING:
+    import jax
+    from jax.typing import ArrayLike
 
 
 class SymbolicDistributionParameter:
@@ -11,14 +15,19 @@ class DiscreteDistribution:
     """Marker for discrete distributions, which cannot be latent NUTS parameters."""
 
 
-type DistributionValue = object
-type DistributionParameter = object | SymbolicDistributionParameter
-type LogProbability = object
+if TYPE_CHECKING:
+    type DistributionValue = ArrayLike
+    type DistributionParameter = ArrayLike | SymbolicDistributionParameter
+    type LogProbability = jax.Array
+else:
+    type DistributionValue = object
+    type DistributionParameter = object | SymbolicDistributionParameter
+    type LogProbability = object
 
 
-def _concrete_parameter(value: DistributionParameter) -> object:
+def _concrete_parameter(value: DistributionParameter) -> DistributionValue:
     """Treat a distribution field as concrete after symbolic field evaluation."""
-    return cast(object, value)
+    return cast(DistributionValue, value)
 
 
 class Distribution(Protocol):
@@ -43,10 +52,10 @@ class SampleableDistribution(Distribution, Protocol):
 
     def sample(
         self,
-        key: object,
+        key: DistributionValue,
         *,
         sample_shape: tuple[int, ...] = (),
-    ) -> object:
+    ) -> DistributionValue:
         """Draw samples with leading ``sample_shape`` dimensions."""
         ...
 
@@ -55,10 +64,10 @@ class SampleableDistribution(Distribution, Protocol):
 class InverseCdfDistribution(SampleableDistribution, Protocol):
     """Scalar distribution supporting inverse-CDF restricted sampling."""
 
-    def cdf(self, x: DistributionValue) -> object:
+    def cdf(self, x: DistributionValue) -> DistributionValue:
         """Return element-wise cumulative probability at ``x``."""
         ...
 
-    def icdf(self, p: DistributionValue) -> object:
+    def icdf(self, p: DistributionValue) -> DistributionValue:
         """Return element-wise inverse cumulative probability at ``p``."""
         ...

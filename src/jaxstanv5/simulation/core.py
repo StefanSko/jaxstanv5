@@ -86,7 +86,7 @@ def _sample_interval_restricted(
         minval=lower_probability,
         maxval=upper_probability,
     )
-    return distribution.icdf(uniform)
+    return cast("jax.Array", distribution.icdf(uniform))
 
 
 def _sample_ordered_vector(
@@ -123,7 +123,7 @@ def _sample_prior_value(
                 batch_shape=distribution.batch_shape(),
                 event_shape=distribution.event_shape(),
             )
-            return distribution.sample(key, sample_shape=sample_shape)
+            return cast("jax.Array", distribution.sample(key, sample_shape=sample_shape))
         raise TypeError(f"Unsupported prior distribution: {type(distribution).__name__}")
 
     if isinstance(domain, ScalarIntervalDomain):

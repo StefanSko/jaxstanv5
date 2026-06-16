@@ -1,10 +1,18 @@
 """Core constraint metadata protocols and value aliases."""
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-type ConstrainedValue = object
-type UnconstrainedValue = object
-type LogAbsDetJacobian = object
+if TYPE_CHECKING:
+    import jax
+    from jax.typing import ArrayLike
+
+    type ConstrainedValue = ArrayLike
+    type UnconstrainedValue = ArrayLike
+    type LogAbsDetJacobian = jax.Array
+else:
+    type ConstrainedValue = object
+    type UnconstrainedValue = object
+    type LogAbsDetJacobian = object
 
 
 class Constraint(Protocol):
