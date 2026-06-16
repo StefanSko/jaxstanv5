@@ -10,7 +10,10 @@ into [`ir-v1-tags.md`](ir-v1-tags.md) and enforced by tests.
 The serialized IR decouples model interpretation from model use, is the unit
 of provenance (hash the bytes, record the hash in run manifests), makes
 resolved declarations diffable, and provides a code-free construction path
-(`meta_from_dict` runs no user code).
+(`meta_from_dict` runs no user code). The authoring and IR path is JAX-free:
+JAX/BlackJAX are backend dependencies for binding, log-density evaluation,
+gradients, simulation, diagnostics, and NUTS, not for declaring a model or
+writing this JSON document.
 
 ## Known downstream consumers
 
@@ -59,7 +62,9 @@ Decoders reject a missing or unknown version with `UnsupportedIRVersion`.
    `jaxstanv5.ir.register_distribution(cls)`. A distribution that is not a
    registered dataclass raises `UnserializableDistribution`. This boundary is
    intentional: it coincides with what a code-free parser can parse and what
-   a non-Python backend can evaluate.
+   a non-Python backend can evaluate. Distribution objects in IR are metadata;
+   runtime methods such as log-density evaluation are backend behavior, not part
+   of the wire contract.
 
 ## Decoding rules
 

@@ -9,14 +9,17 @@ define a model -> bind data -> sample with NUTS -> inspect basic diagnostics
 ```
 
 It is intentionally small: no workflow platform, plotting layer, reporting
-system, artifact store, or multi-algorithm inference API.
+system, artifact store, or multi-algorithm inference API. Model authoring and IR
+serialization are backend-neutral and do not import JAX; JAX/BlackJAX are needed
+only for binding data to arrays, evaluating log densities/gradients, simulation,
+diagnostics, and NUTS sampling.
 
 ## Quickstart
 
-Install dependencies:
+Install dependencies for the JAX sampling backend:
 
 ```bash
-uv sync
+uv sync --extra jax
 ```
 
 Define a model:
@@ -62,6 +65,32 @@ parameter axis. If `num_chains` is omitted, sampling defaults to one chain.
 sampling. Diagnostic arrays have shape `(num_chains, num_steps)`. `num_warmup`
 and `num_samples` must both be at least 1. Use `target_acceptance_rate` on
 `sample(...)` to tune the NUTS adaptation target.
+
+## Authoring-only IR export
+
+The declaration path can run without importing JAX. This supports lightweight
+Python authoring environments that serialize resolved model metadata for another
+runtime:
+
+```python
+from jaxstanv5 import Data, Observed, Param, model
+from jaxstanv5.distributions import Normal
+from jaxstanv5.ir import canonical_bytes, meta_to_dict
+
+
+@model
+class LinearAuthoringOnly:
+    x = Data.vector()
+    alpha = Param(Normal(0.0, 1.0))
+    y = Observed(Normal(alpha, 1.0))
+
+
+document = meta_to_dict(LinearAuthoringOnly._model_meta)
+encoded = canonical_bytes(LinearAuthoringOnly._model_meta)
+```
+
+`document` is backend-neutral `jaxstanv5_ir` JSON data. A Python JAX backend,
+Bayesite, or another non-Python engine can consume that IR downstream.
 
 ## Model declarations
 

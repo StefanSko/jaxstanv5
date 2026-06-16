@@ -46,16 +46,19 @@ Target model families:
 
 ## Distribution invariants
 
-- Every distribution implements `log_prob`. Element-wise distributions return
-  one log-density/log-mass per element; `MultivariateNormal` is event-wise and
-  returns one log-density per event vector.
-- The compiler aggregates every site as `jnp.sum(dist.log_prob(value))`. This
-  holds for element-wise distributions and for a single event-wise vector.
-- A distribution used as a prior for an unconstrained parameter must implement
-  `sample`, `batch_shape`, and `event_shape` (it is `SampleableDistribution`).
-  Prior simulation distinguishes iid sample dimensions, distribution batch
-  dimensions, and event dimensions; event-wise priors such as
-  `MultivariateNormal` are supported.
+- Built-in distribution classes are declaration metadata and must remain
+  importable without JAX. Their tag and field structure is part of IR; numerical
+  behavior is a backend capability.
+- The JAX backend provides log-probability evaluation for every built-in
+  distribution. Element-wise distributions return one log-density/log-mass per
+  element; `MultivariateNormal` is event-wise and returns one log-density per
+  event vector.
+- The JAX compiler aggregates every site as a sum of backend log probabilities.
+  This holds for element-wise distributions and for a single event-wise vector.
+- A distribution used as a prior for an unconstrained parameter must have JAX
+  backend support for sampling, batch shape, and event shape. Prior simulation
+  distinguishes iid sample dimensions, distribution batch dimensions, and event
+  dimensions; event-wise priors such as `MultivariateNormal` are supported.
 - `Interval(lower, upper)` and `UnitInterval()` use finite open-interval logit
   transforms and include the inverse-transform Jacobian in compiled log
   densities. Bounds are static finite floats; data-dependent bounds are not part
@@ -66,10 +69,10 @@ Target model families:
   zero-based observed category labels `0..n_cutpoints`; Stan references must add
   one to observed labels at the reference boundary.
 - A distribution used as a prior for an interval-constrained parameter must also
-  implement `cdf` and `icdf` (it is `InverseCdfDistribution`), because prior
-  simulation uses inverse-CDF restricted sampling.
+  have JAX backend support for `cdf` and `icdf`, because prior simulation uses
+  inverse-CDF restricted sampling.
 - A distribution used only as a likelihood, or only as an unconstrained prior,
-  is not required to implement `cdf`/`icdf`.
+  is not required to have backend `cdf`/`icdf` support.
 - Discrete distributions are valid for `Observed(...)` likelihoods and
   prior-predictive observed simulation, but not for latent `Param(...)` priors
   because NUTS samples continuous parameters only.

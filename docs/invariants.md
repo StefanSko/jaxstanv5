@@ -48,8 +48,24 @@ Core invariants that should remain true as the codebase changes.
   symbols to named references.
 - `bind(...)` is the transition from resolved model class to `BoundModel`.
 
-## IR and module boundaries
+## Authoring, IR, and backend boundaries
 
+- Importing `jaxstanv5`, `jaxstanv5.model`, `jaxstanv5.distributions`,
+  `jaxstanv5.constraints`, `jaxstanv5.math`, or `jaxstanv5.ir` must not import
+  JAX or BlackJAX. Those modules form the authoring/IR boundary and must remain
+  usable in Python environments that cannot load JAX.
+- Model declaration and IR serialization are backend-neutral: `@model` resolves
+  declarations to `ModelMeta`, and `jaxstanv5.ir` serializes/deserializes that
+  metadata without evaluating log densities, gradients, transforms, samplers, or
+  user code.
+- Distribution and constraint classes in the authoring boundary are serializable
+  metadata. Their JAX numerical behavior is a downstream backend concern and
+  must not be required to import, declare, or encode a model.
+- JAX and BlackJAX may be imported by backend/runtime paths only: `bind(...)`,
+  compiled log-density evaluation, constraint transforms/Jacobians, simulation,
+  diagnostics, and NUTS inference.
+- JAX and BlackJAX are optional package dependencies for backend use, not base
+  authoring dependencies.
 - `_deferred.py` is private class-body syntax capture.
 - `core.py` does not construct final expression IR.
 - `expr.py` is resolved/final IR only.
@@ -73,7 +89,8 @@ Core invariants that should remain true as the codebase changes.
 - In serialized `ModelMeta`, `free_values` defines flat NUTS state layout,
   `stochastic_sites` defines log-density factors, and `data` plus
   `observed_nodes` define required bind inputs.
-- `BoundModel` contains no inference logic.
+- `BoundModel` is downstream runtime state after concrete data binding. It is
+  not part of the authoring/IR boundary and contains no inference logic.
 
 ## Log density
 
