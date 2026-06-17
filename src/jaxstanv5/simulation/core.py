@@ -9,13 +9,20 @@ from typing import Protocol, cast
 import jax
 import jax.numpy as jnp
 
+from jaxstanv5._backends.jax.distributions import (
+    batch_shape,
+    cdf,
+    event_shape,
+    icdf,
+    is_inverse_cdf,
+    is_sampleable,
+)
+from jaxstanv5._backends.jax.distributions import (
+    sample as distribution_sample,
+)
 from jaxstanv5.compiler.core import _evaluate_distribution
 from jaxstanv5.constraints.core import Constraint
-from jaxstanv5.distributions.core import (
-    Distribution,
-    InverseCdfDistribution,
-    SampleableDistribution,
-)
+from jaxstanv5.distributions.core import Distribution
 from jaxstanv5.model.decorator import (
     ModelMeta,
     _normalize_declared_data_values,
@@ -66,43 +73,47 @@ def _leading_sample_shape(
 
 def _sample_interval_restricted(
     key: jax.Array,
-    distribution: InverseCdfDistribution,
+    distribution: Distribution,
     domain: ScalarIntervalDomain,
     *,
     target_shape: tuple[int, ...],
 ) -> jax.Array:
-    if distribution.event_shape() != ():
+    if event_shape(distribution) != ():
         raise TypeError("Interval-constrained prior simulation requires scalar-event distributions")
     sample_shape = _leading_sample_shape(
         target_shape=target_shape,
-        batch_shape=distribution.batch_shape(),
-        event_shape=distribution.event_shape(),
+        batch_shape=batch_shape(distribution),
+        event_shape=event_shape(distribution),
     )
-    lower_probability = jnp.asarray(0.0) if domain.lower is None else distribution.cdf(domain.lower)
-    upper_probability = jnp.asarray(1.0) if domain.upper is None else distribution.cdf(domain.upper)
+    lower_probability = (
+        jnp.asarray(0.0) if domain.lower is None else cdf(distribution, domain.lower)
+    )
+    upper_probability = (
+        jnp.asarray(1.0) if domain.upper is None else cdf(distribution, domain.upper)
+    )
     uniform = jax.random.uniform(
         key,
-        shape=sample_shape + distribution.batch_shape(),
+        shape=sample_shape + batch_shape(distribution),
         minval=lower_probability,
         maxval=upper_probability,
     )
-    return cast("jax.Array", distribution.icdf(uniform))
+    return icdf(distribution, uniform)
 
 
 def _sample_ordered_vector(
     key: jax.Array,
-    distribution: SampleableDistribution,
+    distribution: Distribution,
     *,
     target_shape: tuple[int, ...],
 ) -> jax.Array:
     """Sample an ordered vector from an iid scalar constrained-space prior."""
     if target_shape == ():
         raise ValueError("Ordered prior simulation requires vector target shape")
-    if distribution.event_shape() != ():
+    if event_shape(distribution) != ():
         raise TypeError("Ordered prior simulation requires scalar-event distributions")
-    if distribution.batch_shape() != ():
+    if batch_shape(distribution) != ():
         raise TypeError("Ordered prior simulation requires iid scalar distributions")
-    raw = distribution.sample(key, sample_shape=target_shape)
+    raw = distribution_sample(distribution, key, sample_shape=target_shape)
     return jnp.sort(raw, axis=-1)
 
 
@@ -117,17 +128,17 @@ def _sample_prior_value(
     domain = prior_domain_for_constraint(constraint)
 
     if isinstance(domain, UnconstrainedDomain):
-        if isinstance(distribution, SampleableDistribution):
+        if is_sampleable(distribution):
             sample_shape = _leading_sample_shape(
                 target_shape=target_shape,
-                batch_shape=distribution.batch_shape(),
-                event_shape=distribution.event_shape(),
+                batch_shape=batch_shape(distribution),
+                event_shape=event_shape(distribution),
             )
-            return cast("jax.Array", distribution.sample(key, sample_shape=sample_shape))
+            return distribution_sample(distribution, key, sample_shape=sample_shape)
         raise TypeError(f"Unsupported prior distribution: {type(distribution).__name__}")
 
     if isinstance(domain, ScalarIntervalDomain):
-        if isinstance(distribution, InverseCdfDistribution):
+        if is_inverse_cdf(distribution):
             return _sample_interval_restricted(
                 key,
                 distribution,
@@ -139,7 +150,7 @@ def _sample_prior_value(
         )
 
     if isinstance(domain, OrderedVectorDomain):
-        if isinstance(distribution, SampleableDistribution):
+        if is_sampleable(distribution):
             return _sample_ordered_vector(key, distribution, target_shape=target_shape)
         raise TypeError(f"Unsupported ordered prior distribution: {type(distribution).__name__}")
 
@@ -215,9 +226,9 @@ def _simulate_one(
         distribution = _evaluate_distribution(observed.distribution, values)
         observed_target_shape = observed_shapes[observed.name]
         if observed_target_shape is None:
-            if not isinstance(distribution, SampleableDistribution):
+            if not is_sampleable(distribution):
                 raise TypeError(f"Unsupported prior distribution: {type(distribution).__name__}")
-            observed_target_shape = distribution.batch_shape() + distribution.event_shape()
+            observed_target_shape = batch_shape(distribution) + event_shape(distribution)
         observed_value = _sample_prior_value(
             keys[key_index],
             distribution,

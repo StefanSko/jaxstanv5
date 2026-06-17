@@ -10,6 +10,7 @@ import blackjax
 import jax
 import jax.numpy as jnp
 
+from jaxstanv5._backends.jax.constraints import inverse_transform
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values
@@ -215,7 +216,7 @@ def _constrain_sample_values(
         if constraint is None:
             result[name] = values
         else:
-            result[name] = jnp.asarray(constraint.inverse_transform(values))
+            result[name] = jnp.asarray(inverse_transform(constraint, values))
     return result
 
 

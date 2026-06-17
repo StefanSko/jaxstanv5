@@ -9,6 +9,11 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 
+from jaxstanv5._backends.jax.constraints import (
+    inverse_transform,
+    log_abs_det_jacobian,
+)
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
 from jaxstanv5.distributions.core import Distribution
 from jaxstanv5.model.bound import BoundModel
@@ -184,8 +189,8 @@ def _constrain_params(
     for name, value in _resolved_free_values(meta).items():
         val = params[name]
         if value.constraint is not None:
-            constrained[name] = cast(jax.Array, value.constraint.inverse_transform(val))
-            log_jac = log_jac + jnp.sum(value.constraint.log_abs_det_jacobian(val))
+            constrained[name] = inverse_transform(value.constraint, val)
+            log_jac = log_jac + jnp.sum(log_abs_det_jacobian(value.constraint, val))
         else:
             constrained[name] = val
     return constrained, log_jac
@@ -206,7 +211,7 @@ def _build_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
         for site in _resolved_stochastic_sites(meta):
             dist = _evaluate_distribution(site.distribution, values)
             value = _evaluate_expr(site.value, values)
-            lp = lp + jnp.sum(dist.log_prob(value))
+            lp = lp + jnp.sum(distribution_log_prob(dist, value))
 
         return lp
 
