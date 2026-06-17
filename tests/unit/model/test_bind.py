@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+from jaxstanv5._backends.jax.binding import _param_count, _resolve_param_shape
 from jaxstanv5.distributions import Binomial, MultivariateNormal, Normal, OrderedLogistic
 from jaxstanv5.model._data_schema import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
 from jaxstanv5.model.bound import BoundModel
@@ -19,8 +20,6 @@ from jaxstanv5.model.decorator import (
     ResolvedParam,
     ResolvedStochasticSite,
     _make_bind,
-    _param_count,
-    _resolve_param_shape,
 )
 from jaxstanv5.model.expr import DataRef, ParamRef, VectorScatterOp
 

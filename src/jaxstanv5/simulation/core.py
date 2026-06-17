@@ -9,6 +9,11 @@ from typing import Protocol, cast
 import jax
 import jax.numpy as jnp
 
+from jaxstanv5._backends.jax.binding import (
+    _normalize_declared_data_values,
+    _resolve_param_shape,
+    _validate_bound_distribution_parameters,
+)
 from jaxstanv5._backends.jax.distributions import (
     batch_shape,
     cdf,
@@ -23,13 +28,7 @@ from jaxstanv5._backends.jax.distributions import (
 from jaxstanv5.compiler.core import _evaluate_distribution
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model.decorator import (
-    ModelMeta,
-    _normalize_declared_data_values,
-    _resolve_param_shape,
-    _resolved_free_values,
-    _validate_bound_distribution_parameters,
-)
+from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values
 from jaxstanv5.simulation.domains import (
     OrderedVectorDomain,
     ScalarIntervalDomain,
