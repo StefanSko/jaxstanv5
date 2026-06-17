@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.compiler.core import _evaluate_distribution
 from jaxstanv5.distributions import Binomial, Normal, Poisson
 from jaxstanv5.distributions.core import (
@@ -25,7 +26,7 @@ class OpaqueShiftedNormal:
         self.scale = scale
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
-        return Normal(self.loc, self.scale).log_prob(x)
+        return distribution_log_prob(Normal(self.loc, self.scale), x)
 
 
 def test_scalar_fields_pass_through() -> None:
@@ -34,8 +35,8 @@ def test_scalar_fields_pass_through() -> None:
     result = _evaluate_distribution(dist, {})
 
     assert isinstance(result, Normal)
-    assert jnp.allclose(_concrete_parameter(result.loc), jnp.array(0.0))
-    assert jnp.allclose(_concrete_parameter(result.scale), jnp.array(1.0))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.loc)), jnp.array(0.0))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.scale)), jnp.array(1.0))
 
 
 def test_concrete_non_dataclass_distribution_passes_through() -> None:
@@ -51,8 +52,8 @@ def test_const_node_fields() -> None:
     dist = Normal(loc=ConstNode(3.0), scale=ConstNode(2.0))
     result = _evaluate_distribution(dist, {})
 
-    assert jnp.allclose(_concrete_parameter(result.loc), jnp.array(3.0))
-    assert jnp.allclose(_concrete_parameter(result.scale), jnp.array(2.0))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.loc)), jnp.array(3.0))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.scale)), jnp.array(2.0))
 
 
 def test_param_ref_fields() -> None:
@@ -60,8 +61,8 @@ def test_param_ref_fields() -> None:
     dist = Normal(loc=ParamRef("mu"), scale=ConstNode(1.0))
     result = _evaluate_distribution(dist, {"mu": jnp.array(2.5)})
 
-    assert jnp.allclose(_concrete_parameter(result.loc), jnp.array(2.5))
-    assert jnp.allclose(_concrete_parameter(result.scale), jnp.array(1.0))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.loc)), jnp.array(2.5))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.scale)), jnp.array(1.0))
 
 
 def test_data_ref_fields() -> None:
@@ -69,8 +70,8 @@ def test_data_ref_fields() -> None:
     dist = Normal(loc=DataRef("x"), scale=ParamRef("sigma"))
     result = _evaluate_distribution(dist, {"x": jnp.array([1.0, 2.0]), "sigma": jnp.array(0.5)})
 
-    assert jnp.allclose(_concrete_parameter(result.loc), jnp.array([1.0, 2.0]))
-    assert jnp.allclose(_concrete_parameter(result.scale), jnp.array(0.5))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.loc)), jnp.array([1.0, 2.0]))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.scale)), jnp.array(0.5))
 
 
 def test_binop_fields() -> None:
@@ -86,8 +87,8 @@ def test_binop_fields() -> None:
     result = _evaluate_distribution(dist, values)
 
     expected_loc = 2.0 + 0.5 * jnp.array([1.0, 2.0])
-    assert jnp.allclose(_concrete_parameter(result.loc), expected_loc)
-    assert jnp.allclose(_concrete_parameter(result.scale), jnp.array(1.0))
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.loc)), expected_loc)
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.scale)), jnp.array(1.0))
 
 
 def test_unary_function_fields() -> None:
@@ -98,7 +99,7 @@ def test_unary_function_fields() -> None:
     result = _evaluate_distribution(dist, values)
 
     expected_rate = jnp.exp(1.0 + jnp.array([0.0, 1.0]))
-    assert jnp.allclose(_concrete_parameter(result.rate), expected_rate)
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.rate)), expected_rate)
 
 
 def test_sigmoid_unary_function_fields() -> None:
@@ -109,14 +110,14 @@ def test_sigmoid_unary_function_fields() -> None:
     result = _evaluate_distribution(dist, values)
 
     expected_probs = jax.nn.sigmoid(1.0 + jnp.array([0.0, 1.0]))
-    assert jnp.allclose(_concrete_parameter(result.probs), expected_probs)
+    assert jnp.allclose(jnp.asarray(_concrete_parameter(result.probs)), expected_probs)
 
 
 def test_log_prob_works_on_evaluated_distribution() -> None:
     """After evaluation, log_prob can be called with concrete arrays."""
     dist = Normal(loc=ParamRef("mu"), scale=ConstNode(1.0))
     evaluated = _evaluate_distribution(dist, {"mu": jnp.array(0.5)})
-    lp = evaluated.log_prob(jnp.array(2.0))
+    lp = distribution_log_prob(evaluated, jnp.array(2.0))
     assert lp.shape == ()
     assert jnp.isfinite(lp)
 

@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.distributions import Bernoulli, Binomial, Normal
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
@@ -59,7 +60,9 @@ def test_scalar_unconstrained() -> None:
 
     # Manual: prior Normal(0,1).log_prob(0.5) + Normal(0.5,1).log_prob(2.0)
     std_normal = Normal(0.0, 1.0)
-    expected = std_normal.log_prob(jnp.array(0.5)) + Normal(0.5, 1.0).log_prob(jnp.array(2.0))
+    expected = distribution_log_prob(std_normal, jnp.array(0.5)) + distribution_log_prob(
+        Normal(0.5, 1.0), jnp.array(2.0)
+    )
 
     assert jnp.allclose(lp, expected, atol=1e-6)
 
@@ -120,9 +123,9 @@ def test_multiple_observed_nodes_contribute_to_log_density() -> None:
     log_prob = compile_log_density(bound)
     lp = log_prob(jnp.array([0.5]))
 
-    expected = Normal(0.0, 1.0).log_prob(jnp.array(0.5))
-    expected += Normal(0.5, 1.0).log_prob(jnp.array(2.0))
-    expected += Normal(0.5, 2.0).log_prob(jnp.array(-1.0))
+    expected = distribution_log_prob(Normal(0.0, 1.0), jnp.array(0.5))
+    expected += distribution_log_prob(Normal(0.5, 1.0), jnp.array(2.0))
+    expected += distribution_log_prob(Normal(0.5, 2.0), jnp.array(-1.0))
 
     assert jnp.allclose(lp, expected, atol=1e-6)
 
@@ -192,7 +195,7 @@ def test_no_params() -> None:
     log_prob = compile_log_density(bound)
     lp = log_prob(jnp.array([]))
 
-    expected = Normal(0.0, 1.0).log_prob(jnp.array(2.0))
+    expected = distribution_log_prob(Normal(0.0, 1.0), jnp.array(2.0))
     assert jnp.allclose(lp, expected, atol=1e-6)
 
 
@@ -208,7 +211,7 @@ def test_compile_log_density_handles_prior_only_model() -> None:
     log_prob = compile_log_density(bound)
     lp = log_prob(jnp.array([0.5]))
 
-    expected = Normal(0.0, 1.0).log_prob(jnp.array(0.5))
+    expected = distribution_log_prob(Normal(0.0, 1.0), jnp.array(0.5))
     assert jnp.allclose(lp, expected, atol=1e-6)
 
 

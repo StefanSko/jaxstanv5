@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import math
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -46,15 +47,16 @@ def _q_points(n_params: int) -> list[list[float]]:
     ]
 
 
-def _encode_data(data: dict[str, jax.Array]) -> dict[str, object]:
-    return {
-        name: {
+def _encode_data(data: Mapping[str, object]) -> dict[str, object]:
+    encoded: dict[str, object] = {}
+    for name, raw_value in data.items():
+        value = cast(jax.Array, raw_value)
+        encoded[name] = {
             "dtype": str(value.dtype),
             "shape": list(value.shape),
             "values": value.reshape(-1).tolist(),
         }
-        for name, value in data.items()
-    }
+    return encoded
 
 
 def main() -> None:

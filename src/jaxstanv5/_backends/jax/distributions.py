@@ -472,7 +472,7 @@ def log_prob(distribution: Distribution, x: DistributionValue) -> jax.Array:
         safe_probability = jnp.clip(selected_probability, jnp.finfo(dtype).tiny, 1.0)
         return jnp.where(support, jnp.log(safe_probability), -jnp.inf)
     if isinstance(distribution, PythonLogProbDistribution):
-        return distribution.log_prob(x)
+        return cast(jax.Array, distribution.log_prob(x))
     raise TypeError(f"Distribution has no JAX log_prob support: {type(distribution).__name__}")
 
 

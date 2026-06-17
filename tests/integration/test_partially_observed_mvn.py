@@ -5,6 +5,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 from _reference_models import partially_observed_mvn_fixture
 
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.distributions import MultivariateNormal
 from jaxstanv5.inference import sample
@@ -22,7 +23,7 @@ def test_partially_observed_mvn_log_density_matches_joint_density() -> None:
         full_y = full_y.at[fixture.missing_idx].set(q)
 
         actual = log_density(q)
-        expected = distribution.log_prob(full_y)
+        expected = distribution_log_prob(distribution, full_y)
 
         assert jnp.allclose(actual, expected, atol=1e-6)
 

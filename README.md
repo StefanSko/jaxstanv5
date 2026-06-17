@@ -135,10 +135,13 @@ slices, for example `alpha[group_idx]`, `x[:, 0]`, and `x[group_idx, 0]`.
 General NumPy indexing forms such as partial slices, ellipses, new axes, and
 boolean masks are not part of the declaration language.
 
-Custom distributions can implement the `Distribution` protocol. If their
-parameters include `Param`, `Data`, or symbolic expressions, define the custom
-distribution as a dataclass so model declaration can resolve those fields.
-Opaque non-dataclass distributions are allowed only with concrete parameters.
+Built-in distributions are metadata-only dataclasses. Python custom
+JAX-backend distributions may still provide a `log_prob(...)` method as a
+backend-specific interoperability path. If their parameters include `Param`,
+`Data`, or symbolic expressions, define the custom distribution as a dataclass
+so model declaration can resolve those fields. Opaque non-dataclass
+distributions are allowed only with concrete parameters. Non-Python IR consumers
+require their own backend support for any custom distribution tags.
 
 Data declarations are schema-only; they never construct values. Use
 `Data.scalar()` for rank-0 inputs, `Data.vector()` or `Data.vector(n)` for

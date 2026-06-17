@@ -7,6 +7,7 @@ from typing import Protocol, cast
 
 import pytest
 
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.distributions import Binomial, Normal, Poisson
 from jaxstanv5.distributions.core import DistributionParameter, DistributionValue, LogProbability
 from jaxstanv5.math import exp, sigmoid
@@ -46,7 +47,7 @@ class BinomialFields(Protocol):
 
 
 def dist_param(value: object) -> DistributionParameter:
-    return cast(DistributionParameter, value)
+    return value
 
 
 def normal_fields(value: object) -> NormalFields:
@@ -75,7 +76,7 @@ class CustomShiftedNormal:
     scale: DistributionParameter
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
-        return Normal(self.loc, self.scale).log_prob(x)
+        return distribution_log_prob(Normal(self.loc, self.scale), x)
 
 
 def test_resolve_declarations_resolves_param_data_and_observed_inventory() -> None:

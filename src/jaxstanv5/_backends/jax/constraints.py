@@ -33,7 +33,7 @@ class _PythonConstraint(Protocol):
 def transform(constraint: Constraint, x: ConstrainedValue) -> jax.Array:
     """Map constrained values to unconstrained values with the JAX backend."""
     if isinstance(constraint, Positive):
-        return jnp.log(x)
+        return jnp.log(jnp.asarray(x))
     if isinstance(constraint, Interval):
         unit_value = (jnp.asarray(x) - constraint.lower) / constraint.width
         return jnp.log(unit_value) - jnp.log1p(-unit_value)
@@ -54,7 +54,7 @@ def transform(constraint: Constraint, x: ConstrainedValue) -> jax.Array:
 def inverse_transform(constraint: Constraint, y: UnconstrainedValue) -> jax.Array:
     """Map unconstrained values to constrained values with the JAX backend."""
     if isinstance(constraint, Positive):
-        return jnp.exp(y)
+        return jnp.exp(jnp.asarray(y))
     if isinstance(constraint, Interval):
         return constraint.lower + constraint.width * jax.nn.sigmoid(jnp.asarray(y))
     if isinstance(constraint, UnitInterval):
@@ -91,5 +91,5 @@ def log_abs_det_jacobian(constraint: Constraint, y: UnconstrainedValue) -> jax.A
             raise ValueError("Ordered constraint requires vector values")
         return jnp.sum(unconstrained[..., 1:], axis=-1)
     if isinstance(constraint, _PythonConstraint):
-        return constraint.log_abs_det_jacobian(y)
+        return cast(jax.Array, constraint.log_abs_det_jacobian(y))
     raise TypeError(f"Unsupported constraint: {type(constraint).__name__}")

@@ -204,7 +204,7 @@ def _build_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
     def log_prob(q: jax.Array) -> jax.Array:
         params = _split_params(q, shapes)
         constrained, log_jac = _constrain_params(params, meta)
-        values = {**constrained, **bound.data}
+        values = cast("dict[str, jax.Array]", {**constrained, **bound.data})
 
         lp: jax.Array = log_jac
 

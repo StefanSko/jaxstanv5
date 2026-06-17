@@ -13,7 +13,9 @@ from jaxstanv5._backends.jax.distributions import (
     event_shape,
     icdf,
     log_prob,
-    sample,
+)
+from jaxstanv5._backends.jax.distributions import (
+    sample as distribution_sample,
 )
 from jaxstanv5.distributions import Bernoulli, Binomial, MultivariateNormal, Normal
 
@@ -37,7 +39,10 @@ def test_distribution_shapes_and_sampling_are_backend_operations() -> None:
 
     assert batch_shape(distribution) == (2,)
     assert event_shape(distribution) == ()
-    assert sample(distribution, jax.random.PRNGKey(1), sample_shape=(3,)).shape == (3, 2)
+    assert distribution_sample(distribution, jax.random.PRNGKey(1), sample_shape=(3,)).shape == (
+        3,
+        2,
+    )
 
 
 def test_inverse_cdf_operations_are_backend_operations() -> None:
@@ -52,11 +57,14 @@ def test_multivariate_event_shape_is_backend_operation() -> None:
 
     assert batch_shape(distribution) == ()
     assert event_shape(distribution) == (2,)
-    assert sample(distribution, jax.random.PRNGKey(2), sample_shape=(4,)).shape == (4, 2)
+    assert distribution_sample(distribution, jax.random.PRNGKey(2), sample_shape=(4,)).shape == (
+        4,
+        2,
+    )
 
 
 def test_discrete_sampling_uses_backend_operation() -> None:
-    draws = sample(Bernoulli(0.8), jax.random.PRNGKey(3), sample_shape=(10,))
+    draws = distribution_sample(Bernoulli(0.8), jax.random.PRNGKey(3), sample_shape=(10,))
 
     assert draws.shape == (10,)
     assert jnp.all((draws == 0) | (draws == 1))

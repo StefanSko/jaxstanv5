@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import pytest
 
 from jaxstanv5 import model
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions import (
@@ -44,7 +45,7 @@ class OpaqueShiftedNormal:
         self.scale = scale
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
-        return Normal(self.loc, self.scale).log_prob(x)
+        return distribution_log_prob(Normal(self.loc, self.scale), x)
 
 
 class SlottedOpaqueShiftedNormal:
@@ -57,7 +58,7 @@ class SlottedOpaqueShiftedNormal:
         self.scale = scale
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
-        return Normal(self.loc, self.scale).log_prob(x)
+        return distribution_log_prob(Normal(self.loc, self.scale), x)
 
 
 class PrivateSlottedOpaqueShiftedNormal:
@@ -70,7 +71,7 @@ class PrivateSlottedOpaqueShiftedNormal:
         self.scale = scale
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
-        return Normal(self.__loc, self.scale).log_prob(x)
+        return distribution_log_prob(Normal(self.__loc, self.scale), x)
 
 
 def test_bare_data_declaration_is_rejected_with_schema_guidance() -> None:

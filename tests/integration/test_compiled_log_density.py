@@ -12,6 +12,8 @@ from _helpers import bind_model
 from jax.scipy.special import gammaln
 
 from jaxstanv5 import Data, Observed, Param, model
+from jaxstanv5._backends.jax.constraints import inverse_transform
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.constraints import Interval, Ordered, Positive, UnitInterval
 from jaxstanv5.distributions import (
@@ -35,7 +37,7 @@ class CustomShiftedNormal:
     scale: DistributionParameter
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
-        return Normal(self.loc, self.scale).log_prob(x)
+        return distribution_log_prob(Normal(self.loc, self.scale), x)
 
 
 @model
@@ -418,7 +420,7 @@ def test_compiled_log_density_includes_ordered_constraint_jacobian_and_likelihoo
 
     beta = jnp.asarray(0.5)
     raw_cutpoints = jnp.asarray([-0.4, 0.3])
-    constrained_cutpoints = jnp.asarray(Ordered().inverse_transform(raw_cutpoints))
+    constrained_cutpoints = jnp.asarray(inverse_transform(Ordered(), raw_cutpoints))
     q = jnp.concatenate((jnp.asarray([beta]), raw_cutpoints))
 
     lp = log_prob(q)

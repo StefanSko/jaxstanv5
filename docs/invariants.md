@@ -59,13 +59,15 @@ Core invariants that should remain true as the codebase changes.
   metadata without evaluating log densities, gradients, transforms, samplers, or
   user code.
 - Distribution and constraint classes in the authoring boundary are serializable
-  metadata. Their JAX numerical behavior is a downstream backend concern and
-  must not be required to import, declare, or encode a model.
+  metadata only. Built-in metadata classes must not define JAX runtime methods
+  such as `log_prob`, `sample`, `transform`, `inverse_transform`, or Jacobian
+  evaluation; those operations live in backend modules.
 - JAX and BlackJAX may be imported by backend/runtime paths only: `bind(...)`,
   compiled log-density evaluation, constraint transforms/Jacobians, simulation,
   diagnostics, and NUTS inference.
 - JAX and BlackJAX are optional package dependencies for backend use, not base
-  authoring dependencies.
+  authoring dependencies. Authoring modules must not use lazy JAX proxies to hide
+  backend coupling.
 - `_deferred.py` is private class-body syntax capture.
 - `core.py` does not construct final expression IR.
 - `expr.py` is resolved/final IR only.
@@ -94,8 +96,8 @@ Core invariants that should remain true as the codebase changes.
 
 ## Log density
 
-- The compiler evaluates symbolic distribution arguments before calling
-  `Distribution.log_prob(...)`.
+- The compiler evaluates symbolic distribution arguments before calling the JAX
+  backend log-probability operation for each stochastic site.
 - Log density = constraint Jacobians + all stochastic site log-density terms.
 - The flat unconstrained parameter vector packs free values in the insertion
   order of `free_values`, or of `params` when `free_values` is empty.
