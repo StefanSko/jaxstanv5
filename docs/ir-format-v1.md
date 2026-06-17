@@ -64,7 +64,9 @@ Decoders reject a missing or unknown version with `UnsupportedIRVersion`.
    intentional: it coincides with what a code-free parser can parse and what
    a non-Python backend can evaluate. Distribution objects in IR are metadata;
    runtime methods such as log-density evaluation are backend behavior, not part
-   of the wire contract.
+   of the wire contract. Python custom distributions with `log_prob(...)` are a
+   JAX-backend interoperability path only; portable custom tags require explicit
+   support in each non-Python backend that consumes them.
 
 ## Decoding rules
 

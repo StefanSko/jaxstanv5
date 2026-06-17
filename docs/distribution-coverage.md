@@ -59,15 +59,16 @@ Target model families:
   backend support for sampling, batch shape, and event shape. Prior simulation
   distinguishes iid sample dimensions, distribution batch dimensions, and event
   dimensions; event-wise priors such as `MultivariateNormal` are supported.
-- `Interval(lower, upper)` and `UnitInterval()` use finite open-interval logit
-  transforms and include the inverse-transform Jacobian in compiled log
-  densities. Bounds are static finite floats; data-dependent bounds are not part
-  of the current public API.
-- `Ordered()` maps same-length unconstrained vectors to strictly increasing
-  constrained vectors along the last axis and includes the inverse-transform
-  Jacobian in compiled log densities. `OrderedLogistic` uses Python-native
-  zero-based observed category labels `0..n_cutpoints`; Stan references must add
-  one to observed labels at the reference boundary.
+- The JAX backend implements finite open-interval logit transforms for
+  `Interval(lower, upper)` and `UnitInterval()` and includes the inverse-transform
+  Jacobian in compiled log densities. Bounds are static finite floats;
+  data-dependent bounds are not part of the current public API.
+- The JAX backend implements the `Ordered()` transform from same-length
+  unconstrained vectors to strictly increasing constrained vectors along the last
+  axis and includes the inverse-transform Jacobian in compiled log densities.
+  `OrderedLogistic` uses Python-native zero-based observed category labels
+  `0..n_cutpoints`; Stan references must add one to observed labels at the
+  reference boundary.
 - A distribution used as a prior for an interval-constrained parameter must also
   have JAX backend support for `cdf` and `icdf`, because prior simulation uses
   inverse-CDF restricted sampling.

@@ -320,5 +320,15 @@ uv run ty check
 uv run pytest
 ```
 
+For backend-boundary refactors, also run a small statistical smoke set covering
+both Stan and SBC references, for example:
+
+```bash
+uv run --script scripts/check_poisson_stan_posterior_reference.py
+uv run --script scripts/check_beta_regression_stan_posterior_reference.py
+uv run --script scripts/check_binomial_sbc_reference.py
+uv run --script scripts/check_ordinal_sbc_reference.py
+```
+
 Important internal invariants are documented in
 [`docs/invariants.md`](docs/invariants.md).
