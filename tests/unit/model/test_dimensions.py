@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from jaxstanv5 import Data, Dim, Observed, Param
+from jaxstanv5 import Data, Dim, Observed, Param, model
 from jaxstanv5.distributions import Normal
 from jaxstanv5.model.dimensions import (
     ResolvedModelDimensions,
@@ -116,3 +116,50 @@ def test_observed_declarations_store_dimension_labels() -> None:
 
     assert Observed(Normal(0.0, 1.0), dims=(obs,)).dims == (obs,)
     assert Observed(Normal(0.0, 1.0), dims=()).dims == ()
+
+
+def test_model_dimension_resolution_accepts_duplicate_matching_coords() -> None:
+    predictor_for_data = Dim("predictor", coords=("x1", "x2"))
+    predictor_for_param = Dim("predictor", coords=("x1", "x2"))
+    obs = Dim("obs")
+
+    @model
+    class MatchingCoords:
+        x = Data.matrix(3, 2, dims=(obs, predictor_for_data))
+        beta = Param(Normal(0.0, 1.0), size=2, dims=(predictor_for_param,))
+        y = Observed(Normal(0.0, 1.0), dims=(obs,))
+
+    assert model_dimensions(MatchingCoords).coords == {"predictor": ("x1", "x2")}
+
+
+def test_model_dimension_resolution_rejects_conflicting_coords() -> None:
+    predictor_for_data = Dim("predictor", coords=("x1", "x2"))
+    predictor_for_param = Dim("predictor", coords=("a", "b"))
+    obs = Dim("obs")
+
+    with pytest.raises(ValueError, match="conflicting coordinate values"):
+
+        @model
+        class ConflictingCoords:
+            x = Data.matrix(3, 2, dims=(obs, predictor_for_data))
+            beta = Param(Normal(0.0, 1.0), size=2, dims=(predictor_for_param,))
+            y = Observed(Normal(0.0, 1.0), dims=(obs,))
+
+
+def test_model_dimension_resolution_rejects_static_coord_size_mismatch() -> None:
+    predictor = Dim("predictor", coords=("x1", "x2"))
+    obs = Dim("obs")
+
+    with pytest.raises(ValueError, match="coordinate length"):
+
+        @model
+        class DataCoordSizeMismatch:
+            x = Data.matrix(3, 3, dims=(obs, predictor))
+            beta = Param(Normal(0.0, 1.0))
+            y = Observed(Normal(0.0, 1.0), dims=(obs,))
+
+    with pytest.raises(ValueError, match="coordinate length"):
+
+        @model
+        class ParamCoordSizeMismatch:
+            beta = Param(Normal(0.0, 1.0), size=3, dims=(predictor,))

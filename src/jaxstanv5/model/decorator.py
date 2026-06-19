@@ -382,11 +382,27 @@ def _resolve_dimension_metadata(cls: ModelClass) -> ResolvedModelDimensions:
                 if value.size is None:
                     variables[name] = ResolvedVariableDims(())
                 continue
-            variables[name] = _resolve_variable_dims(value.dims, coords)
-        elif isinstance(value, Data | Observed):
+            variables[name] = _resolve_variable_dims(
+                value.dims,
+                coords,
+                static_axis_sizes=_param_static_axis_sizes(value.size),
+            )
+        elif isinstance(value, Data):
             if value.dims is None:
                 continue
-            variables[name] = _resolve_variable_dims(value.dims, coords)
+            variables[name] = _resolve_variable_dims(
+                value.dims,
+                coords,
+                static_axis_sizes=_data_static_axis_sizes(value.schema),
+            )
+        elif isinstance(value, Observed):
+            if value.dims is None:
+                continue
+            variables[name] = _resolve_variable_dims(
+                value.dims,
+                coords,
+                static_axis_sizes=tuple(None for _ in value.dims),
+            )
 
     return ResolvedModelDimensions(variables=variables, coords=coords)
 
@@ -394,9 +410,40 @@ def _resolve_dimension_metadata(cls: ModelClass) -> ResolvedModelDimensions:
 def _resolve_variable_dims(
     dims: tuple[Dim, ...],
     coords: dict[str, tuple[CoordValue, ...]],
+    *,
+    static_axis_sizes: tuple[int | None, ...],
 ) -> ResolvedVariableDims:
+    _validate_static_coordinate_lengths(dims, static_axis_sizes)
     _record_dimension_coords(dims, coords)
     return ResolvedVariableDims(tuple(dim.name for dim in dims))
+
+
+def _param_static_axis_sizes(size: Data | int | None) -> tuple[int | None, ...]:
+    if size is None:
+        return ()
+    if isinstance(size, int):
+        return (size,)
+    return (None,)
+
+
+def _data_static_axis_sizes(schema: DataRankSchema | DataShapeSchema) -> tuple[int | None, ...]:
+    if isinstance(schema, DataRankSchema):
+        return tuple(None for _ in range(schema.rank))
+    return tuple(dim if isinstance(dim, int) else None for dim in schema.dims)
+
+
+def _validate_static_coordinate_lengths(
+    dims: tuple[Dim, ...],
+    static_axis_sizes: tuple[int | None, ...],
+) -> None:
+    for dim, static_axis_size in zip(dims, static_axis_sizes, strict=True):
+        if dim.coords is None or static_axis_size is None:
+            continue
+        if len(dim.coords) != static_axis_size:
+            raise ValueError(
+                f"Dimension {dim.name!r} coordinate length {len(dim.coords)} does not match "
+                f"static axis size {static_axis_size}"
+            )
 
 
 def _record_dimension_coords(
