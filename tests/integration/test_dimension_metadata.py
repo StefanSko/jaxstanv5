@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from jaxstanv5 import (
     Data,
     Dim,
@@ -11,6 +13,7 @@ from jaxstanv5 import (
 )
 from jaxstanv5.distributions import Normal
 from jaxstanv5.ir import meta_to_dict
+from jaxstanv5.model.decorator import ModelMeta
 
 
 def test_declared_dimension_metadata_is_exposed_for_linear_regression() -> None:
@@ -33,6 +36,7 @@ def test_declared_dimension_metadata_is_exposed_for_linear_regression() -> None:
         },
         "coords": {"predictor": ["x1", "x2", "x3"]},
     }
-    model_node = meta_to_dict(LinearRegression._model_meta)["model"]
+    meta = cast(ModelMeta, getattr(LinearRegression, "_model_meta"))  # noqa: B009
+    model_node = meta_to_dict(meta)["model"]
     assert isinstance(model_node, dict)
     assert "dims" not in model_node

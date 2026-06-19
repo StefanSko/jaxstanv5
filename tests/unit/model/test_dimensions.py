@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import cast
 
 import pytest
 
@@ -33,7 +34,7 @@ def test_dim_rejects_empty_name() -> None:
 
 def test_dim_rejects_non_string_name() -> None:
     with pytest.raises(TypeError, match="strings"):
-        Dim(1)  # type: ignore[arg-type]
+        Dim(cast(str, 1))
 
 
 def test_dim_rejects_non_json_scalar_coordinate() -> None:
