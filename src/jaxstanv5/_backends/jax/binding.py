@@ -42,6 +42,7 @@ from jaxstanv5.model.decorator import (
     _resolved_stochastic_sites,
     _validate_parameter_size,
 )
+from jaxstanv5.model.dimensions import ResolvedModelDimensions
 from jaxstanv5.model.expr import (
     BinOp,
     ConstNode,
@@ -74,7 +75,12 @@ _INDEX_UNARY_FUNCTIONS: dict[str, Callable[[jax.Array], jax.Array]] = {
 }
 
 
-def bind_model_meta(meta: ModelMeta, values: Mapping[str, object]) -> BoundModel:
+def bind_model_meta(
+    meta: ModelMeta,
+    values: Mapping[str, object],
+    *,
+    dimensions: ResolvedModelDimensions | None = None,
+) -> BoundModel:
     """Bind concrete data values to resolved model metadata with the JAX backend."""
     expected = set(meta.data)
     expected.update(observed.name for observed in meta.observed_nodes)

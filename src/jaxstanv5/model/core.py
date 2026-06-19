@@ -22,6 +22,7 @@ from jaxstanv5.model._deferred import (
     DeferredIndexOp,
     DeferredUnaryOp,
 )
+from jaxstanv5.model.dimensions import Dim, normalize_dims
 
 _SYMBOL_IDS = count()
 
@@ -47,14 +48,29 @@ def _validate_data_rank(value: int) -> int:
     return value
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class Param(SymbolicDistributionParameter):
     """Parameter declaration used inside ``@model`` class bodies."""
 
     distribution: Distribution
-    constraint: Constraint | None = None
-    size: Data | int | None = None
+    constraint: Constraint | None
+    size: Data | int | None
+    dims: tuple[Dim, ...] | None
     symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
+
+    def __init__(
+        self,
+        distribution: Distribution,
+        constraint: Constraint | None = None,
+        size: Data | int | None = None,
+        *,
+        dims: Sequence[Dim] | None = None,
+    ) -> None:
+        object.__setattr__(self, "distribution", distribution)
+        object.__setattr__(self, "constraint", constraint)
+        object.__setattr__(self, "size", size)
+        object.__setattr__(self, "dims", normalize_dims(dims))
+        object.__setattr__(self, "symbol", _next_symbol())
 
     def __add__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("+", self, other)
@@ -92,6 +108,7 @@ class Data(SymbolicDistributionParameter):
     """Data declaration used inside ``@model`` class bodies."""
 
     schema: DataSchema
+    dims: tuple[Dim, ...] | None
     symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
 
     def __init__(
@@ -99,6 +116,7 @@ class Data(SymbolicDistributionParameter):
         *,
         shape: Sequence[object] | None = None,
         rank: int | None = None,
+        dims: Sequence[Dim] | None = None,
     ) -> None:
         if shape is None and rank is None:
             raise TypeError(
@@ -118,28 +136,35 @@ class Data(SymbolicDistributionParameter):
             schema = DataRankSchema(_validate_data_rank(rank))
 
         object.__setattr__(self, "schema", schema)
+        object.__setattr__(self, "dims", normalize_dims(dims))
         object.__setattr__(self, "symbol", _next_symbol())
 
     @classmethod
-    def scalar(cls) -> Data:
+    def scalar(cls, *, dims: Sequence[Dim] | None = None) -> Data:
         """Declare scalar data."""
-        return cls(shape=())
+        return cls(shape=(), dims=dims)
 
     @classmethod
-    def vector(cls, length: object | None = None) -> Data:
+    def vector(cls, length: object | None = None, *, dims: Sequence[Dim] | None = None) -> Data:
         """Declare rank-1 data, optionally with an exact length."""
         if length is None:
-            return cls(rank=1)
-        return cls(shape=(length,))
+            return cls(rank=1, dims=dims)
+        return cls(shape=(length,), dims=dims)
 
     @classmethod
-    def matrix(cls, rows: object | None = None, cols: object | None = None) -> Data:
+    def matrix(
+        cls,
+        rows: object | None = None,
+        cols: object | None = None,
+        *,
+        dims: Sequence[Dim] | None = None,
+    ) -> Data:
         """Declare rank-2 data, optionally with an exact shape."""
         if rows is None and cols is None:
-            return cls(rank=2)
+            return cls(rank=2, dims=dims)
         if rows is None or cols is None:
             raise TypeError("Data.matrix requires both rows and cols, or neither")
-        return cls(shape=(rows, cols))
+        return cls(shape=(rows, cols), dims=dims)
 
     @classmethod
     def array(
@@ -147,11 +172,12 @@ class Data(SymbolicDistributionParameter):
         *,
         shape: Sequence[object] | None = None,
         rank: int | None = None,
+        dims: Sequence[Dim] | None = None,
     ) -> Data:
         """Declare generic array data by exact shape or rank."""
         if shape is None and rank is None:
             raise TypeError("Data.array requires shape or rank")
-        return cls(shape=shape, rank=rank)
+        return cls(shape=shape, rank=rank, dims=dims)
 
     @staticmethod
     def _normalize_shape_dim(dim: object) -> DataShapeDim:
@@ -196,12 +222,23 @@ class Data(SymbolicDistributionParameter):
         return DeferredIndexOp(self, index)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class Observed:
     """Observed variable declaration."""
 
     distribution: Distribution
+    dims: tuple[Dim, ...] | None
     symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
+
+    def __init__(
+        self,
+        distribution: Distribution,
+        *,
+        dims: Sequence[Dim] | None = None,
+    ) -> None:
+        object.__setattr__(self, "distribution", distribution)
+        object.__setattr__(self, "dims", normalize_dims(dims))
+        object.__setattr__(self, "symbol", _next_symbol())
 
 
 @dataclass(frozen=True, init=False)

@@ -37,6 +37,12 @@ from jaxstanv5.model._expression_errors import (
     non_scalar_distribution_parameter_error,
 )
 from jaxstanv5.model.core import Data, Observed, Param, PartiallyObserved
+from jaxstanv5.model.dimensions import (
+    CoordValue,
+    Dim,
+    ResolvedModelDimensions,
+    ResolvedVariableDims,
+)
 from jaxstanv5.model.expr import (
     BinOp,
     ConstNode,
@@ -365,21 +371,68 @@ def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, Exp
     return expressions
 
 
+def _resolve_dimension_metadata(cls: ModelClass) -> ResolvedModelDimensions:
+    """Resolve authoring-side dimension labels into named metadata."""
+    variables: dict[str, ResolvedVariableDims] = {}
+    coords: dict[str, tuple[CoordValue, ...]] = {}
+
+    for name, value in cls.__dict__.items():
+        if isinstance(value, Param):
+            if value.dims is None:
+                if value.size is None:
+                    variables[name] = ResolvedVariableDims(())
+                continue
+            variables[name] = _resolve_variable_dims(value.dims, coords)
+        elif isinstance(value, Data | Observed):
+            if value.dims is None:
+                continue
+            variables[name] = _resolve_variable_dims(value.dims, coords)
+
+    return ResolvedModelDimensions(variables=variables, coords=coords)
+
+
+def _resolve_variable_dims(
+    dims: tuple[Dim, ...],
+    coords: dict[str, tuple[CoordValue, ...]],
+) -> ResolvedVariableDims:
+    _record_dimension_coords(dims, coords)
+    return ResolvedVariableDims(tuple(dim.name for dim in dims))
+
+
+def _record_dimension_coords(
+    dims: tuple[Dim, ...],
+    coords: dict[str, tuple[CoordValue, ...]],
+) -> None:
+    for dim in dims:
+        if dim.coords is None:
+            continue
+        existing = coords.get(dim.name)
+        if existing is not None and existing != dim.coords:
+            raise ValueError(f"Dimension {dim.name!r} has conflicting coordinate values")
+        coords[dim.name] = dim.coords
+
+
 def model(cls: ModelClass) -> ModelClass:
     """Attach final model metadata to a declaration class."""
     meta = _resolve_model_declaration(cls)
+    dimensions = _resolve_dimension_metadata(cls)
     setattr(cls, "_model_meta", meta)  # noqa: B010
-    setattr(cls, "bind", classmethod(_make_bind(meta)))  # noqa: B010
+    setattr(cls, "_model_dimensions", dimensions)  # noqa: B010
+    setattr(cls, "bind", classmethod(_make_bind(meta, dimensions=dimensions)))  # noqa: B010
     return cls
 
 
-def _make_bind(meta: ModelMeta) -> Callable[[ModelClass], object]:
+def _make_bind(
+    meta: ModelMeta,
+    *,
+    dimensions: ResolvedModelDimensions | None = None,
+) -> Callable[[ModelClass], object]:
     """Create a classmethod-compatible bind function for model metadata."""
 
     def bind(_cls: ModelClass, **values: object) -> object:
         from jaxstanv5._backends.jax.binding import bind_model_meta
 
-        return bind_model_meta(meta, values)
+        return bind_model_meta(meta, values, dimensions=dimensions)
 
     return bind
 
