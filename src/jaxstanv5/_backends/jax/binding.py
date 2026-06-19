@@ -104,6 +104,8 @@ def bind_model_meta(
     _validate_stochastic_site_shapes(meta, data, param_shapes)
     _validate_observed_discrete_values(meta, data, param_shapes)
     _validate_bound_distribution_parameters(meta, data)
+    if dimensions is not None:
+        _validate_bound_dimension_metadata(dimensions, data, param_shapes)
     return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
 
 
@@ -125,6 +127,44 @@ def _normalize_declared_data_values(
     data = {name: jnp.asarray(value) for name, value in raw_values.items()}
     _validate_declared_data_values(meta, data)
     return data
+
+
+def _validate_bound_dimension_metadata(
+    dimensions: ResolvedModelDimensions,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate bound variable ranks and coordinate lengths against dimension metadata."""
+    for variable_name, variable_dims in dimensions.variables.items():
+        shape = _bound_variable_shape(variable_name, data, param_shapes)
+        if len(variable_dims.names) != len(shape):
+            raise ValueError(
+                f"Dimension metadata for variable {variable_name!r} has dimension rank "
+                f"{len(variable_dims.names)}, but bound value has rank {len(shape)}"
+            )
+        for dim_name, axis_size in zip(variable_dims.names, shape, strict=True):
+            coords = dimensions.coords.get(dim_name)
+            if coords is None:
+                continue
+            if len(coords) != axis_size:
+                raise ValueError(
+                    f"Dimension {dim_name!r} coordinate length {len(coords)} does not match "
+                    f"bound axis size {axis_size} for variable {variable_name!r}"
+                )
+
+
+def _bound_variable_shape(
+    variable_name: str,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> tuple[int, ...]:
+    param_shape = param_shapes.get(variable_name)
+    if param_shape is not None:
+        return param_shape
+    value = data.get(variable_name)
+    if value is not None:
+        return value.shape
+    raise ValueError(f"Dimension metadata refers to unknown variable {variable_name!r}")
 
 
 def _validate_finite_bound_values(data: dict[str, jax.Array]) -> None:

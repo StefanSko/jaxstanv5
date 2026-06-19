@@ -21,6 +21,7 @@ from jaxstanv5.model.decorator import (
     ResolvedStochasticSite,
     _make_bind,
 )
+from jaxstanv5.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
 from jaxstanv5.model.expr import DataRef, ParamRef, VectorScatterOp
 
 
@@ -46,6 +47,15 @@ def make_meta() -> ModelMeta:
 
 def bind_meta(meta: ModelMeta, **values: object) -> BoundModel:
     bind = cast(BindFn, _make_bind(meta))
+    return cast(BoundModel, bind(type("Model", (), {}), **values))
+
+
+def bind_meta_with_dimensions(
+    meta: ModelMeta,
+    dimensions: ResolvedModelDimensions,
+    **values: object,
+) -> BoundModel:
+    bind = cast(BindFn, _make_bind(meta, dimensions=dimensions))
     return cast(BoundModel, bind(type("Model", (), {}), **values))
 
 
@@ -245,6 +255,45 @@ def test_bind_accepts_vector_parameter_with_scalar_iid_prior() -> None:
     bound = bind_meta(meta)
 
     assert bound.param_shapes == {"beta": (3,)}
+
+
+def test_bind_validates_dimension_coords_against_data_dependent_parameter_size() -> None:
+    meta = ModelMeta(
+        params={"beta": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=DataRef("n"))},
+        data={"n": ResolvedData(ResolvedDataShapeSchema(()))},
+        observed_nodes=(),
+        expressions={},
+        free_values={"beta": ResolvedFreeValue(constraint=None, size=DataRef("n"))},
+        stochastic_sites=(ResolvedStochasticSite("beta", Normal(0.0, 1.0), ParamRef("beta")),),
+    )
+    dimensions = ResolvedModelDimensions(
+        variables={"beta": ResolvedVariableDims(("predictor",))},
+        coords={"predictor": ("x1", "x2")},
+    )
+
+    bound = bind_meta_with_dimensions(meta, dimensions, n=jnp.asarray(2))
+    assert bound.param_shapes == {"beta": (2,)}
+
+    with pytest.raises(ValueError, match="coordinate length"):
+        bind_meta_with_dimensions(meta, dimensions, n=jnp.asarray(3))
+
+
+def test_bind_validates_observed_dimension_rank() -> None:
+    meta = ModelMeta(
+        params={},
+        data={},
+        observed_nodes=(ResolvedObserved("y", Normal(0.0, 1.0)),),
+        expressions={},
+        stochastic_sites=(ResolvedStochasticSite("y", Normal(0.0, 1.0), DataRef("y")),),
+    )
+    dimensions = ResolvedModelDimensions(
+        variables={"y": ResolvedVariableDims(("obs",))},
+        coords={},
+    )
+
+    bind_meta_with_dimensions(meta, dimensions, y=jnp.ones(2))
+    with pytest.raises(ValueError, match="dimension rank"):
+        bind_meta_with_dimensions(meta, dimensions, y=jnp.asarray(1.0))
 
 
 def test_bind_rejects_non_integer_discrete_observation() -> None:
