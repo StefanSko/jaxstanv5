@@ -10,6 +10,7 @@ from jaxstanv5 import (
     model_dimensions,
 )
 from jaxstanv5.distributions import Normal
+from jaxstanv5.ir import meta_to_dict
 
 
 def test_declared_dimension_metadata_is_exposed_for_linear_regression() -> None:
@@ -32,3 +33,6 @@ def test_declared_dimension_metadata_is_exposed_for_linear_regression() -> None:
         },
         "coords": {"predictor": ["x1", "x2", "x3"]},
     }
+    model_node = meta_to_dict(LinearRegression._model_meta)["model"]
+    assert isinstance(model_node, dict)
+    assert "dims" not in model_node

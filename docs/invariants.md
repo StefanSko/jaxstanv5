@@ -24,6 +24,11 @@ Core invariants that should remain true as the codebase changes.
 - `Observed` nodes are optional; prior-only models are valid.
 - Declaration aliases are invalid: one declaration object maps to one class
   attribute name.
+- `Dim(...)` labels and coordinates are authoring-side semantic metadata only;
+  they do not change log-density, transforms, sampling, or distribution shapes.
+- Dimension coordinates are optional JSON-scalar metadata and are validated
+  against known static axis sizes at declaration time and concrete bound shapes
+  at bind time.
 - Declaration classes have no base class other than `object`. A model's meaning
   is local to one decorated class body so that model text stays statically
   parseable by a standalone validator; inheritance is rejected at `@model` time
@@ -55,9 +60,9 @@ Core invariants that should remain true as the codebase changes.
   JAX or BlackJAX. Those modules form the authoring/IR boundary and must remain
   usable in Python environments that cannot load JAX.
 - Model declaration and IR serialization are backend-neutral: `@model` resolves
-  declarations to `ModelMeta`, and `jaxstanv5.ir` serializes/deserializes that
-  metadata without evaluating log densities, gradients, transforms, samplers, or
-  user code.
+  declarations to `ModelMeta` plus adjacent dimension metadata, and
+  `jaxstanv5.ir` serializes/deserializes `ModelMeta` without evaluating log
+  densities, gradients, transforms, samplers, user code, or dimension sidecars.
 - Distribution and constraint classes in the authoring boundary are serializable
   metadata only. Built-in metadata classes must not define JAX runtime methods
   such as `log_prob`, `sample`, `transform`, `inverse_transform`, or Jacobian

@@ -63,20 +63,32 @@ def test_authoring_modules_import_without_jax_or_blackjax() -> None:
 def test_model_declaration_and_ir_serialization_run_without_jax_or_blackjax() -> None:
     result = _run_with_backend_imports_blocked(
         """
-        from jaxstanv5 import Data, Observed, Param, model
+        from jaxstanv5 import (
+            Data,
+            Dim,
+            Observed,
+            Param,
+            dimension_metadata_to_dict,
+            model,
+            model_dimensions,
+        )
         from jaxstanv5.distributions import Normal
         from jaxstanv5.ir import canonical_bytes, meta_to_dict
 
+        obs = Dim("obs")
+
         @model
         class LinearAuthoringOnly:
-            x = Data.vector()
+            x = Data.vector(dims=(obs,))
             alpha = Param(Normal(0.0, 1.0))
-            y = Observed(Normal(alpha, 1.0))
+            y = Observed(Normal(alpha, 1.0), dims=(obs,))
 
         document = meta_to_dict(LinearAuthoringOnly._model_meta)
         encoded = canonical_bytes(LinearAuthoringOnly._model_meta)
+        dimensions = dimension_metadata_to_dict(model_dimensions(LinearAuthoringOnly))
 
         assert document["jaxstanv5_ir"] == 1
+        assert dimensions["dims"] == {"x": ["obs"], "alpha": [], "y": ["obs"]}
         assert b"LinearAuthoringOnly" not in encoded
         forbidden = [
             name for name in sys.modules
