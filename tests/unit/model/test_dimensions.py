@@ -4,7 +4,8 @@ import math
 
 import pytest
 
-from jaxstanv5 import Dim
+from jaxstanv5 import Data, Dim, Observed, Param
+from jaxstanv5.distributions import Normal
 from jaxstanv5.model.dimensions import (
     ResolvedModelDimensions,
     ResolvedVariableDims,
@@ -69,3 +70,49 @@ def test_model_dimensions_rejects_undecorated_classes() -> None:
 
     with pytest.raises(TypeError, match="decorate it with @model"):
         model_dimensions(Undecorated)
+
+
+def test_data_declarations_accept_matching_dimension_rank() -> None:
+    obs = Dim("obs")
+    predictor = Dim("predictor")
+
+    assert Data.scalar(dims=()).dims == ()
+    assert Data.vector(3, dims=(obs,)).dims == (obs,)
+    assert Data.matrix(3, 2, dims=(obs, predictor)).dims == (obs, predictor)
+    assert Data.array(shape=(3, 2), dims=(obs, predictor)).dims == (obs, predictor)
+    assert Data.array(rank=2, dims=(obs, predictor)).dims == (obs, predictor)
+
+
+def test_data_declarations_reject_dimension_rank_mismatch() -> None:
+    obs = Dim("obs")
+    predictor = Dim("predictor")
+
+    with pytest.raises(ValueError, match="Data dims length"):
+        Data.scalar(dims=(obs,))
+    with pytest.raises(ValueError, match="Data dims length"):
+        Data.vector(3, dims=(obs, predictor))
+    with pytest.raises(ValueError, match="Data dims length"):
+        Data.matrix(3, 2, dims=(obs,))
+
+
+def test_param_declarations_accept_matching_dimension_rank() -> None:
+    predictor = Dim("predictor")
+
+    assert Param(Normal(0.0, 1.0), dims=()).dims == ()
+    assert Param(Normal(0.0, 1.0), size=3, dims=(predictor,)).dims == (predictor,)
+
+
+def test_param_declarations_reject_dimension_rank_mismatch() -> None:
+    predictor = Dim("predictor")
+
+    with pytest.raises(ValueError, match="Param dims length"):
+        Param(Normal(0.0, 1.0), dims=(predictor,))
+    with pytest.raises(ValueError, match="Param dims length"):
+        Param(Normal(0.0, 1.0), size=3, dims=())
+
+
+def test_observed_declarations_store_dimension_labels() -> None:
+    obs = Dim("obs")
+
+    assert Observed(Normal(0.0, 1.0), dims=(obs,)).dims == (obs,)
+    assert Observed(Normal(0.0, 1.0), dims=()).dims == ()

@@ -48,6 +48,25 @@ def _validate_data_rank(value: int) -> int:
     return value
 
 
+def _validate_dims_rank(
+    dims: tuple[Dim, ...] | None,
+    *,
+    rank: int,
+    label: str,
+) -> tuple[Dim, ...] | None:
+    if dims is None:
+        return None
+    if len(dims) != rank:
+        raise ValueError(f"{label} dims length must match rank {rank}, got {len(dims)}")
+    return dims
+
+
+def _data_schema_rank(schema: DataSchema) -> int:
+    if isinstance(schema, DataShapeSchema):
+        return len(schema.dims)
+    return schema.rank
+
+
 @dataclass(frozen=True, init=False)
 class Param(SymbolicDistributionParameter):
     """Parameter declaration used inside ``@model`` class bodies."""
@@ -69,7 +88,15 @@ class Param(SymbolicDistributionParameter):
         object.__setattr__(self, "distribution", distribution)
         object.__setattr__(self, "constraint", constraint)
         object.__setattr__(self, "size", size)
-        object.__setattr__(self, "dims", normalize_dims(dims))
+        object.__setattr__(
+            self,
+            "dims",
+            _validate_dims_rank(
+                normalize_dims(dims),
+                rank=0 if size is None else 1,
+                label="Param",
+            ),
+        )
         object.__setattr__(self, "symbol", _next_symbol())
 
     def __add__(self, other: object) -> DeferredBinOp:
@@ -136,7 +163,15 @@ class Data(SymbolicDistributionParameter):
             schema = DataRankSchema(_validate_data_rank(rank))
 
         object.__setattr__(self, "schema", schema)
-        object.__setattr__(self, "dims", normalize_dims(dims))
+        object.__setattr__(
+            self,
+            "dims",
+            _validate_dims_rank(
+                normalize_dims(dims),
+                rank=_data_schema_rank(schema),
+                label="Data",
+            ),
+        )
         object.__setattr__(self, "symbol", _next_symbol())
 
     @classmethod
