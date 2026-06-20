@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol, cast
 
 import jax.numpy as jnp
+import pytest
 
 from jaxstanv5 import Data, Dim, Observed, Param, model, model_dimensions
 from jaxstanv5.distributions import Normal
@@ -93,3 +94,59 @@ def test_inferencedata_groups_generate_stable_fallback_dims_and_coords() -> None
     assert groups.posterior.variables["theta"].dims == ("chain", "draw", "theta_dim_0")
     assert groups.coords["theta_dim_0"] == (0, 1)
     assert groups.observed_data.variables["y"].dims == ()
+
+
+def test_inferencedata_groups_generate_collision_free_fallback_dims() -> None:
+    declared = Dim("theta_dim_0", coords=("a", "b"))
+
+    @model
+    class CollisionModel:
+        labelled = Param(Normal(0.0, 1.0), size=2, dims=(declared,))
+        theta = Param(Normal(0.0, 1.0), size=2)
+
+    bound = _bind(CollisionModel)
+    result = SamplerResult(
+        samples={
+            "labelled": jnp.ones((1, 2, 2)),
+            "theta": jnp.ones((1, 2, 2)),
+        },
+        diagnostics=_diagnostics(chains=1, draws=2),
+    )
+
+    groups = inferencedata_groups(bound, result)
+
+    assert groups.posterior.variables["labelled"].dims == ("chain", "draw", "theta_dim_0")
+    assert groups.posterior.variables["theta"].dims == (
+        "chain",
+        "draw",
+        "theta_dim_0_fallback_1",
+    )
+    assert groups.coords["theta_dim_0"] == ("a", "b")
+    assert groups.coords["theta_dim_0_fallback_1"] == (0, 1)
+
+
+def test_inferencedata_groups_reject_missing_and_unexpected_posterior_samples() -> None:
+    @model
+    class TwoParameterModel:
+        alpha = Param(Normal(0.0, 1.0))
+        beta = Param(Normal(0.0, 1.0))
+
+    bound = _bind(TwoParameterModel)
+
+    missing = SamplerResult(
+        samples={"alpha": jnp.ones((1, 2))},
+        diagnostics=_diagnostics(chains=1, draws=2),
+    )
+    with pytest.raises(ValueError, match="Missing posterior samples"):
+        inferencedata_groups(bound, missing)
+
+    unexpected = SamplerResult(
+        samples={
+            "alpha": jnp.ones((1, 2)),
+            "beta": jnp.ones((1, 2)),
+            "gamma": jnp.ones((1, 2)),
+        },
+        diagnostics=_diagnostics(chains=1, draws=2),
+    )
+    with pytest.raises(ValueError, match="Unexpected posterior samples"):
+        inferencedata_groups(bound, unexpected)

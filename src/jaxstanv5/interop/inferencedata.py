@@ -61,18 +61,36 @@ def inferencedata_groups(bound: BoundModel, result: SamplerResult) -> InferenceD
         result.diagnostics.sampling.is_divergent,
         label="sample_stats.diverging",
     )
+    _validate_posterior_sample_keys(bound, result)
     coords: dict[str, tuple[CoordValue, ...]] = {
         _CHAIN_DIM: tuple(range(num_chains)),
         _DRAW_DIM: tuple(range(num_draws)),
     }
     _add_declared_coords(coords, bound.dimensions)
     dim_sizes: dict[str, int] = {_CHAIN_DIM: num_chains, _DRAW_DIM: num_draws}
+    reserved_dims = _reserved_dimension_names(bound.dimensions)
 
     return InferenceDataGroups(
-        posterior=_posterior_group(bound, result, coords=coords, dim_sizes=dim_sizes),
+        posterior=_posterior_group(
+            bound,
+            result,
+            coords=coords,
+            dim_sizes=dim_sizes,
+            reserved_dims=reserved_dims,
+        ),
         sample_stats=_sample_stats_group(result, num_chains=num_chains, num_draws=num_draws),
-        observed_data=_observed_data_group(bound, coords=coords, dim_sizes=dim_sizes),
-        constant_data=_constant_data_group(bound, coords=coords, dim_sizes=dim_sizes),
+        observed_data=_observed_data_group(
+            bound,
+            coords=coords,
+            dim_sizes=dim_sizes,
+            reserved_dims=reserved_dims,
+        ),
+        constant_data=_constant_data_group(
+            bound,
+            coords=coords,
+            dim_sizes=dim_sizes,
+            reserved_dims=reserved_dims,
+        ),
         coords=_freeze_coords(coords),
     )
 
@@ -83,6 +101,7 @@ def _posterior_group(
     *,
     coords: dict[str, tuple[CoordValue, ...]],
     dim_sizes: dict[str, int],
+    reserved_dims: set[str],
 ) -> InferenceDataGroup:
     variables: dict[str, InferenceDataVariable] = {}
     for name, values in result.samples.items():
@@ -92,8 +111,8 @@ def _posterior_group(
                 f"Posterior variable {name!r} must have shape (chain, draw, ...), got {array.shape}"
             )
         parameter_shape = tuple(array.shape[2:])
-        expected_shape = bound.param_shapes.get(name)
-        if expected_shape is not None and parameter_shape != expected_shape:
+        expected_shape = bound.param_shapes[name]
+        if parameter_shape != expected_shape:
             raise ValueError(
                 f"Posterior variable {name!r} has parameter shape {parameter_shape}, "
                 f"but bound model expects {expected_shape}"
@@ -104,6 +123,7 @@ def _posterior_group(
             bound.dimensions,
             coords=coords,
             dim_sizes=dim_sizes,
+            reserved_dims=reserved_dims,
         )
         variables[name] = InferenceDataVariable(
             dims=(_CHAIN_DIM, _DRAW_DIM, *value_dims),
@@ -175,6 +195,7 @@ def _observed_data_group(
     *,
     coords: dict[str, tuple[CoordValue, ...]],
     dim_sizes: dict[str, int],
+    reserved_dims: set[str],
 ) -> InferenceDataGroup:
     variables: dict[str, InferenceDataVariable] = {}
     for observed in bound.meta.observed_nodes:
@@ -186,6 +207,7 @@ def _observed_data_group(
                 bound.dimensions,
                 coords=coords,
                 dim_sizes=dim_sizes,
+                reserved_dims=reserved_dims,
             ),
             values=array,
         )
@@ -197,6 +219,7 @@ def _constant_data_group(
     *,
     coords: dict[str, tuple[CoordValue, ...]],
     dim_sizes: dict[str, int],
+    reserved_dims: set[str],
 ) -> InferenceDataGroup:
     variables: dict[str, InferenceDataVariable] = {}
     for name in bound.meta.data:
@@ -208,6 +231,7 @@ def _constant_data_group(
                 bound.dimensions,
                 coords=coords,
                 dim_sizes=dim_sizes,
+                reserved_dims=reserved_dims,
             ),
             values=array,
         )
@@ -221,6 +245,7 @@ def _value_dims(
     *,
     coords: dict[str, tuple[CoordValue, ...]],
     dim_sizes: dict[str, int],
+    reserved_dims: set[str],
 ) -> tuple[str, ...]:
     declared = None if dimensions is None else dimensions.variables.get(variable_name)
     if declared is not None:
@@ -232,11 +257,74 @@ def _value_dims(
         _record_dim_sizes(declared.names, shape, coords=coords, dim_sizes=dim_sizes)
         return declared.names
 
-    fallback = tuple(f"{variable_name}_dim_{axis}" for axis in range(len(shape)))
+    fallback = tuple(
+        _fallback_dim_name(
+            variable_name,
+            axis,
+            coords=coords,
+            dim_sizes=dim_sizes,
+            reserved_dims=reserved_dims,
+        )
+        for axis in range(len(shape))
+    )
     for dim_name, axis_size in zip(fallback, shape, strict=True):
         _add_coord(coords, dim_name, tuple(range(axis_size)))
     _record_dim_sizes(fallback, shape, coords=coords, dim_sizes=dim_sizes)
     return fallback
+
+
+def _validate_posterior_sample_keys(bound: BoundModel, result: SamplerResult) -> None:
+    expected = set(bound.param_shapes)
+    actual = set(result.samples)
+    missing = expected - actual
+    unexpected = actual - expected
+    if missing:
+        raise ValueError(f"Missing posterior samples: {sorted(missing)}")
+    if unexpected:
+        raise ValueError(f"Unexpected posterior samples: {sorted(unexpected)}")
+
+
+def _reserved_dimension_names(dimensions: ResolvedModelDimensions | None) -> set[str]:
+    if dimensions is None:
+        return set()
+    names: set[str] = set()
+    for variable_dims in dimensions.variables.values():
+        names.update(variable_dims.names)
+    return names
+
+
+def _fallback_dim_name(
+    variable_name: str,
+    axis: int,
+    *,
+    coords: Mapping[str, tuple[CoordValue, ...]],
+    dim_sizes: Mapping[str, int],
+    reserved_dims: set[str],
+) -> str:
+    base = f"{variable_name}_dim_{axis}"
+    if not _dim_name_is_used(base, coords=coords, dim_sizes=dim_sizes, reserved_dims=reserved_dims):
+        return base
+    suffix = 1
+    while True:
+        candidate = f"{base}_fallback_{suffix}"
+        if not _dim_name_is_used(
+            candidate,
+            coords=coords,
+            dim_sizes=dim_sizes,
+            reserved_dims=reserved_dims,
+        ):
+            return candidate
+        suffix += 1
+
+
+def _dim_name_is_used(
+    name: str,
+    *,
+    coords: Mapping[str, tuple[CoordValue, ...]],
+    dim_sizes: Mapping[str, int],
+    reserved_dims: set[str],
+) -> bool:
+    return name in coords or name in dim_sizes or name in reserved_dims
 
 
 def _add_declared_coords(
