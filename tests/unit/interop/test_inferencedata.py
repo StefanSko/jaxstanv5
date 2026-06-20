@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+from typing import Protocol, cast
+
 import jax.numpy as jnp
 
 from jaxstanv5 import Data, Dim, Observed, Param, model, model_dimensions
 from jaxstanv5.distributions import Normal
 from jaxstanv5.inference import NutsDiagnosticTrace, SamplerDiagnostics, SamplerResult
 from jaxstanv5.interop.inferencedata import inferencedata_groups
+from jaxstanv5.model.bound import BoundModel
+
+
+class _BindableModel(Protocol):
+    def bind(self, **values: object) -> BoundModel: ...
+
+
+def _bind(model_cls: object, **values: object) -> BoundModel:
+    return cast(_BindableModel, model_cls).bind(**values)
 
 
 def _diagnostics(*, chains: int, draws: int) -> SamplerDiagnostics:
@@ -31,7 +42,8 @@ def test_inferencedata_groups_use_declared_dims_coords_and_standard_sample_stats
         alpha = Param(Normal(0.0, 1.0))
         y = Observed(Normal(alpha, 1.0), dims=(obs,))
 
-    bound = LinearRegression.bind(
+    bound = _bind(
+        LinearRegression,
         x=jnp.ones((2, 3)),
         y=jnp.asarray([0.5, -0.5]),
     )
@@ -70,7 +82,7 @@ def test_inferencedata_groups_generate_stable_fallback_dims_and_coords() -> None
         theta = Param(Normal(0.0, 1.0), size=2)
         y = Observed(Normal(0.0, 1.0))
 
-    bound = VectorModel.bind(y=1.5)
+    bound = _bind(VectorModel, y=1.5)
     result = SamplerResult(
         samples={"theta": jnp.ones((1, 2, 2))},
         diagnostics=_diagnostics(chains=1, draws=2),
