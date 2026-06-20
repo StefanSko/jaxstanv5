@@ -106,7 +106,13 @@ def bind_model_meta(
     _validate_bound_distribution_parameters(meta, data)
     if dimensions is not None:
         _validate_bound_dimension_metadata(dimensions, data, param_shapes)
-    return BoundModel(meta=meta, data=data, param_shapes=param_shapes, n_params=n_params)
+    return BoundModel(
+        meta=meta,
+        data=data,
+        param_shapes=param_shapes,
+        n_params=n_params,
+        dimensions=dimensions,
+    )
 
 
 def _normalize_declared_data_values(

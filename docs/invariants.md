@@ -97,7 +97,8 @@ Core invariants that should remain true as the codebase changes.
   `stochastic_sites` defines log-density factors, and `data` plus
   `observed_nodes` define required bind inputs.
 - `BoundModel` is downstream runtime state after concrete data binding. It is
-  not part of the authoring/IR boundary and contains no inference logic.
+  not part of the authoring/IR boundary and contains no inference logic. It may
+  carry validated dimension metadata needed by runtime/export adapters.
 
 ## Log density
 
@@ -121,6 +122,9 @@ Core invariants that should remain true as the codebase changes.
 - NUTS diagnostics are recorded separately for warmup and post-warmup sampling.
 - Diagnostic arrays have shape `(num_chains, num_steps)`, where `num_steps` is
   `num_warmup` for warmup diagnostics and `num_samples` for sampling diagnostics.
+- InferenceData compatibility is a typed schema adapter over `BoundModel` and
+  `SamplerResult`; it must not import ArviZ, construct xarray datasets, write
+  netCDF/zarr artifacts, or change the public sampling result type.
 
 ## Simulation
 
