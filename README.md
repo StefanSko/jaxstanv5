@@ -66,6 +66,22 @@ sampling. Diagnostic arrays have shape `(num_chains, num_steps)`. `num_warmup`
 and `num_samples` must both be at least 1. Use `target_acceptance_rate` on
 `sample(...)` to tune the NUTS adaptation target.
 
+## InferenceData-compatible schema
+
+jaxstanv5 does not depend on ArviZ, xarray, netCDF, or zarr, and `sample(...)`
+does not return an ArviZ object. For downstream exporters, use the typed schema
+adapter:
+
+```python
+from jaxstanv5.interop.inferencedata import inferencedata_groups
+
+schema = inferencedata_groups(bound, result)
+```
+
+It maps posterior draws, post-warmup NUTS diagnostics, observed data, constant
+data, and declared `Dim(...)` metadata into InferenceData-compatible groups and
+dimension names. See [`docs/inferencedata-compatibility.md`](docs/inferencedata-compatibility.md).
+
 ## Authoring-only IR export
 
 The declaration path can run without importing JAX. This supports lightweight
