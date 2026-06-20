@@ -62,6 +62,7 @@ def inferencedata_groups(bound: BoundModel, result: SamplerResult) -> InferenceD
         label="sample_stats.diverging",
     )
     _validate_posterior_sample_keys(bound, result)
+    _validate_declared_value_dimension_names(bound.dimensions)
     coords: dict[str, tuple[CoordValue, ...]] = {
         _CHAIN_DIM: tuple(range(num_chains)),
         _DRAW_DIM: tuple(range(num_draws)),
@@ -77,6 +78,8 @@ def inferencedata_groups(bound: BoundModel, result: SamplerResult) -> InferenceD
             coords=coords,
             dim_sizes=dim_sizes,
             reserved_dims=reserved_dims,
+            num_chains=num_chains,
+            num_draws=num_draws,
         ),
         sample_stats=_sample_stats_group(result, num_chains=num_chains, num_draws=num_draws),
         observed_data=_observed_data_group(
@@ -102,6 +105,8 @@ def _posterior_group(
     coords: dict[str, tuple[CoordValue, ...]],
     dim_sizes: dict[str, int],
     reserved_dims: set[str],
+    num_chains: int,
+    num_draws: int,
 ) -> InferenceDataGroup:
     variables: dict[str, InferenceDataVariable] = {}
     for name, values in result.samples.items():
@@ -109,6 +114,11 @@ def _posterior_group(
         if len(array.shape) < 2:
             raise ValueError(
                 f"Posterior variable {name!r} must have shape (chain, draw, ...), got {array.shape}"
+            )
+        if array.shape[:2] != (num_chains, num_draws):
+            raise ValueError(
+                f"Posterior variable {name!r} leading sample axes must be "
+                f"{(num_chains, num_draws)}, got {array.shape[:2]}"
             )
         parameter_shape = tuple(array.shape[2:])
         expected_shape = bound.param_shapes[name]
@@ -291,6 +301,19 @@ def _reserved_dimension_names(dimensions: ResolvedModelDimensions | None) -> set
     for variable_dims in dimensions.variables.values():
         names.update(variable_dims.names)
     return names
+
+
+def _validate_declared_value_dimension_names(dimensions: ResolvedModelDimensions | None) -> None:
+    if dimensions is None:
+        return
+    reserved = {_CHAIN_DIM, _DRAW_DIM}
+    for variable_name, variable_dims in dimensions.variables.items():
+        conflicts = reserved.intersection(variable_dims.names)
+        if conflicts:
+            raise ValueError(
+                f"Variable {variable_name!r} uses reserved InferenceData dimension "
+                f"name(s): {sorted(conflicts)}"
+            )
 
 
 def _fallback_dim_name(

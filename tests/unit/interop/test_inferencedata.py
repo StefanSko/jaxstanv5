@@ -150,3 +150,35 @@ def test_inferencedata_groups_reject_missing_and_unexpected_posterior_samples() 
     )
     with pytest.raises(ValueError, match="Unexpected posterior samples"):
         inferencedata_groups(bound, unexpected)
+
+
+def test_inferencedata_groups_reject_posterior_sample_axis_mismatch() -> None:
+    @model
+    class ScalarModel:
+        alpha = Param(Normal(0.0, 1.0))
+
+    bound = _bind(ScalarModel)
+    result = SamplerResult(
+        samples={"alpha": jnp.ones((2, 3))},
+        diagnostics=_diagnostics(chains=1, draws=3),
+    )
+
+    with pytest.raises(ValueError, match="leading sample axes"):
+        inferencedata_groups(bound, result)
+
+
+def test_inferencedata_groups_reject_declared_sampling_dimension_names() -> None:
+    chain = Dim("chain")
+
+    @model
+    class ReservedDimModel:
+        theta = Param(Normal(0.0, 1.0), size=2, dims=(chain,))
+
+    bound = _bind(ReservedDimModel)
+    result = SamplerResult(
+        samples={"theta": jnp.ones((2, 3, 2))},
+        diagnostics=_diagnostics(chains=2, draws=3),
+    )
+
+    with pytest.raises(ValueError, match="reserved InferenceData dimension"):
+        inferencedata_groups(bound, result)
