@@ -60,10 +60,11 @@ class _SampleBlock(NamedTuple):
 
 
 class _ChainSample(NamedTuple):
-    """Samples and diagnostics for one or more chains."""
+    """Samples, diagnostics, and adapted step size for one or more chains."""
 
     samples: dict[str, jax.Array]
     diagnostics: SamplerDiagnostics
+    step_size: jax.Array
 
 
 class _WindowAdaptationRun(Protocol):
@@ -95,6 +96,20 @@ class _DrawSamples(Protocol):
 
 
 @dataclass(frozen=True)
+class SamplerAdaptation:
+    """Final adapted NUTS parameters used for post-warmup sampling."""
+
+    step_size: jax.Array
+
+
+@dataclass(frozen=True)
+class SamplerSettings:
+    """Sampler settings that affect reported NUTS diagnostics."""
+
+    max_tree_depth: int
+
+
+@dataclass(frozen=True)
 class SamplerResult:
     """Results of MCMC sampling.
 
@@ -106,10 +121,17 @@ class SamplerResult:
     diagnostics
         Warmup and post-warmup NUTS diagnostics with arrays of shape
         ``(num_chains, num_steps)``.
+    adaptation
+        Final adapted NUTS parameters. ``step_size`` has shape ``(num_chains,)``.
+        Parameterless models use a finite placeholder because no adaptation ran.
+    settings
+        NUTS settings used by the compiled sampler.
     """
 
     samples: dict[str, jax.Array]
     diagnostics: SamplerDiagnostics
+    adaptation: SamplerAdaptation
+    settings: SamplerSettings
 
 
 def _diagnostic_trace_from_nuts_info(info: _NutsInfo) -> NutsDiagnosticTrace:
@@ -145,6 +167,11 @@ def _empty_sampler_diagnostics(
         warmup=_empty_diagnostic_trace((num_chains, num_warmup)),
         sampling=_empty_diagnostic_trace((num_chains, num_samples)),
     )
+
+
+def _empty_sampler_adaptation(*, num_chains: int) -> SamplerAdaptation:
+    """Return finite placeholder adaptation metadata when no NUTS adaptation ran."""
+    return SamplerAdaptation(step_size=jnp.ones((num_chains,), dtype=jnp.float32))
 
 
 def _validate_positive_count(value: int, *, name: str) -> None:
@@ -245,11 +272,12 @@ def _sample_one_chain(
     )
     warmup_diagnostics = _diagnostic_trace_from_nuts_info(warmup_info.info)
 
+    step_size = jnp.asarray(tuned_params["step_size"])
     sample_keys = jax.random.split(sample_key, num_samples)
     _, sample_block = draw_samples(
         last_state,
         sample_keys,
-        tuned_params["step_size"],
+        step_size,
         tuned_params["inverse_mass_matrix"],
     )
 
@@ -260,6 +288,7 @@ def _sample_one_chain(
             warmup=warmup_diagnostics,
             sampling=sample_block.diagnostics,
         ),
+        step_size=step_size,
     )
 
 
@@ -290,6 +319,7 @@ def _sample_chains(
     return _ChainSample(
         samples={name: jnp.squeeze(values, axis=1) for name, values in batched.samples.items()},
         diagnostics=batched.diagnostics,
+        step_size=batched.step_size,
     )
 
 
@@ -306,6 +336,7 @@ class CompiledSampler:
     _bound: BoundModel
     _warmup_run: _WindowAdaptationRun
     _draw_samples: _DrawSamples
+    _settings: SamplerSettings
 
     def __init__(self) -> None:
         raise TypeError("Use compile_sampler(...) to create a CompiledSampler")
@@ -316,11 +347,13 @@ class CompiledSampler:
         bound: BoundModel,
         warmup_run: _WindowAdaptationRun,
         draw_samples: _DrawSamples,
+        settings: SamplerSettings,
     ) -> CompiledSampler:
         sampler = cast(CompiledSampler, object.__new__(cls))
         object.__setattr__(sampler, "_bound", bound)
         object.__setattr__(sampler, "_warmup_run", warmup_run)
         object.__setattr__(sampler, "_draw_samples", draw_samples)
+        object.__setattr__(sampler, "_settings", settings)
         return sampler
 
     def sample(
@@ -350,6 +383,8 @@ class CompiledSampler:
                     num_warmup=num_warmup,
                     num_samples=num_samples,
                 ),
+                adaptation=_empty_sampler_adaptation(num_chains=num_chains),
+                settings=self._settings,
             )
 
         key = jax.random.PRNGKey(seed)
@@ -362,7 +397,12 @@ class CompiledSampler:
             num_warmup=num_warmup,
             num_samples=num_samples,
         )
-        return SamplerResult(samples=chain_sample.samples, diagnostics=chain_sample.diagnostics)
+        return SamplerResult(
+            samples=chain_sample.samples,
+            diagnostics=chain_sample.diagnostics,
+            adaptation=SamplerAdaptation(step_size=chain_sample.step_size),
+            settings=self._settings,
+        )
 
 
 def _validate_target_acceptance_rate(target_acceptance_rate: float) -> None:
@@ -371,10 +411,16 @@ def _validate_target_acceptance_rate(target_acceptance_rate: float) -> None:
         raise ValueError("target_acceptance_rate must be in (0, 1)")
 
 
+def _validate_max_tree_depth(max_tree_depth: int) -> None:
+    """Validate the configured NUTS maximum tree depth."""
+    _validate_positive_count(max_tree_depth, name="max_tree_depth")
+
+
 def compile_sampler(
     bound: BoundModel,
     *,
     target_acceptance_rate: float = 0.8,
+    max_tree_depth: int = 10,
 ) -> CompiledSampler:
     """Compile NUTS machinery for one concrete bound model.
 
@@ -383,6 +429,8 @@ def compile_sampler(
     loop sizes may still retrace/recompile backend executables.
     """
     _validate_target_acceptance_rate(target_acceptance_rate)
+    _validate_max_tree_depth(max_tree_depth)
+    settings = SamplerSettings(max_tree_depth=max_tree_depth)
     if bound.n_params == 0:
 
         def warmup_run(
@@ -402,7 +450,10 @@ def compile_sampler(
             raise RuntimeError("Parameterless models do not draw samples")
 
         return CompiledSampler._create(
-            bound=bound, warmup_run=warmup_run, draw_samples=_draw_samples
+            bound=bound,
+            warmup_run=warmup_run,
+            draw_samples=_draw_samples,
+            settings=settings,
         )
 
     log_prob = compile_log_density(bound)
@@ -411,6 +462,7 @@ def compile_sampler(
         log_prob,
         is_mass_matrix_diagonal=True,
         target_acceptance_rate=target_acceptance_rate,
+        max_num_doublings=max_tree_depth,
     )
     warmup_run = cast(_WindowAdaptationRun, warmup.run)
     nuts_kernel = blackjax.nuts.build_kernel()
@@ -429,6 +481,7 @@ def compile_sampler(
                 log_prob,
                 step_size,
                 inverse_mass_matrix,
+                max_tree_depth,
             )
             diagnostics = _diagnostic_trace_from_nuts_info(cast(_NutsInfo, info))
             return new_state, _SampleBlock(
@@ -442,6 +495,7 @@ def compile_sampler(
         bound=bound,
         warmup_run=warmup_run,
         draw_samples=cast(_DrawSamples, draw_samples),
+        settings=settings,
     )
 
 
@@ -453,6 +507,7 @@ def sample(
     *,
     num_chains: int = 1,
     target_acceptance_rate: float = 0.8,
+    max_tree_depth: int = 10,
 ) -> SamplerResult:
     """Draw posterior samples via NUTS with window adaptation.
 
@@ -470,6 +525,8 @@ def sample(
         Number of independent NUTS chains to run.
     target_acceptance_rate
         Target acceptance probability used during NUTS step-size adaptation.
+    max_tree_depth
+        Maximum number of NUTS trajectory doublings per transition.
 
     Returns
     -------
@@ -481,7 +538,11 @@ def sample(
         num_warmup=num_warmup,
         num_samples=num_samples,
     )
-    return compile_sampler(bound, target_acceptance_rate=target_acceptance_rate).sample(
+    return compile_sampler(
+        bound,
+        target_acceptance_rate=target_acceptance_rate,
+        max_tree_depth=max_tree_depth,
+    ).sample(
         seed=seed,
         num_warmup=num_warmup,
         num_samples=num_samples,

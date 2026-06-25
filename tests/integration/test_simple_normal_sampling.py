@@ -38,6 +38,10 @@ def test_simple_normal_sampling_returns_finite_samples_and_diagnostics() -> None
     assert result.diagnostics.sampling.is_divergent.shape == (1, 500)
     assert result.diagnostics.sampling.acceptance_rate.shape == (1, 500)
     assert result.diagnostics.sampling.num_integration_steps.shape == (1, 500)
+    assert result.adaptation.step_size.shape == (1,)
+    assert jnp.all(jnp.isfinite(result.adaptation.step_size))
+    assert jnp.all(result.adaptation.step_size > 0.0)
+    assert result.settings.max_tree_depth == 10
     assert jnp.all(jnp.isfinite(result.diagnostics.sampling.acceptance_rate))
     assert not jnp.any(result.diagnostics.sampling.is_divergent)
 
@@ -57,6 +61,10 @@ def test_simple_normal_sampling_supports_multiple_chains_and_diagnostics() -> No
     assert result.diagnostics.sampling.is_divergent.shape == (4, 500)
     assert result.diagnostics.sampling.acceptance_rate.shape == (4, 500)
     assert result.diagnostics.sampling.num_integration_steps.shape == (4, 500)
+    assert result.adaptation.step_size.shape == (4,)
+    assert jnp.all(jnp.isfinite(result.adaptation.step_size))
+    assert jnp.all(result.adaptation.step_size > 0.0)
+    assert result.settings.max_tree_depth == 10
     assert jnp.all(jnp.isfinite(result.diagnostics.sampling.acceptance_rate))
     assert not jnp.any(result.diagnostics.sampling.is_divergent)
     assert not jnp.allclose(result.samples["mu"][0], result.samples["mu"][1])
@@ -82,10 +90,26 @@ def test_compiled_sampler_reuses_bound_model_for_multiple_runs() -> None:
     assert first.diagnostics.sampling.is_divergent.shape == (1, 100)
     assert multi_chain.diagnostics.warmup.is_divergent.shape == (2, 50)
     assert multi_chain.diagnostics.sampling.is_divergent.shape == (2, 100)
+    assert first.adaptation.step_size.shape == (1,)
+    assert second.adaptation.step_size.shape == (1,)
+    assert multi_chain.adaptation.step_size.shape == (2,)
+    assert first.settings.max_tree_depth == 10
+    assert multi_chain.settings.max_tree_depth == 10
     assert jnp.all(jnp.isfinite(first.samples["mu"]))
     assert jnp.all(jnp.isfinite(second.samples["mu"]))
     assert jnp.all(jnp.isfinite(multi_chain.samples["mu"]))
     assert not jnp.allclose(multi_chain.samples["mu"][0], multi_chain.samples["mu"][1])
+
+
+def test_sampling_respects_configured_max_tree_depth() -> None:
+    bound = bind_model(SimpleNormal, y=jnp.array(2.0))
+
+    result = sample(bound, seed=4, num_warmup=20, num_samples=30, max_tree_depth=1)
+
+    assert result.settings.max_tree_depth == 1
+    assert result.adaptation.step_size.shape == (1,)
+    assert jnp.all(result.diagnostics.warmup.num_trajectory_expansions <= 1)
+    assert jnp.all(result.diagnostics.sampling.num_trajectory_expansions <= 1)
 
 
 def test_sampling_preserves_data_dependent_zero_sized_parameter() -> None:
@@ -99,6 +123,9 @@ def test_sampling_preserves_data_dependent_zero_sized_parameter() -> None:
     assert result.samples["theta"].shape == (1, 3, 0)
     assert result.diagnostics.warmup.is_divergent.shape == (1, 2)
     assert result.diagnostics.sampling.is_divergent.shape == (1, 3)
+    assert result.adaptation.step_size.shape == (1,)
+    assert jnp.all(jnp.isfinite(result.adaptation.step_size))
+    assert result.settings.max_tree_depth == 10
     assert not jnp.any(result.diagnostics.warmup.is_divergent)
     assert not jnp.any(result.diagnostics.sampling.is_divergent)
     assert rhat(result.samples) == {}
