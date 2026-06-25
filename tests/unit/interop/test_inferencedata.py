@@ -2,12 +2,19 @@ from __future__ import annotations
 
 from typing import Protocol, cast
 
+import jax
 import jax.numpy as jnp
 import pytest
 
 from jaxstanv5 import Data, Dim, Observed, Param, model, model_dimensions
 from jaxstanv5.distributions import Normal
-from jaxstanv5.inference import NutsDiagnosticTrace, SamplerDiagnostics, SamplerResult
+from jaxstanv5.inference import (
+    NutsDiagnosticTrace,
+    SamplerAdaptation,
+    SamplerDiagnostics,
+    SamplerResult,
+    SamplerSettings,
+)
 from jaxstanv5.interop.inferencedata import inferencedata_groups
 from jaxstanv5.model.bound import BoundModel
 
@@ -32,6 +39,15 @@ def _diagnostics(*, chains: int, draws: int) -> SamplerDiagnostics:
     return SamplerDiagnostics(warmup=trace, sampling=trace)
 
 
+def _result(*, samples: dict[str, jax.Array], chains: int, draws: int) -> SamplerResult:
+    return SamplerResult(
+        samples=samples,
+        diagnostics=_diagnostics(chains=chains, draws=draws),
+        adaptation=SamplerAdaptation(step_size=jnp.ones((chains,), dtype=jnp.float32)),
+        settings=SamplerSettings(max_tree_depth=10),
+    )
+
+
 def test_inferencedata_groups_use_declared_dims_coords_and_standard_sample_stats() -> None:
     predictor = Dim("predictor", coords=("x1", "x2", "x3"))
     obs = Dim("obs", coords=("row0", "row1"))
@@ -48,12 +64,13 @@ def test_inferencedata_groups_use_declared_dims_coords_and_standard_sample_stats
         x=jnp.ones((2, 3)),
         y=jnp.asarray([0.5, -0.5]),
     )
-    result = SamplerResult(
+    result = _result(
         samples={
             "beta": jnp.arange(18, dtype=jnp.float32).reshape(2, 3, 3),
             "alpha": jnp.arange(6, dtype=jnp.float32).reshape(2, 3),
         },
-        diagnostics=_diagnostics(chains=2, draws=3),
+        chains=2,
+        draws=3,
     )
 
     groups = inferencedata_groups(bound, result)
@@ -84,9 +101,10 @@ def test_inferencedata_groups_generate_stable_fallback_dims_and_coords() -> None
         y = Observed(Normal(0.0, 1.0))
 
     bound = _bind(VectorModel, y=1.5)
-    result = SamplerResult(
+    result = _result(
         samples={"theta": jnp.ones((1, 2, 2))},
-        diagnostics=_diagnostics(chains=1, draws=2),
+        chains=1,
+        draws=2,
     )
 
     groups = inferencedata_groups(bound, result)
@@ -105,12 +123,13 @@ def test_inferencedata_groups_generate_collision_free_fallback_dims() -> None:
         theta = Param(Normal(0.0, 1.0), size=2)
 
     bound = _bind(CollisionModel)
-    result = SamplerResult(
+    result = _result(
         samples={
             "labelled": jnp.ones((1, 2, 2)),
             "theta": jnp.ones((1, 2, 2)),
         },
-        diagnostics=_diagnostics(chains=1, draws=2),
+        chains=1,
+        draws=2,
     )
 
     groups = inferencedata_groups(bound, result)
@@ -133,20 +152,22 @@ def test_inferencedata_groups_reject_missing_and_unexpected_posterior_samples() 
 
     bound = _bind(TwoParameterModel)
 
-    missing = SamplerResult(
+    missing = _result(
         samples={"alpha": jnp.ones((1, 2))},
-        diagnostics=_diagnostics(chains=1, draws=2),
+        chains=1,
+        draws=2,
     )
     with pytest.raises(ValueError, match="Missing posterior samples"):
         inferencedata_groups(bound, missing)
 
-    unexpected = SamplerResult(
+    unexpected = _result(
         samples={
             "alpha": jnp.ones((1, 2)),
             "beta": jnp.ones((1, 2)),
             "gamma": jnp.ones((1, 2)),
         },
-        diagnostics=_diagnostics(chains=1, draws=2),
+        chains=1,
+        draws=2,
     )
     with pytest.raises(ValueError, match="Unexpected posterior samples"):
         inferencedata_groups(bound, unexpected)
@@ -158,9 +179,10 @@ def test_inferencedata_groups_reject_posterior_sample_axis_mismatch() -> None:
         alpha = Param(Normal(0.0, 1.0))
 
     bound = _bind(ScalarModel)
-    result = SamplerResult(
+    result = _result(
         samples={"alpha": jnp.ones((2, 3))},
-        diagnostics=_diagnostics(chains=1, draws=3),
+        chains=1,
+        draws=3,
     )
 
     with pytest.raises(ValueError, match="leading sample axes"):
@@ -175,9 +197,10 @@ def test_inferencedata_groups_reject_declared_sampling_dimension_names() -> None
         theta = Param(Normal(0.0, 1.0), size=2, dims=(chain,))
 
     bound = _bind(ReservedDimModel)
-    result = SamplerResult(
+    result = _result(
         samples={"theta": jnp.ones((2, 3, 2))},
-        diagnostics=_diagnostics(chains=2, draws=3),
+        chains=2,
+        draws=3,
     )
 
     with pytest.raises(ValueError, match="reserved InferenceData dimension"):
