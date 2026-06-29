@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Protocol, cast
+
 import pytest
 
 from jaxstanv5.distributions import Normal
@@ -15,6 +17,12 @@ from jaxstanv5.model import (
     model,
     model_meta,
 )
+
+
+class _Shaped(Protocol):
+    @property
+    def shape(self) -> tuple[int, ...]: ...
+
 
 obs = Dim("obs", coords=("a", "b"))
 
@@ -52,9 +60,10 @@ def test_bind_model_binds_data_and_preserves_dimension_metadata() -> None:
     bound = bind_model(PublicHookModel, {"y": [1.0, 2.0]})
 
     assert isinstance(bound, BoundModel)
+    y = cast(_Shaped, bound.data["y"])
     assert bound.meta is model_meta(PublicHookModel)
     assert bound.param_shapes == {"theta": ()}
-    assert tuple(bound.data["y"].shape) == (2,)
+    assert tuple(y.shape) == (2,)
     assert bound.dimensions is not None
     assert dimension_metadata_to_dict(bound.dimensions) == {
         "dims": {"theta": [], "y": ["obs"]},
