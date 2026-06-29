@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Protocol, cast
 
 import jax
 import jax.numpy as jnp
@@ -28,19 +27,13 @@ from jaxstanv5._backends.jax.distributions import (
 from jaxstanv5.compiler.core import _evaluate_distribution
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values
+from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values, model_meta
 from jaxstanv5.simulation.domains import (
     OrderedVectorDomain,
     ScalarIntervalDomain,
     UnconstrainedDomain,
     prior_domain_for_constraint,
 )
-
-
-class _ModelWithMeta(Protocol):
-    """Decorated model class with attached resolved metadata."""
-
-    _model_meta: ModelMeta
 
 
 @dataclass(frozen=True)
@@ -156,12 +149,6 @@ def _sample_prior_value(
     raise TypeError(f"Unsupported prior domain: {type(domain).__name__}")
 
 
-def _model_meta(model_cls: object) -> ModelMeta:
-    if not hasattr(model_cls, "_model_meta"):
-        raise TypeError("model_cls must be decorated with @model")
-    return cast(_ModelWithMeta, model_cls)._model_meta
-
-
 def _normalize_data(meta: ModelMeta, data: Mapping[str, object] | None) -> dict[str, jax.Array]:
     return _normalize_declared_data_values(meta, data)
 
@@ -252,7 +239,7 @@ def simulate_prior_predictive(
     if num_samples < 1:
         raise ValueError("num_samples must be at least 1")
 
-    meta = _model_meta(model_cls)
+    meta = model_meta(model_cls)
     non_param_free_values = set(_resolved_free_values(meta)) - set(meta.params)
     if non_param_free_values:
         raise TypeError(

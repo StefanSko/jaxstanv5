@@ -5,6 +5,7 @@ from typing import Protocol, cast
 import pytest
 
 from jaxstanv5.distributions import Normal
+from jaxstanv5.ir import bindable_from_meta
 from jaxstanv5.model import (
     BoundModel,
     Dim,
@@ -69,6 +70,17 @@ def test_bind_model_binds_data_and_preserves_dimension_metadata() -> None:
         "dims": {"theta": [], "y": ["obs"]},
         "coords": {"obs": ["a", "b"]},
     }
+
+
+def test_public_hooks_accept_ir_bindable_models() -> None:
+    meta = model_meta(PublicHookModel)
+    rebuilt = bindable_from_meta(meta)
+
+    assert is_model_class(rebuilt)
+    assert model_meta(rebuilt) is meta
+    bound = bind_model(rebuilt, {"y": [1.0, 2.0]})
+    assert bound.meta is meta
+    assert bound.dimensions is None
 
 
 def test_bind_model_rejects_non_model_objects() -> None:

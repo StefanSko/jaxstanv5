@@ -92,6 +92,7 @@ runtime:
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.distributions import Normal
 from jaxstanv5.ir import canonical_bytes, meta_to_dict
+from jaxstanv5.model import model_meta
 
 
 @model
@@ -101,12 +102,19 @@ class LinearAuthoringOnly:
     y = Observed(Normal(alpha, 1.0))
 
 
-document = meta_to_dict(LinearAuthoringOnly._model_meta)
-encoded = canonical_bytes(LinearAuthoringOnly._model_meta)
+meta = model_meta(LinearAuthoringOnly)
+document = meta_to_dict(meta)
+encoded = canonical_bytes(meta)
 ```
 
 `document` is backend-neutral `jaxstanv5_ir` JSON data. A Python JAX backend,
 Bayesite, or another non-Python engine can consume that IR downstream.
+
+Dynamic workflow adapters should use `jaxstanv5.model.model_meta(...)`,
+`jaxstanv5.model.is_model_class(...)`, and `jaxstanv5.model.bind_model(...)`
+instead of private `_model_meta` access or duck-typing the attached `bind`
+classmethod. `model_meta(...)` and `is_model_class(...)` remain JAX-free;
+`bind_model(...)` is the explicit JAX runtime binding transition.
 
 ## Model declarations
 
