@@ -73,6 +73,18 @@ def test_model_dimensions_rejects_undecorated_classes() -> None:
         model_dimensions(Undecorated)
 
 
+def test_model_dimensions_rejects_inherited_model_metadata() -> None:
+    @model
+    class ParentModel:
+        theta = Param(Normal(0.0, 1.0))
+
+    class ChildModel(ParentModel):
+        pass
+
+    with pytest.raises(TypeError, match="decorate it with @model"):
+        model_dimensions(ChildModel)
+
+
 def test_data_declarations_accept_matching_dimension_rank() -> None:
     obs = Dim("obs")
     predictor = Dim("predictor")

@@ -476,7 +476,7 @@ def is_model_class(value: object) -> bool:
     """Return whether ``value`` is a jaxstanv5 model class."""
     if not isinstance(value, type):
         return False
-    return isinstance(getattr(value, "_model_meta", None), ModelMeta)
+    return isinstance(value.__dict__.get("_model_meta"), ModelMeta)
 
 
 def model_meta(model_cls: object) -> ModelMeta:
@@ -501,7 +501,7 @@ def bind_model(model_cls: object, values: Mapping[str, object]) -> BoundModel:
 
 def _require_model_class_and_meta(value: object) -> tuple[ModelClass, ModelMeta]:
     if isinstance(value, type):
-        metadata = getattr(value, "_model_meta", None)
+        metadata = value.__dict__.get("_model_meta")
         if isinstance(metadata, ModelMeta):
             return value, metadata
     raise TypeError(
@@ -511,7 +511,7 @@ def _require_model_class_and_meta(value: object) -> tuple[ModelClass, ModelMeta]
 
 
 def _attached_model_dimensions(model_cls: ModelClass) -> ResolvedModelDimensions | None:
-    metadata = getattr(model_cls, "_model_dimensions", None)
+    metadata = model_cls.__dict__.get("_model_dimensions")
     if isinstance(metadata, ResolvedModelDimensions):
         return metadata
     return None

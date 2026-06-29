@@ -61,7 +61,7 @@ def normalize_dims(dims: Sequence[Dim] | None) -> tuple[Dim, ...] | None:
 
 def model_dimensions(model_cls: type[object]) -> ResolvedModelDimensions:
     """Return resolved dimension metadata attached by ``@model``."""
-    metadata = getattr(model_cls, "_model_dimensions", None)
+    metadata = model_cls.__dict__.get("_model_dimensions")
     if isinstance(metadata, ResolvedModelDimensions):
         return metadata
     raise TypeError("Model class has no resolved dimension metadata; decorate it with @model")

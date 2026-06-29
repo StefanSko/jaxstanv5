@@ -57,6 +57,17 @@ def test_model_meta_rejects_non_model_objects() -> None:
         model_meta(PublicHookModel())
 
 
+def test_public_hooks_reject_subclasses_with_inherited_model_metadata() -> None:
+    class ChildModel(PublicHookModel):
+        extra = Param(Normal(0.0, 1.0))
+
+    assert not is_model_class(ChildModel)
+    with pytest.raises(TypeError, match="@model"):
+        model_meta(ChildModel)
+    with pytest.raises(TypeError, match="@model"):
+        bind_model(ChildModel, {"y": [1.0, 2.0]})
+
+
 def test_bind_model_binds_data_and_preserves_dimension_metadata() -> None:
     bound = bind_model(PublicHookModel, {"y": [1.0, 2.0]})
 
