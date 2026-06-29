@@ -481,31 +481,33 @@ def is_model_class(value: object) -> bool:
 
 def model_meta(model_cls: object) -> ModelMeta:
     """Return resolved model metadata attached by ``@model`` or IR decoding."""
-    cls = _require_model_class(model_cls)
-    metadata = getattr(cls, "_model_meta", None)
-    if isinstance(metadata, ModelMeta):
-        return metadata
-    raise TypeError("Object is not a jaxstanv5 @model class; decorate it with @model")
+    _cls, meta = _require_model_class_and_meta(model_cls)
+    return meta
 
 
 def bind_model(model_cls: object, values: Mapping[str, object]) -> BoundModel:
     """Bind concrete data values to a model class with the JAX backend."""
     if not isinstance(values, Mapping):
         raise TypeError("Model bind values must be a mapping")
-    cls = _require_model_class(model_cls)
+    cls, meta = _require_model_class_and_meta(model_cls)
     from jaxstanv5._backends.jax.binding import bind_model_meta
 
     return bind_model_meta(
-        model_meta(cls),
+        meta,
         values,
         dimensions=_attached_model_dimensions(cls),
     )
 
 
-def _require_model_class(value: object) -> ModelClass:
-    if isinstance(value, type) and isinstance(getattr(value, "_model_meta", None), ModelMeta):
-        return value
-    raise TypeError("Object is not a jaxstanv5 @model class; decorate it with @model")
+def _require_model_class_and_meta(value: object) -> tuple[ModelClass, ModelMeta]:
+    if isinstance(value, type):
+        metadata = getattr(value, "_model_meta", None)
+        if isinstance(metadata, ModelMeta):
+            return value, metadata
+    raise TypeError(
+        "Object is not a jaxstanv5 model class; expected a class decorated with @model "
+        "or produced by bindable_from_meta"
+    )
 
 
 def _attached_model_dimensions(model_cls: ModelClass) -> ResolvedModelDimensions | None:
