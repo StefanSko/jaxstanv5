@@ -74,6 +74,7 @@ def test_model_declaration_and_ir_serialization_run_without_jax_or_blackjax() ->
         )
         from jaxstanv5.distributions import Normal
         from jaxstanv5.ir import canonical_bytes, meta_to_dict
+        from jaxstanv5.model import bind_model, is_model_class, model_meta
 
         obs = Dim("obs")
 
@@ -83,13 +84,23 @@ def test_model_declaration_and_ir_serialization_run_without_jax_or_blackjax() ->
             alpha = Param(Normal(0.0, 1.0))
             y = Observed(Normal(alpha, 1.0), dims=(obs,))
 
-        document = meta_to_dict(LinearAuthoringOnly._model_meta)
-        encoded = canonical_bytes(LinearAuthoringOnly._model_meta)
+        meta = model_meta(LinearAuthoringOnly)
+        document = meta_to_dict(meta)
+        encoded = canonical_bytes(meta)
         dimensions = dimension_metadata_to_dict(model_dimensions(LinearAuthoringOnly))
 
         assert document["jaxstanv5_ir"] == 1
         assert dimensions["dims"] == {"x": ["obs"], "alpha": [], "y": ["obs"]}
         assert b"LinearAuthoringOnly" not in encoded
+        assert is_model_class(LinearAuthoringOnly)
+        assert not is_model_class(object())
+        assert callable(bind_model)
+        try:
+            model_meta(object())
+        except TypeError as exc:
+            assert "@model" in str(exc)
+        else:
+            raise AssertionError("model_meta accepted a non-model object")
         forbidden = [
             name for name in sys.modules
             if name == "jax" or name.startswith("jax.")
