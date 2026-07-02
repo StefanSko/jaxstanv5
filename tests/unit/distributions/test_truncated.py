@@ -54,6 +54,20 @@ def test_truncated_normal_cdf_and_icdf_are_inverse_inside_bounds() -> None:
     assert jnp.allclose(cdf(dist, values), probabilities, atol=1e-6)
 
 
+def test_truncated_normal_cdf_icdf_and_sample_are_stable_in_upper_tail() -> None:
+    dist = Truncated(Normal(0.0, 1.0), lower=10.0)
+    probabilities = jnp.asarray([0.1, 0.5, 0.9])
+
+    values = icdf(dist, probabilities)
+    draws = distribution_sample(dist, jax.random.PRNGKey(2), sample_shape=(5,))
+
+    assert jnp.all(jnp.isfinite(values))
+    assert jnp.all(values >= 10.0)
+    assert jnp.allclose(cdf(dist, values), probabilities, atol=1e-5)
+    assert jnp.all(jnp.isfinite(draws))
+    assert jnp.all(draws >= 10.0)
+
+
 def test_truncated_normal_sample_stays_inside_bounds() -> None:
     dist = Truncated(Normal(jnp.asarray([0.0, 1.0]), 1.0), lower=0.0, upper=2.0)
 
