@@ -89,6 +89,10 @@ Test public behavior through public APIs; do not interrogate objects in ways tha
 leak private internals into higher-level tests. Avoid monkeypatching and mocking;
 prefer real collaborators and behavioral tests.
 
+When adding a wrapper type, audit all relevant `isinstance` dispatch sites up
+front. For numerical code, write adversarial tail and gradient tests before the
+implementation.
+
 ## Validation
 
 Before reporting completion, run the relevant checks, normally:
