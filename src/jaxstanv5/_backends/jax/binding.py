@@ -19,6 +19,7 @@ from jaxstanv5._backends.jax.distributions import (
     is_sampleable,
     validate_scale_tril,
 )
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
 from jaxstanv5.distributions.counts import (
     Bernoulli,
@@ -37,6 +38,7 @@ from jaxstanv5.model._data_schema import (
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import (
     ModelMeta,
+    ResolvedFreeValue,
     _is_final_expr_node,
     _resolved_free_values,
     _resolved_stochastic_sites,
@@ -103,7 +105,7 @@ def bind_model_meta(
     _validate_bound_index_expressions(meta, data, param_shapes)
     _validate_stochastic_site_shapes(meta, data, param_shapes)
     _validate_observed_discrete_values(meta, data, param_shapes)
-    _validate_bound_distribution_parameters(meta, data)
+    _validate_bound_distribution_parameters(meta, data, param_shapes)
     if dimensions is not None:
         _validate_bound_dimension_metadata(dimensions, data, param_shapes)
     return BoundModel(
@@ -390,28 +392,145 @@ def _validate_value_array_upper_bound(name: str, value: jax.Array, upper: jax.Ar
         raise ValueError(f"Observed site {name!r} values must be <= total_count")
 
 
-def _validate_bound_distribution_parameters(meta: ModelMeta, data: dict[str, jax.Array]) -> None:
-    """Validate concrete distribution parameters available at bind time."""
+def _validate_bound_distribution_parameters(
+    meta: ModelMeta,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate concrete and safely symbolic distribution parameters at bind time."""
+    free_values = _resolved_free_values(meta)
     for site in _resolved_stochastic_sites(meta):
-        _validate_bound_distribution_parameter(site.name, site.distribution, data)
+        _validate_bound_distribution_parameter(
+            site.name,
+            site.distribution,
+            data,
+            param_shapes,
+            free_values,
+        )
 
 
 def _validate_bound_distribution_parameter(
     site_name: str,
     distribution: Distribution,
     data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+    free_values: dict[str, ResolvedFreeValue],
 ) -> None:
-    """Validate one distribution's concrete bind-time parameters."""
-    if isinstance(distribution, MultivariateNormal):
-        scale_tril = _evaluate_optional_data_expr(distribution.scale_tril, data)
-        if scale_tril is not None:
-            validate_scale_tril(scale_tril, name=f"{site_name!r} scale_tril")
+    """Validate one distribution's bind-time parameters."""
+    if isinstance(distribution, MultivariateNormal) and not _is_valid_mvn_scale_tril_expr(
+        distribution.scale_tril,
+        data,
+        param_shapes,
+        free_values,
+        name=f"{site_name!r} scale_tril",
+        top_level=True,
+    ):
+        raise TypeError(
+            f"MultivariateNormal scale_tril for site {site_name!r} must be a validated "
+            "Cholesky factor, optionally multiplied or divided by a positive scalar"
+        )
     if not is_dataclass(distribution) or isinstance(distribution, type):
         return
     for distribution_field in fields(distribution):
         value = getattr(distribution, distribution_field.name)
         if is_dataclass(value) and not isinstance(value, type):
-            _validate_bound_distribution_parameter(site_name, cast(Distribution, value), data)
+            _validate_bound_distribution_parameter(
+                site_name,
+                cast(Distribution, value),
+                data,
+                param_shapes,
+                free_values,
+            )
+
+
+def _is_valid_mvn_scale_tril_expr(
+    value: object,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+    free_values: dict[str, ResolvedFreeValue],
+    *,
+    name: str,
+    top_level: bool,
+) -> bool:
+    """Return whether an MVN scale expression is valid by construction."""
+    concrete = _evaluate_optional_data_expr(value, data)
+    if concrete is not None:
+        if not top_level and concrete.ndim < 2:
+            return False
+        validate_scale_tril(concrete, name=name)
+        return True
+
+    if not isinstance(value, BinOp):
+        return False
+
+    if value.op == "*":
+        return (
+            _is_valid_mvn_scale_tril_expr(
+                value.left,
+                data,
+                param_shapes,
+                free_values,
+                name=name,
+                top_level=False,
+            )
+            and _is_positive_scalar_expr(value.right, data, param_shapes, free_values)
+        ) or (
+            _is_valid_mvn_scale_tril_expr(
+                value.right,
+                data,
+                param_shapes,
+                free_values,
+                name=name,
+                top_level=False,
+            )
+            and _is_positive_scalar_expr(value.left, data, param_shapes, free_values)
+        )
+    if value.op == "/":
+        return _is_valid_mvn_scale_tril_expr(
+            value.left,
+            data,
+            param_shapes,
+            free_values,
+            name=name,
+            top_level=False,
+        ) and _is_positive_scalar_expr(value.right, data, param_shapes, free_values)
+    return False
+
+
+def _is_positive_scalar_expr(
+    value: object,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+    free_values: dict[str, ResolvedFreeValue],
+) -> bool:
+    """Return whether an expression is provably scalar and strictly positive."""
+    if _is_final_expr_node(value):
+        shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
+        if shape != ():
+            return False
+    elif jnp.asarray(value).shape != ():
+        return False
+
+    concrete = _evaluate_optional_data_expr(value, data)
+    if concrete is not None:
+        return bool(concrete > 0.0)
+
+    if isinstance(value, ParamRef):
+        free_value = free_values.get(value.name)
+        if free_value is None:
+            return False
+        constraint = free_value.constraint
+        return isinstance(constraint, Positive | UnitInterval) or (
+            isinstance(constraint, Interval) and constraint.lower >= 0.0
+        )
+    if isinstance(value, UnaryOp):
+        return value.function in {"exp", "sigmoid"}
+    if isinstance(value, BinOp):
+        left_positive = _is_positive_scalar_expr(value.left, data, param_shapes, free_values)
+        right_positive = _is_positive_scalar_expr(value.right, data, param_shapes, free_values)
+        if value.op in {"*", "/"}:
+            return left_positive and right_positive
+    return False
 
 
 def _evaluate_optional_data_expr(value: object, data: dict[str, jax.Array]) -> jax.Array | None:

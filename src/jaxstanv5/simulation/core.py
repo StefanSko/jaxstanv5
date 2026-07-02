@@ -246,8 +246,8 @@ def simulate_prior_predictive(
             "PartiallyObserved declarations are not supported by prior-predictive simulation"
         )
     normalized_data = _normalize_data(meta, data)
-    _validate_bound_distribution_parameters(meta, normalized_data)
     param_shapes = _resolve_param_shapes(meta, normalized_data)
+    _validate_bound_distribution_parameters(meta, normalized_data, param_shapes)
     normalized_observed_shapes = _validate_observed_shapes(meta, observed_shapes)
     keys = jax.random.split(jax.random.PRNGKey(seed), num_samples)
 
