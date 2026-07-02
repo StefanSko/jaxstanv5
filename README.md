@@ -1,38 +1,39 @@
 # jaxstanv5
 
-`jaxstanv5` is a minimal declarative Bayesian modeling library for JAX.
+`jaxstanv5` is the JAX/BlackJAX sampling backend for
+[bayeswire](https://github.com/StefanSko/bayeswire) models.
 
 It focuses on one workflow:
 
 ```text
-define a model -> bind data -> sample with NUTS -> inspect basic diagnostics
+declare a bayeswire model -> bind data -> sample with NUTS -> inspect basic diagnostics
 ```
 
 It is intentionally small: no workflow platform, plotting layer, reporting
-system, artifact store, or multi-algorithm inference API. Model authoring and IR
-serialization are backend-neutral and do not import JAX; JAX/BlackJAX are needed
-only for binding data to arrays, evaluating log densities/gradients, simulation,
-diagnostics, and NUTS sampling.
+system, artifact store, or multi-algorithm inference API. The model
+declaration language, the IR wire format, its normative spec, and the golden
+conformance corpus live in bayeswire; jaxstanv5 consumes them and owns
+binding, compiled log densities, constraint transforms and Jacobians, NUTS
+via BlackJAX, essential diagnostics, simulation, and the
+InferenceData-compatible schema.
 
 ## Quickstart
 
-Install dependencies for the JAX sampling backend:
-
 ```bash
-uv sync --extra jax
+uv sync
 ```
 
-Define a model:
+Define a model with bayeswire, then bind and sample with jaxstanv5:
 
 ```python
 import jax.numpy as jnp
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Normal, Truncated
+from jaxstanv5 import bind_model
 from jaxstanv5.diagnostics import ess, rhat
-from jaxstanv5.distributions import Normal, Truncated
 from jaxstanv5.inference import sample
-from jaxstanv5.model import bind_model
 
 
 @model
@@ -83,158 +84,52 @@ It maps posterior draws, post-warmup NUTS diagnostics, observed data, constant
 data, and declared `Dim(...)` metadata into InferenceData-compatible groups and
 dimension names. See [`docs/inferencedata-compatibility.md`](docs/inferencedata-compatibility.md).
 
-## Authoring-only IR export
+## The language lives in bayeswire
 
-The declaration path can run without importing JAX. This supports lightweight
-Python authoring environments that serialize resolved model metadata for another
-runtime:
+Model declarations (`@model`, `Param`, `Data`, `Observed`,
+`PartiallyObserved`, `Dim`), the distributions and constraints metadata, the
+symbolic math namespace, IR serialization (`bayeswire.ir`), and the dimension
+sidecar all belong to [bayeswire](https://github.com/StefanSko/bayeswire) —
+see its README and `spec/` for the declaration language and the
+`bayeswire_ir` v1 wire format. jaxstanv5 pins bayeswire by exact version;
+the pin bump diff is the compatibility review.
 
-```python
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.distributions import Normal
-from jaxstanv5.ir import canonical_bytes, meta_to_dict
-from jaxstanv5.model import model_meta
-
-
-@model
-class LinearAuthoringOnly:
-    x = Data.vector()
-    alpha = Param(Normal(0.0, 1.0))
-    y = Observed(Normal(alpha, 1.0))
-
-
-meta = model_meta(LinearAuthoringOnly)
-document = meta_to_dict(meta)
-encoded = canonical_bytes(meta)
-```
-
-`document` is backend-neutral `jaxstanv5_ir` JSON data. A Python JAX backend,
-Bayesite, or another non-Python engine can consume that IR downstream.
-
-Dynamic workflow adapters should use `jaxstanv5.model.model_meta(...)`,
-`jaxstanv5.model.is_model_class(...)`, and `jaxstanv5.model.bind_model(...)`
-instead of private `_model_meta` access or duck-typing the attached `bind`
-classmethod. `model_meta(...)` and `is_model_class(...)` remain JAX-free;
-`bind_model(...)` is the explicit JAX runtime binding transition.
-
-Dimension labels declared with `Dim(...)` travel in a separate sidecar
-document, not in the IR. To reconstruct a labeled model faithfully, decode the
-sidecar and pass it to `bindable_from_meta(...)`:
+jaxstanv5's authoring-facing surface is the explicit backend transition:
 
 ```python
-from jaxstanv5.ir import bindable_from_meta, meta_from_dict
-from jaxstanv5.model import dimension_metadata_from_dict
+from bayeswire.ir import bindable_from_meta, meta_from_dict
+from bayeswire.model import dimension_metadata_from_dict
+from jaxstanv5 import bind_model
 
 meta = meta_from_dict(document)
 dimensions = dimension_metadata_from_dict(dimension_document)
 rebuilt = bindable_from_meta(meta, dimensions=dimensions)
+bound = bind_model(rebuilt, values)
 ```
 
-Without the sidecar, the reconstructed model binds and samples identically but
-carries no dimension metadata.
+Dynamic workflow adapters should use `bayeswire.model.model_meta(...)`,
+`bayeswire.model.is_model_class(...)`, and `jaxstanv5.bind_model(...)`.
+The consume-conformance test in `tests/integration/` proves this backend
+evaluates the bayeswire corpus fixtures within the spec's tolerance policy.
 
-## Model declarations
+## Backend semantics notes
 
-The declaration language has three core node types:
+The declaration language is documented in bayeswire. Backend-relevant
+semantics when sampling with jaxstanv5:
 
-- `Param(distribution, constraint=None, size=None)` declares a latent stochastic
-  value. It contributes a prior term to the log density and is sampled by NUTS.
-- `Data.scalar()`, `Data.vector(...)`, `Data.matrix(...)`, and
-  `Data.array(...)` declare known inputs with no likelihood contribution.
-- `Observed(distribution)` declares known input with a likelihood contribution.
-  A model may contain one or more observed likelihood sites.
-- `PartiallyObserved.vector(...)` declares one continuous random vector whose
-  coordinates are partly fixed data and partly free NUTS coordinates.
-
-Deterministic expressions are written directly in the class body:
-
-```python
-mu = alpha + beta * x
-```
-
-These expressions are symbolic during declaration and are evaluated by the
-compiler after concrete data and parameter values are available. Python scalar
-literals are valid expression constants. Fixed vector, matrix, or tensor inputs
-must be declared with shaped `Data` helpers and passed to `bind(...)`, rather
-than captured as closed-over array constants. A small symbolic math namespace is
-available for supported nonlinear declarations:
-
-```python
-from jaxstanv5.distributions import Beta, Binomial, Poisson
-from jaxstanv5.math import exp, sigmoid
-
-rate = exp(alpha + beta * x)
-y_count = Observed(Poisson(rate))
-
-probability = sigmoid(alpha + beta * x)
-y_successes = Observed(Binomial(trials, probability))
-y_proportion = Observed(Beta(probability * concentration, (1.0 - probability) * concentration))
-```
-
-Declaration indexing supports integer scalar or data indexes and full-axis
-slices, for example `alpha[group_idx]`, `x[:, 0]`, and `x[group_idx, 0]`.
-General NumPy indexing forms such as partial slices, ellipses, new axes, and
-boolean masks are not part of the declaration language.
-
-Built-in distributions are metadata-only dataclasses. Python custom
-JAX-backend distributions may still provide a `log_prob(...)` method as a
-backend-specific interoperability path. If their parameters include `Param`,
-`Data`, or symbolic expressions, define the custom distribution as a dataclass
-so model declaration can resolve those fields. Opaque non-dataclass
-distributions are allowed only with concrete parameters. Non-Python IR consumers
-require their own backend support for any custom distribution tags.
-
-Data declarations are schema-only; they never construct values. Use
-`Data.scalar()` for rank-0 inputs, `Data.vector()` or `Data.vector(n)` for
-vectors, `Data.matrix()` or `Data.matrix(n, m)` for matrices, and
-`Data.array(rank=...)` or `Data.array(shape=(...))` for higher-rank arrays.
-Rank-only declarations validate rank while allowing any dimension sizes.
-
-For partially observed continuous vectors, pass an explicit index partition rather
-than a NaN-masked vector:
-
-```python
-from jaxstanv5 import PartiallyObserved
-from jaxstanv5.data import PartialVector
-from jaxstanv5.distributions import MultivariateNormal
-
-partial_y = PartialVector.from_nan(raw_y)
-
-@model
-class PartialMvn:
-    n = Data.scalar()
-    n_obs = Data.scalar()
-    n_mis = Data.scalar()
-    chol = Data.matrix(n, n)
-    observed_idx = Data.vector(n_obs)
-    missing_idx = Data.vector(n_mis)
-    observed_values = Data.vector(n_obs)
-
-    y = PartiallyObserved.vector(
-        MultivariateNormal(0.0, chol),
-        length=n,
-        observed=observed_values,
-        observed_idx=observed_idx,
-        missing_idx=missing_idx,
-    )
-```
-
-`PartialVector.from_nan(...)` is only a preprocessing helper; the model consumes
-explicit `observed_idx`, `missing_idx`, and `observed_values`. Missing coordinates
-are returned in `result.samples["y"]` in `missing_idx` order. Discrete missing
-latents are not supported by NUTS.
-
-Use `jaxstanv5.math` helpers in model declarations, not raw `jax.numpy`
-functions. Discrete distributions such as `Poisson`, `Binomial`,
-`BetaBinomial`, and `NegativeBinomial` are valid observed likelihoods, but not
-latent `Param(...)` priors because NUTS samples continuous parameters only.
-Continuous bounded latent parameters can use `Interval(lower, upper)` or
-`UnitInterval()` constraints. Constraints define NUTS transforms and Jacobians;
-when a prior needs truncation normalization, make it explicit with
-`Truncated(base, lower=..., upper=...)` and a matching constraint. Ordered vector
-parameters can use `Ordered()`, for example ordinal-logistic cutpoints.
-`OrderedLogistic(eta, cutpoints)` uses zero-based observed labels: with `K`
-cutpoints, valid categories are `0..K`.
+- Discrete distributions such as `Poisson`, `Binomial`, `BetaBinomial`, and
+  `NegativeBinomial` are valid observed likelihoods, but not latent
+  `Param(...)` priors because NUTS samples continuous parameters only.
+- Constraints define NUTS transforms and Jacobians. When a prior needs
+  truncation normalization, make it explicit with
+  `Truncated(base, lower=..., upper=...)` and a matching constraint.
+- `OrderedLogistic(eta, cutpoints)` uses zero-based observed labels: with `K`
+  cutpoints, valid categories are `0..K`.
+- For partially observed continuous vectors,
+  `jaxstanv5.data.PartialVector.from_nan(...)` converts a NaN-masked vector
+  into the explicit index partition the model consumes. Missing coordinates
+  are returned in `result.samples["y"]` in `missing_idx` order. Discrete
+  missing latents are not supported by NUTS.
 
 ## Hierarchical parameters
 

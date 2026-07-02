@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import jax.numpy as jnp
-
-from jaxstanv5.compiler.core import _evaluate_expr
-from jaxstanv5.model.expr import (
+from bayeswire.model.expr import (
     BinOp,
     ConstNode,
     DataRef,
@@ -17,6 +15,8 @@ from jaxstanv5.model.expr import (
     UnaryOp,
     VectorScatterOp,
 )
+
+from jaxstanv5.compiler.core import _evaluate_expr
 
 
 def test_param_ref_lookup() -> None:

@@ -30,9 +30,9 @@ from _reference_models import (
     robust_regression_fixture,
     student_t_location_fixture,
 )
+from bayeswire.ir import bindable_from_meta, canonical_bytes, meta_from_dict, meta_to_dict
 
 from jaxstanv5.compiler import compile_log_density
-from jaxstanv5.ir import bindable_from_meta, canonical_bytes, meta_from_dict, meta_to_dict
 from jaxstanv5.model import bind_model
 from jaxstanv5.model.bound import BoundModel
 

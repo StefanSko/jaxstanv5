@@ -3,8 +3,11 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare jaxstan compiled log-density differences against Stan references.
 
@@ -197,9 +200,10 @@ def _cmdstan_model(stan_file: Path) -> StanLogDensityModel:
 
 
 def _normal_known_scale_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Observed, Param, model
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.distributions import Normal
     from jaxstanv5.model import bind_model
 
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
@@ -219,10 +223,11 @@ def _normal_known_scale_log_density(data: Mapping[str, object]) -> Callable[[jax
 
 
 def _positive_scale_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Observed, Param, model
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Normal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Normal
     from jaxstanv5.model import bind_model
 
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
@@ -241,10 +246,11 @@ def _positive_scale_log_density(data: Mapping[str, object]) -> Callable[[jax.Arr
 
 
 def _exponential_rate_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Observed, Param, model
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Exponential, HalfNormal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Exponential, HalfNormal
     from jaxstanv5.model import bind_model
 
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
@@ -262,9 +268,10 @@ def _exponential_rate_log_density(data: Mapping[str, object]) -> Callable[[jax.A
 
 
 def _student_t_location_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Observed, Param, model
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal, StudentT
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.distributions import Normal, StudentT
     from jaxstanv5.model import bind_model
 
     nu = _as_float(data["nu"], name="nu")
@@ -287,9 +294,10 @@ def _student_t_location_log_density(data: Mapping[str, object]) -> Callable[[jax
 def _multivariate_normal_likelihood_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.distributions import MultivariateNormal, Normal
     from jaxstanv5.model import bind_model
 
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
@@ -315,11 +323,12 @@ def _multivariate_normal_likelihood_log_density(
 def _hierarchical_poisson_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, Normal, Poisson
+    from bayeswire.math import exp
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, Normal, Poisson
-    from jaxstanv5.math import exp
     from jaxstanv5.model import bind_model
 
     @model
@@ -361,11 +370,12 @@ def _hierarchical_poisson_log_density(
 def _hierarchical_binomial_logistic_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Binomial, HalfNormal, Normal
+    from bayeswire.math import sigmoid
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Binomial, HalfNormal, Normal
-    from jaxstanv5.math import sigmoid
     from jaxstanv5.model import bind_model
 
     @model
@@ -412,11 +422,12 @@ def _hierarchical_beta_binomial_logistic_log_density(
 ) -> Callable[[jax.Array], jax.Array]:
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import BetaBinomial, HalfNormal, Normal
+    from bayeswire.math import exp, sigmoid
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import BetaBinomial, HalfNormal, Normal
-    from jaxstanv5.math import exp, sigmoid
     from jaxstanv5.model import bind_model
 
     @model
@@ -468,11 +479,12 @@ def _hierarchical_beta_regression_log_density(
 ) -> Callable[[jax.Array], jax.Array]:
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Beta, HalfNormal, Normal
+    from bayeswire.math import exp, sigmoid
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Beta, HalfNormal, Normal
-    from jaxstanv5.math import exp, sigmoid
     from jaxstanv5.model import bind_model
 
     @model
@@ -521,11 +533,12 @@ def _hierarchical_negative_binomial_log_density(
 ) -> Callable[[jax.Array], jax.Array]:
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, NegativeBinomial, Normal
+    from bayeswire.math import exp
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, NegativeBinomial, Normal
-    from jaxstanv5.math import exp
     from jaxstanv5.model import bind_model
 
     @model
@@ -570,10 +583,11 @@ def _hierarchical_negative_binomial_log_density(
 def _ordinal_logistic_regression_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Ordered
+    from bayeswire.distributions import Normal, OrderedLogistic
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Ordered
-    from jaxstanv5.distributions import Normal, OrderedLogistic
     from jaxstanv5.model import bind_model
 
     @model
@@ -604,9 +618,10 @@ def _ordinal_logistic_regression_log_density(
 
 
 def _fixed_kernel_gp_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.distributions import MultivariateNormal, Normal
     from jaxstanv5.model import bind_model
 
     @model

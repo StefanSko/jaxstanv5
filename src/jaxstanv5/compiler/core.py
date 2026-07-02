@@ -8,17 +8,10 @@ from typing import cast
 
 import jax
 import jax.numpy as jnp
-
-from jaxstanv5._backends.jax.constraints import (
-    inverse_transform,
-    log_abs_det_jacobian,
-)
-from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
-from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
-from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import ModelMeta, resolved_free_values, resolved_stochastic_sites
-from jaxstanv5.model.expr import (
+from bayeswire.distributions._symbolic_validation import reject_opaque_symbolic_distribution
+from bayeswire.distributions.core import Distribution
+from bayeswire.model.decorator import ModelMeta, resolved_free_values, resolved_stochastic_sites
+from bayeswire.model.expr import (
     BinOp,
     ConstNode,
     DataRef,
@@ -32,6 +25,13 @@ from jaxstanv5.model.expr import (
     UnaryOp,
     VectorScatterOp,
 )
+
+from jaxstanv5._backends.jax.constraints import (
+    inverse_transform,
+    log_abs_det_jacobian,
+)
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
+from jaxstanv5.model.bound import BoundModel
 
 _BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
     "+": jnp.add,

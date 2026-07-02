@@ -5,17 +5,17 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import pytest
-
-from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
-from jaxstanv5.compiler.core import _evaluate_distribution
-from jaxstanv5.distributions import Binomial, Normal, Poisson
-from jaxstanv5.distributions.core import (
+from bayeswire.distributions import Binomial, Normal, Poisson
+from bayeswire.distributions.core import (
     DistributionParameter,
     DistributionValue,
     LogProbability,
     _concrete_parameter,
 )
-from jaxstanv5.model.expr import BinOp, ConstNode, DataRef, ParamRef, UnaryOp
+from bayeswire.model.expr import BinOp, ConstNode, DataRef, ParamRef, UnaryOp
+
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
+from jaxstanv5.compiler.core import _evaluate_distribution
 
 
 class OpaqueShiftedNormal:

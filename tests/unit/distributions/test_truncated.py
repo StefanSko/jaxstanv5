@@ -7,11 +7,11 @@ import math
 import jax
 import jax.numpy as jnp
 import pytest
+from bayeswire.distributions import Normal, Truncated
 from jax.scipy.special import log_ndtr, ndtr
 
 from jaxstanv5._backends.jax.distributions import cdf, icdf, log_prob
 from jaxstanv5._backends.jax.distributions import sample as distribution_sample
-from jaxstanv5.distributions import Normal, Truncated
 
 
 def test_truncated_rejects_nested_distribution() -> None:

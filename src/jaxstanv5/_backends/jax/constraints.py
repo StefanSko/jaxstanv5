@@ -6,11 +6,10 @@ from typing import Protocol, cast, runtime_checkable
 
 import jax
 import jax.numpy as jnp
-
-from jaxstanv5.constraints.core import ConstrainedValue, Constraint, UnconstrainedValue
-from jaxstanv5.constraints.interval import Interval, UnitInterval
-from jaxstanv5.constraints.ordered import Ordered
-from jaxstanv5.constraints.positive import Positive
+from bayeswire.constraints.core import ConstrainedValue, Constraint, UnconstrainedValue
+from bayeswire.constraints.interval import Interval, UnitInterval
+from bayeswire.constraints.ordered import Ordered
+from bayeswire.constraints.positive import Positive
 
 
 @runtime_checkable

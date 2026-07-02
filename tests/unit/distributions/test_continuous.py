@@ -4,6 +4,7 @@ import math
 
 import jax
 import jax.numpy as jnp
+from bayeswire.distributions import Beta, Exponential, HalfNormal, Normal, StudentT, Uniform
 from jax.scipy.special import gammaln
 
 from jaxstanv5._backends.jax.distributions import (
@@ -15,7 +16,6 @@ from jaxstanv5._backends.jax.distributions import (
 from jaxstanv5._backends.jax.distributions import (
     sample as distribution_sample,
 )
-from jaxstanv5.distributions import Beta, Exponential, HalfNormal, Normal, StudentT, Uniform
 
 
 def beta_log_function(a: jax.Array, b: jax.Array) -> jax.Array:

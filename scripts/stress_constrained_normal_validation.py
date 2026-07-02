@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Stress-test constrained positive-scale Normal validation thresholds.
 
@@ -91,10 +93,11 @@ def _run_stress(config: StressConfig) -> StressResult:
 
     _add_repo_paths()
 
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Normal
+
     from integration._validation import positive_scale_grid_reference, summarize_scalar_draws
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Normal
     from jaxstanv5.inference import compile_sampler
     from jaxstanv5.validation import standardized_discrepancy
 

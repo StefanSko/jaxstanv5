@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare jaxstan posterior summaries against Stan fixed-data references."""
 
@@ -208,8 +210,9 @@ def _cases(root: Path) -> tuple[PosteriorCase, ...]:
 
 
 def _build_normal_known_scale_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.distributions import Normal
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal
+
     from jaxstanv5.model import bind_model
 
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
@@ -228,9 +231,10 @@ def _build_normal_known_scale_bound(data: Mapping[str, object]) -> BoundModel:
 
 
 def _build_positive_scale_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Normal
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Normal
+
     from jaxstanv5.model import bind_model
 
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
@@ -248,9 +252,10 @@ def _build_positive_scale_bound(data: Mapping[str, object]) -> BoundModel:
 
 
 def _build_exponential_rate_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Exponential, HalfNormal
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Exponential, HalfNormal
+
     from jaxstanv5.model import bind_model
 
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
@@ -267,8 +272,9 @@ def _build_exponential_rate_bound(data: Mapping[str, object]) -> BoundModel:
 
 
 def _build_student_t_location_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.distributions import Normal, StudentT
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal, StudentT
+
     from jaxstanv5.model import bind_model
 
     nu = _as_float(data["nu"], name="nu")

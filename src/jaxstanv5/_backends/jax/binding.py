@@ -8,44 +8,30 @@ from typing import cast
 
 import jax
 import jax.numpy as jnp
-
-from jaxstanv5._backends.jax.distributions import (
-    batch_shape as distribution_batch_shape,
-)
-from jaxstanv5._backends.jax.distributions import (
-    event_shape as distribution_event_shape,
-)
-from jaxstanv5._backends.jax.distributions import (
-    is_sampleable,
-    validate_scale_tril,
-)
-from jaxstanv5.constraints import Interval, Positive, UnitInterval
-from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
-from jaxstanv5.distributions.counts import (
+from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.distributions.core import DiscreteDistribution, Distribution
+from bayeswire.distributions.counts import (
     Bernoulli,
     BetaBinomial,
     Binomial,
     NegativeBinomial,
     Poisson,
 )
-from jaxstanv5.distributions.multivariate import MultivariateNormal
-from jaxstanv5.distributions.ordinal import OrderedLogistic
-from jaxstanv5.model._data_schema import (
+from bayeswire.distributions.multivariate import MultivariateNormal
+from bayeswire.distributions.ordinal import OrderedLogistic
+from bayeswire.model import (
     ResolvedDataRankSchema,
     ResolvedDataShapeDim,
     ResolvedDataShapeSchema,
 )
-from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import (
+from bayeswire.model.decorator import (
     ModelMeta,
     ResolvedFreeValue,
-    _is_final_expr_node,
-    _validate_parameter_size,
     resolved_free_values,
     resolved_stochastic_sites,
 )
-from jaxstanv5.model.dimensions import ResolvedModelDimensions
-from jaxstanv5.model.expr import (
+from bayeswire.model.dimensions import ResolvedModelDimensions
+from bayeswire.model.expr import (
     BinOp,
     ConstNode,
     DataRef,
@@ -58,7 +44,20 @@ from jaxstanv5.model.expr import (
     ScalarIndex,
     UnaryOp,
     VectorScatterOp,
+    is_final_expr_node,
 )
+
+from jaxstanv5._backends.jax.distributions import (
+    batch_shape as distribution_batch_shape,
+)
+from jaxstanv5._backends.jax.distributions import (
+    event_shape as distribution_event_shape,
+)
+from jaxstanv5._backends.jax.distributions import (
+    is_sampleable,
+    validate_scale_tril,
+)
+from jaxstanv5.model.bound import BoundModel
 
 type EvaluatedIndexAtom = jax.Array | slice
 type EvaluatedIndex = EvaluatedIndexAtom | tuple[EvaluatedIndexAtom, ...]
@@ -306,7 +305,7 @@ def _shape_stub_distribution[DistributionT: Distribution](
     resolved: dict[str, object] = {}
     for distribution_field in fields(distribution):
         value = getattr(distribution, distribution_field.name)
-        if _is_final_expr_node(value):
+        if is_final_expr_node(value):
             shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
             resolved[distribution_field.name] = jnp.zeros(shape)
         elif is_dataclass(value) and not isinstance(value, type):
@@ -367,7 +366,7 @@ def _distribution_field_shape(
     data: dict[str, jax.Array],
     param_shapes: dict[str, tuple[int, ...]],
 ) -> tuple[int, ...]:
-    if _is_final_expr_node(value):
+    if is_final_expr_node(value):
         return _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
     return jnp.asarray(value).shape
 
@@ -504,7 +503,7 @@ def _is_positive_scalar_expr(
     free_values: dict[str, ResolvedFreeValue],
 ) -> bool:
     """Return whether an expression is provably scalar and strictly positive."""
-    if _is_final_expr_node(value):
+    if is_final_expr_node(value):
         shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
         if shape != ():
             return False
@@ -535,7 +534,7 @@ def _is_positive_scalar_expr(
 
 def _evaluate_optional_data_expr(value: object, data: dict[str, jax.Array]) -> jax.Array | None:
     """Evaluate a data/constant expression, or return None for parameter-dependent values."""
-    if _is_final_expr_node(value):
+    if is_final_expr_node(value):
         try:
             return _evaluate_data_index_expr(cast(ExprNode, value), data)
         except TypeError:
@@ -554,7 +553,7 @@ def _validate_distribution_index_expressions(
 
     for distribution_field in fields(distribution):
         value = getattr(distribution, distribution_field.name)
-        if _is_final_expr_node(value):
+        if is_final_expr_node(value):
             _validate_index_expr(cast(ExprNode, value), data, param_shapes)
         elif is_dataclass(value) and not isinstance(value, type):
             _validate_distribution_index_expressions(cast(Distribution, value), data, param_shapes)
@@ -829,3 +828,11 @@ def _param_count(shape: tuple[int, ...]) -> int:
             raise ValueError("Parameter shape dimensions must be non-negative")
         count *= dim
     return count
+
+
+def _validate_parameter_size(size: int, label: str) -> int:
+    if isinstance(size, bool):
+        raise TypeError(f"{label} must be an integer, not bool")
+    if size < 0:
+        raise ValueError(f"{label} must be non-negative")
+    return size

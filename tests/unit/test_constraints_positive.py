@@ -1,13 +1,13 @@
 """Tests for positive constraint."""
 
 import jax.numpy as jnp
+from bayeswire.constraints import Positive
 
 from jaxstanv5._backends.jax.constraints import (
     inverse_transform,
     log_abs_det_jacobian,
     transform,
 )
-from jaxstanv5.constraints import Positive
 
 
 def test_positive_constraint_round_trips_constrained_values() -> None:

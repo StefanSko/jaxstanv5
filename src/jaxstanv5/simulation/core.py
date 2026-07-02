@@ -7,6 +7,9 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
+from bayeswire.constraints.core import Constraint
+from bayeswire.distributions.core import Distribution
+from bayeswire.model.decorator import ModelMeta, model_meta, resolved_free_values
 
 from jaxstanv5._backends.jax.binding import (
     _normalize_declared_data_values,
@@ -25,9 +28,6 @@ from jaxstanv5._backends.jax.distributions import (
     sample as distribution_sample,
 )
 from jaxstanv5.compiler.core import _evaluate_distribution
-from jaxstanv5.constraints.core import Constraint
-from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model.decorator import ModelMeta, model_meta, resolved_free_values
 from jaxstanv5.simulation.domains import (
     OrderedVectorDomain,
     ScalarIntervalDomain,

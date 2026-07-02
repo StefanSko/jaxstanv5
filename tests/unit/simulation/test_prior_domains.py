@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import pytest
-
-from jaxstanv5.constraints import Interval, Positive, UnitInterval
-from jaxstanv5.constraints.core import (
+from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.constraints.core import (
     ConstrainedValue,
     LogAbsDetJacobian,
     UnconstrainedValue,
 )
+
 from jaxstanv5.simulation.domains import (
     ScalarIntervalDomain,
     UnconstrainedDomain,

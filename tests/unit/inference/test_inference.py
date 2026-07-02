@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import pytest
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Normal
+from bayeswire.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
+from bayeswire.model.expr import ConstNode
 
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal
 from jaxstanv5.inference.core import (
     NutsDiagnosticTrace,
     SamplerAdaptation,
@@ -20,8 +22,6 @@ from jaxstanv5.inference.core import (
     sample,
 )
 from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
-from jaxstanv5.model.expr import ConstNode
 
 
 def test_unflatten_scalar_params() -> None:

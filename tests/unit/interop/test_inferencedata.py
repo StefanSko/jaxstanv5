@@ -3,9 +3,9 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import pytest
+from bayeswire import Data, Dim, Observed, Param, model, model_dimensions
+from bayeswire.distributions import Normal
 
-from jaxstanv5 import Data, Dim, Observed, Param, model, model_dimensions
-from jaxstanv5.distributions import Normal
 from jaxstanv5.inference import (
     NutsDiagnosticTrace,
     SamplerAdaptation,

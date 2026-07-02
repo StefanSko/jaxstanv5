@@ -16,6 +16,11 @@ wheels = [
 ]
 
 [[package]]
+name = "bayeswire"
+version = "0.1.0"
+source = { git = "https://github.com/StefanSko/bayeswire.git?rev=827a74b09fd19e1bfcc58e5418b74088958145aa#827a74b09fd19e1bfcc58e5418b74088958145aa" }
+
+[[package]]
 name = "blackjax"
 version = "1.5"
 source = { registry = "https://pypi.org/simple" }
@@ -100,17 +105,14 @@ wheels = [
 name = "jaxstanv5"
 version = "0.1.0"
 source = { editable = "." }
-
-[package.optional-dependencies]
-jax = [
+dependencies = [
+    { name = "bayeswire" },
     { name = "blackjax" },
     { name = "jax" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "blackjax" },
-    { name = "jax" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "ty" },
@@ -118,15 +120,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "blackjax", marker = "extra == 'jax'", specifier = ">=1.2.0" },
-    { name = "jax", marker = "extra == 'jax'", specifier = ">=0.6.0" },
+    { name = "bayeswire", git = "https://github.com/StefanSko/bayeswire.git?rev=827a74b09fd19e1bfcc58e5418b74088958145aa" },
+    { name = "blackjax", specifier = ">=1.2.0" },
+    { name = "jax", specifier = ">=0.6.0" },
 ]
-provides-extras = ["jax"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "blackjax", specifier = ">=1.2.0" },
-    { name = "jax", specifier = ">=0.6.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "ruff", specifier = ">=0.13.0" },
     { name = "ty", specifier = ">=0.0.1a20" },

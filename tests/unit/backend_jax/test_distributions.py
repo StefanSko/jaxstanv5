@@ -6,6 +6,7 @@ import math
 
 import jax
 import jax.numpy as jnp
+from bayeswire.distributions import Bernoulli, Binomial, MultivariateNormal, Normal
 
 from jaxstanv5._backends.jax.distributions import (
     batch_shape,
@@ -17,7 +18,6 @@ from jaxstanv5._backends.jax.distributions import (
 from jaxstanv5._backends.jax.distributions import (
     sample as distribution_sample,
 )
-from jaxstanv5.distributions import Bernoulli, Binomial, MultivariateNormal, Normal
 
 
 def test_normal_log_prob_is_backend_operation() -> None:

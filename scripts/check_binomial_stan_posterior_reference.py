@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare hierarchical Binomial logistic posterior summaries against Stan."""
 
@@ -169,10 +171,11 @@ def _cmdstan_model(stan_file: Path) -> StanPosteriorModel:
 
 
 def _build_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Binomial, HalfNormal, Normal
-    from jaxstanv5.math import sigmoid
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Binomial, HalfNormal, Normal
+    from bayeswire.math import sigmoid
+
     from jaxstanv5.model import bind_model
 
     @model

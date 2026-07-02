@@ -1,23 +1,8 @@
-"""jaxstanv5 — minimal declarative Bayesian modeling for JAX."""
+"""jaxstanv5 — the JAX/BlackJAX sampling backend for bayeswire models."""
 
-from jaxstanv5.model import (
-    Data,
-    Dim,
-    Observed,
-    Param,
-    PartiallyObserved,
-    dimension_metadata_to_dict,
-    model,
-    model_dimensions,
-)
+from jaxstanv5.model import BoundModel, bind_model
 
 __all__ = [
-    "Data",
-    "Dim",
-    "Observed",
-    "Param",
-    "PartiallyObserved",
-    "dimension_metadata_to_dict",
-    "model",
-    "model_dimensions",
+    "BoundModel",
+    "bind_model",
 ]

@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Run SBC for the ordinal-logistic regression model."""
 
@@ -67,9 +69,9 @@ def _add_repo_paths() -> None:
 
 
 def _build_model() -> object:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Ordered
-    from jaxstanv5.distributions import Normal, OrderedLogistic
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Ordered
+    from bayeswire.distributions import Normal, OrderedLogistic
 
     @model
     class OrdinalLogisticSbcModel:

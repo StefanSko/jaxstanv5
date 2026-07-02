@@ -4,104 +4,38 @@ Core invariants that should remain true as the codebase changes.
 
 ## Scope
 
-- Public workflow: define model -> bind data -> sample with NUTS.
+- Public workflow: declare a bayeswire model -> bind data -> sample with NUTS.
 - NUTS is the only inference algorithm.
 - BlackJAX is internal.
 
-## Declaration language
-
-- `Param`, `Data`, and `Observed` are declarations.
-- `Param(...)` is latent and contributes a prior term.
-- `Data.scalar()`, `Data.vector(...)`, `Data.matrix(...)`, and
-  `Data.array(...)` are known inputs with shape/rank schemas and contribute no
-  log-density term.
-- `Observed(...)` is known input and contributes a likelihood term.
-- `PartiallyObserved.vector(...)` contributes one continuous log-density factor
-  over an assembled vector whose observed coordinates are fixed data and whose
-  missing coordinates are free NUTS values.
-- A model has one or more stochastic declarations: `Param`, `Observed`, or
-  `PartiallyObserved`.
-- `Observed` nodes are optional; prior-only models are valid.
-- Declaration aliases are invalid: one declaration object maps to one class
-  attribute name.
-- `Dim(...)` labels and coordinates are authoring-side semantic metadata only;
-  they do not change log-density, transforms, sampling, or distribution shapes.
-- Dimension coordinates are optional JSON-scalar metadata and are validated
-  against known static axis sizes at declaration time and concrete bound shapes
-  at bind time.
-- Declaration classes have no base class other than `object`. A model's meaning
-  is local to one decorated class body so that model text stays statically
-  parseable by a standalone validator; inheritance is rejected at `@model` time
-  even when the base class carries no declarations.
-
-## Phase boundaries
-
-- Class-body syntax capture and resolved model metadata are separate phases.
-- Class-body arithmetic, indexing, and supported `jaxstanv5.math` helpers create
-  private deferred syntax, never final expression IR.
-- Declaration expressions support Python scalar literals as constants; fixed
-  non-scalar inputs must be represented explicitly as shaped `Data` declarations.
-- Non-scalar fixed distribution parameters in model declarations are invalid;
-  they must enter through named `Data` declarations.
-- Distributions with symbolic declaration parameters must expose those fields as
-  dataclass fields. Opaque non-dataclass distributions may contain only concrete
-  parameters.
-- Raw JAX/NumPy functions are not declaration-language operations; supported
-  symbolic math functions cross the declaration boundary through explicit helper
-  nodes.
-- `_resolve_model_declaration(...)` is the only transition from declaration
-  symbols to named references.
-- `bind(...)` is the transition from resolved model class to `BoundModel`.
-
 ## Authoring, IR, and backend boundaries
 
-- Importing `jaxstanv5`, `jaxstanv5.model`, `jaxstanv5.distributions`,
-  `jaxstanv5.constraints`, `jaxstanv5.math`, or `jaxstanv5.ir` must not import
-  JAX or BlackJAX. Those modules form the authoring/IR boundary and must remain
-  usable in Python environments that cannot load JAX.
-- Model declaration and IR serialization are backend-neutral: `@model` resolves
-  declarations to `ModelMeta` plus adjacent dimension metadata, and
-  `jaxstanv5.ir` serializes/deserializes `ModelMeta` without evaluating log
-  densities, gradients, transforms, samplers, user code, or dimension sidecars.
-- Distribution and constraint classes in the authoring boundary are serializable
-  metadata only. Built-in metadata classes must not define JAX runtime methods
-  such as `log_prob`, `sample`, `transform`, `inverse_transform`, or Jacobian
-  evaluation; those operations live in backend modules.
-- JAX and BlackJAX may be imported by backend/runtime paths only: `bind(...)`,
-  compiled log-density evaluation, constraint transforms/Jacobians, simulation,
-  diagnostics, and NUTS inference.
-- JAX and BlackJAX are optional package dependencies for backend use, not base
-  authoring dependencies. Authoring modules must not use lazy JAX proxies to hide
-  backend coupling.
-- `_deferred.py` is private class-body syntax capture.
-- `core.py` does not construct final expression IR.
-- `expr.py` is resolved/final IR only.
-- Final expression trees contain no declaration symbols, raw declarations,
-  deferred syntax tokens, or raw Python tuple/slice indexes.
-- Final expression trees may contain explicit unary operation nodes only for
-  supported declaration-language unary operations such as `neg`, `exp`, and `sigmoid`.
-- `ModelMeta` contains resolved metadata only, including resolved data schemas,
-  free NUTS values, and stochastic log-density sites.
-- `ModelMeta` is the serialization boundary: `jaxstanv5.ir` round-trips resolved
-  metadata only, executes no user code on decode, and uses only the standard
-  library.
-- External runtimes such as Bayesite consume serialized `ModelMeta` through the
-  IR/golden-fixture boundary only; they are not `jaxstanv5` runtime dependencies
-  and must not require Python objects or user-code execution.
-- Serialized IR node tags, not Python class names, are the wire contract; tag,
-  field, or encoding changes require regenerated golden files and a format
-  version decision (see `docs/ir-format-v1.md`).
-- A model reconstructed with `bindable_from_meta(...)` is indistinguishable
-  downstream from one produced by `@model`. Dimension labels travel in a
-  separate sidecar document: reconstructing a `Dim(...)`-labeled model requires
-  passing `dimensions=dimension_metadata_from_dict(...)`; without the sidecar
-  the reconstructed model carries no dimension metadata.
-- In serialized `ModelMeta`, `free_values` defines flat NUTS state layout,
-  `stochastic_sites` defines log-density factors, and `data` plus
-  `observed_nodes` define required bind inputs.
+- The authoring/IR boundary is the **bayeswire package**. Model declarations,
+  distribution and constraint metadata, `ModelMeta`, IR serialization, and
+  the dimension sidecar live there; jaxstanv5 depends on bayeswire pinned by
+  exact version and contains no declaration-language semantics of its own.
+- The declaration-language and serialization invariants (what `Param`,
+  `Data`, `Observed`, and `PartiallyObserved` mean; phase boundaries between
+  syntax capture, resolved metadata, and serialized IR; wire-format
+  guarantees) are stated in bayeswire's `docs/invariants.md` and
+  `spec/ir-format-v1.md`, the single normative copies.
+- Importing jaxstanv5's backend modules is the only thing that may import
+  JAX or BlackJAX. bayeswire must never import them; its no-JAX walk
+  enforces that upstream.
+- `bind_model(model_cls, values)` is the explicit transition from a
+  bayeswire model class to a `BoundModel`, and the only binding path. It
+  accepts classes decorated by `@model` or reconstructed with
+  `bindable_from_meta(...)`, reading metadata through bayeswire's public
+  hooks (`model_meta`, `attached_model_dimensions`) only.
 - `BoundModel` is downstream runtime state after concrete data binding. It is
   not part of the authoring/IR boundary and contains no inference logic. It may
   carry validated dimension metadata needed by runtime/export adapters.
+- jaxstanv5 proves consume-conformance against the bayeswire corpus read
+  from the installed package: every corpus fixture decodes, binds, and
+  evaluates within the tolerance policy stated in the bayeswire spec.
+- The logp/grad values in the corpus fixtures are produced by this backend
+  as the JAX oracle (`scripts/generate_ir_fixtures.py`), in float64, against
+  a bayeswire checkout.
 
 ## Log density
 

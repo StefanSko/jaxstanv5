@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import pytest
+from bayeswire import Data, Observed, Param, PartiallyObserved, model
+from bayeswire.constraints import Interval, Ordered, Positive
+from bayeswire.distributions import MultivariateNormal, Normal, OrderedLogistic, Truncated, Uniform
+from bayeswire.distributions.core import DistributionValue, LogProbability
 
-from jaxstanv5 import Data, Observed, Param, PartiallyObserved, model
-from jaxstanv5.constraints import Interval, Ordered, Positive
-from jaxstanv5.distributions import MultivariateNormal, Normal, OrderedLogistic, Truncated, Uniform
-from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation import simulate_prior_predictive
 
 

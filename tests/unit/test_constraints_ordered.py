@@ -2,13 +2,13 @@
 
 import jax.numpy as jnp
 import pytest
+from bayeswire.constraints import Ordered
 
 from jaxstanv5._backends.jax.constraints import (
     inverse_transform,
     log_abs_det_jacobian,
     transform,
 )
-from jaxstanv5.constraints import Ordered
 
 
 def test_ordered_constraint_round_trips_constrained_vectors() -> None:

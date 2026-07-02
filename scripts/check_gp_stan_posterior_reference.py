@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare projected fixed-kernel GP posterior summaries against Stan."""
 
@@ -206,8 +208,9 @@ def _projection_specs(n: int) -> tuple[ProjectionSpec, ...]:
 
 
 def _build_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import MultivariateNormal, Normal
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
+
     from jaxstanv5.model import bind_model
 
     @model

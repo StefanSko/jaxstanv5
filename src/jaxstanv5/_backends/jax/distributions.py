@@ -8,11 +8,8 @@ from typing import Protocol, cast, runtime_checkable
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.linalg import solve_triangular
-from jax.scipy.special import gammaln, log_ndtr, ndtr, ndtri, xlogy
-
-from jaxstanv5.distributions._capabilities import has_scalar_inverse_cdf
-from jaxstanv5.distributions.continuous import (
+from bayeswire.distributions._capabilities import has_scalar_inverse_cdf
+from bayeswire.distributions.continuous import (
     Beta,
     Exponential,
     HalfNormal,
@@ -20,17 +17,19 @@ from jaxstanv5.distributions.continuous import (
     StudentT,
     Uniform,
 )
-from jaxstanv5.distributions.core import Distribution, DistributionParameter, DistributionValue
-from jaxstanv5.distributions.counts import (
+from bayeswire.distributions.core import Distribution, DistributionParameter, DistributionValue
+from bayeswire.distributions.counts import (
     Bernoulli,
     BetaBinomial,
     Binomial,
     NegativeBinomial,
     Poisson,
 )
-from jaxstanv5.distributions.multivariate import MultivariateNormal
-from jaxstanv5.distributions.ordinal import OrderedLogistic
-from jaxstanv5.distributions.truncated import Truncated
+from bayeswire.distributions.multivariate import MultivariateNormal
+from bayeswire.distributions.ordinal import OrderedLogistic
+from bayeswire.distributions.truncated import Truncated
+from jax.scipy.linalg import solve_triangular
+from jax.scipy.special import gammaln, log_ndtr, ndtr, ndtri, xlogy
 
 
 @runtime_checkable

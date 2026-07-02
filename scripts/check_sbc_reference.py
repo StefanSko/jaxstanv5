@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Run optional simulation-based calibration reference checks."""
 
@@ -122,9 +124,9 @@ def _add_repo_paths() -> None:
 
 
 def _built_in_cases(config: SbcScriptConfig) -> Mapping[str, SbcCase]:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Normal
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Normal
 
     @model
     class NormalKnownScaleSbcModel:

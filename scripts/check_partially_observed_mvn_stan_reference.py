@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare partially observed MVN imputation against an equivalent Stan model."""
 
@@ -200,8 +202,9 @@ def _cmdstan_model(stan_file: Path) -> StanPosteriorModel:
 
 
 def _build_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Data, PartiallyObserved, model
-    from jaxstanv5.distributions import MultivariateNormal
+    from bayeswire import Data, PartiallyObserved, model
+    from bayeswire.distributions import MultivariateNormal
+
     from jaxstanv5.model import bind_model
 
     @model

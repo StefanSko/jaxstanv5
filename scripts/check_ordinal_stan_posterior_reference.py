@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare ordinal-logistic posterior summaries against Stan."""
 
@@ -169,9 +171,10 @@ def _cmdstan_model(stan_file: Path) -> StanPosteriorModel:
 
 
 def _build_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Ordered
-    from jaxstanv5.distributions import Normal, OrderedLogistic
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Ordered
+    from bayeswire.distributions import Normal, OrderedLogistic
+
     from jaxstanv5.model import bind_model
 
     @model

@@ -235,9 +235,9 @@ class StudentTLocationFixture:
 
 def eight_schools_fixture() -> EightSchoolsFixture:
     """Return the smoke fixture for a non-centered eight-schools model."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, Normal
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, Normal
 
     @model
     class EightSchoolsNonCentered:
@@ -267,9 +267,9 @@ def exponential_rate_fixture(
     prior_scale: float = 2.0,
 ) -> ExponentialRateFixture:
     """Return a constant-rate Exponential fixture."""
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Exponential, HalfNormal
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Exponential, HalfNormal
 
     @model
     class ExponentialRate:
@@ -289,9 +289,9 @@ def exponential_rate_fixture(
 
 def poisson_log_rate_fixture() -> PoissonLogRateFixture:
     """Return a scalar log-rate Poisson fixture for grid validation."""
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.distributions import Normal, Poisson
-    from jaxstanv5.math import exp
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal, Poisson
+    from bayeswire.math import exp
 
     prior_loc = 0.0
     prior_scale = 1.0
@@ -315,9 +315,9 @@ def poisson_log_rate_fixture() -> PoissonLogRateFixture:
 
 def binomial_logistic_fixture() -> BinomialLogisticFixture:
     """Return a scalar logistic Binomial fixture for grid validation."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import Binomial, Normal
-    from jaxstanv5.math import sigmoid
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import Binomial, Normal
+    from bayeswire.math import sigmoid
 
     prior_loc = 0.0
     prior_scale = 1.0
@@ -344,9 +344,9 @@ def binomial_logistic_fixture() -> BinomialLogisticFixture:
 
 def beta_binomial_logistic_fixture() -> BetaBinomialLogisticFixture:
     """Return a scalar logistic Beta-binomial fixture for grid validation."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import BetaBinomial, Normal
-    from jaxstanv5.math import sigmoid
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import BetaBinomial, Normal
+    from bayeswire.math import sigmoid
 
     prior_loc = 0.0
     prior_scale = 1.0
@@ -379,9 +379,9 @@ def beta_binomial_logistic_fixture() -> BetaBinomialLogisticFixture:
 
 def beta_logistic_fixture() -> BetaLogisticFixture:
     """Return a scalar logistic Beta fixture for grid validation."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import Beta, Normal
-    from jaxstanv5.math import sigmoid
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import Beta, Normal
+    from bayeswire.math import sigmoid
 
     prior_loc = 0.0
     prior_scale = 1.0
@@ -411,9 +411,9 @@ def beta_logistic_fixture() -> BetaLogisticFixture:
 
 def negative_binomial_log_rate_fixture() -> NegativeBinomialLogRateFixture:
     """Return a scalar log-rate Negative-binomial fixture for grid validation."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import NegativeBinomial, Normal
-    from jaxstanv5.math import exp
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import NegativeBinomial, Normal
+    from bayeswire.math import exp
 
     prior_loc = 0.0
     prior_scale = 1.0
@@ -440,9 +440,9 @@ def negative_binomial_log_rate_fixture() -> NegativeBinomialLogRateFixture:
 
 def robust_regression_fixture() -> RobustRegressionFixture:
     """Return a robust linear-regression smoke fixture."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, Normal, StudentT
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, Normal, StudentT
 
     @model
     class RobustLinearRegression:
@@ -471,10 +471,10 @@ def robust_regression_fixture() -> RobustRegressionFixture:
 
 def hierarchical_poisson_varying_slopes_fixture() -> HierarchicalPoissonFixture:
     """Return a hierarchical Poisson varying-slopes smoke fixture."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, Normal, Poisson
-    from jaxstanv5.math import exp
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, Normal, Poisson
+    from bayeswire.math import exp
 
     @model
     class HierarchicalPoissonVaryingSlopes:
@@ -522,10 +522,10 @@ def hierarchical_poisson_varying_slopes_fixture() -> HierarchicalPoissonFixture:
 
 def hierarchical_binomial_logistic_varying_slopes_fixture() -> HierarchicalBinomialFixture:
     """Return a hierarchical Binomial logistic varying-slopes smoke fixture."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Binomial, HalfNormal, Normal
-    from jaxstanv5.math import sigmoid
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Binomial, HalfNormal, Normal
+    from bayeswire.math import sigmoid
 
     @model
     class HierarchicalBinomialLogisticVaryingSlopes:
@@ -579,10 +579,10 @@ def hierarchical_beta_binomial_logistic_varying_slopes_fixture() -> Hierarchical
     """Return a hierarchical Beta-binomial logistic varying-slopes smoke fixture."""
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import BetaBinomial, HalfNormal, Normal
-    from jaxstanv5.math import exp, sigmoid
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import BetaBinomial, HalfNormal, Normal
+    from bayeswire.math import exp, sigmoid
 
     @model
     class HierarchicalBetaBinomialLogisticVaryingSlopes:
@@ -646,10 +646,10 @@ def hierarchical_beta_regression_logistic_varying_slopes_fixture() -> (
     """Return a hierarchical Beta-regression logistic varying-slopes smoke fixture."""
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Beta, HalfNormal, Normal
-    from jaxstanv5.math import exp, sigmoid
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Beta, HalfNormal, Normal
+    from bayeswire.math import exp, sigmoid
 
     @model
     class HierarchicalBetaRegressionLogisticVaryingSlopes:
@@ -707,10 +707,10 @@ def hierarchical_negative_binomial_log_rate_varying_slopes_fixture() -> (
     """Return a hierarchical Negative-binomial log-rate varying-slopes smoke fixture."""
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, NegativeBinomial, Normal
-    from jaxstanv5.math import exp
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, NegativeBinomial, Normal
+    from bayeswire.math import exp
 
     @model
     class HierarchicalNegativeBinomialLogRateVaryingSlopes:
@@ -764,8 +764,8 @@ def hierarchical_negative_binomial_log_rate_varying_slopes_fixture() -> (
 
 def multivariate_normal_likelihood_fixture() -> MultivariateNormalLikelihoodFixture:
     """Return a single-observation multivariate-normal likelihood fixture."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import MultivariateNormal, Normal
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
 
     @model
     class MultivariateNormalLikelihood:
@@ -792,8 +792,8 @@ def multivariate_normal_likelihood_fixture() -> MultivariateNormalLikelihoodFixt
 
 def partially_observed_mvn_fixture() -> PartiallyObservedMvnFixture:
     """Return a partially observed correlated MVN fixture."""
-    from jaxstanv5 import Data, PartiallyObserved, model
-    from jaxstanv5.distributions import MultivariateNormal
+    from bayeswire import Data, PartiallyObserved, model
+    from bayeswire.distributions import MultivariateNormal
 
     @model
     class PartiallyObservedMvn:
@@ -859,9 +859,9 @@ def partially_observed_mvn_fixture() -> PartiallyObservedMvnFixture:
 
 def ordinal_logistic_regression_fixture() -> OrdinalLogisticFixture:
     """Return an ordinal-logistic regression smoke fixture with zero-based categories."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Ordered
-    from jaxstanv5.distributions import Normal, OrderedLogistic
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Ordered
+    from bayeswire.distributions import Normal, OrderedLogistic
 
     @model
     class OrdinalLogisticRegression:
@@ -914,8 +914,8 @@ def fixed_kernel_gp_fixture(
     obs_sd: float = 0.2,
 ) -> FixedKernelGpFixture:
     """Return a fixed-kernel Gaussian-process regression fixture."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import MultivariateNormal, Normal
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
 
     @model
     class GaussianProcessRegression:
@@ -946,8 +946,8 @@ def fixed_kernel_gp_fixture(
 
 def non_centered_known_scale_fixture() -> NonCenteredKnownScaleFixture:
     """Return a known-scale non-centered hierarchy for analytic validation."""
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import Normal
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import Normal
 
     prior_loc = 0.0
     prior_scale = 2.0
@@ -985,8 +985,8 @@ def non_centered_known_scale_fixture() -> NonCenteredKnownScaleFixture:
 
 def student_t_location_fixture() -> StudentTLocationFixture:
     """Return a Student-t known-scale location model for grid validation."""
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.distributions import Normal, StudentT
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal, StudentT
 
     nu = 4.0
     prior_loc = 0.0

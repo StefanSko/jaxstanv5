@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Run projected fixed-kernel GP simulation-based calibration checks."""
 
@@ -93,8 +95,8 @@ def _projection_specs(n: int) -> tuple[ProjectionSpec, ...]:
 
 
 def _build_model() -> object:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import MultivariateNormal, Normal
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
 
     @model
     class FixedKernelGpSbcModel:

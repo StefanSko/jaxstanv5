@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Run SBC for the hierarchical Beta-binomial logistic varying-slopes model."""
 
@@ -69,10 +71,10 @@ def _add_repo_paths() -> None:
 
 
 def _build_model() -> object:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import BetaBinomial, HalfNormal, Normal
-    from jaxstanv5.math import exp, sigmoid
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import BetaBinomial, HalfNormal, Normal
+    from bayeswire.math import exp, sigmoid
 
     @model
     class HierarchicalBetaBinomialSbcModel:

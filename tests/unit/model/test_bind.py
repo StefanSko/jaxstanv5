@@ -5,10 +5,8 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import pytest
-
-from jaxstanv5._backends.jax.binding import _param_count, _resolve_param_shape
-from jaxstanv5.constraints import Interval, Positive, UnitInterval
-from jaxstanv5.distributions import (
+from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.distributions import (
     Beta,
     Binomial,
     HalfNormal,
@@ -17,20 +15,22 @@ from jaxstanv5.distributions import (
     OrderedLogistic,
     Uniform,
 )
-from jaxstanv5.ir import bindable_from_meta
-from jaxstanv5.model._data_schema import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
-from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import (
+from bayeswire.ir import bindable_from_meta
+from bayeswire.model import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
+from bayeswire.model.decorator import (
     ModelMeta,
     ResolvedData,
     ResolvedFreeValue,
     ResolvedObserved,
     ResolvedParam,
     ResolvedStochasticSite,
-    bind_model,
 )
-from jaxstanv5.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
-from jaxstanv5.model.expr import BinOp, DataRef, ParamRef, VectorScatterOp
+from bayeswire.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
+from bayeswire.model.expr import BinOp, DataRef, ParamRef, VectorScatterOp
+
+from jaxstanv5._backends.jax.binding import _param_count, _resolve_param_shape
+from jaxstanv5.model import bind_model
+from jaxstanv5.model.bound import BoundModel
 
 
 def make_meta() -> ModelMeta:

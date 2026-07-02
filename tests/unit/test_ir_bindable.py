@@ -6,13 +6,13 @@ from typing import cast
 
 import jax.numpy as jnp
 import pytest
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Normal, Truncated
+from bayeswire.ir import bindable_from_meta, meta_from_dict, meta_to_dict
+from bayeswire.model.decorator import ModelMeta
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal, Truncated
-from jaxstanv5.ir import bindable_from_meta, meta_from_dict, meta_to_dict
 from jaxstanv5.model import bind_model
-from jaxstanv5.model.decorator import ModelMeta
 
 
 def declared_meta() -> ModelMeta:

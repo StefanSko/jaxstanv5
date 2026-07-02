@@ -9,11 +9,11 @@ from typing import NamedTuple, Protocol, cast
 import blackjax
 import jax
 import jax.numpy as jnp
+from bayeswire.model.decorator import ModelMeta, resolved_free_values
 
 from jaxstanv5._backends.jax.constraints import inverse_transform
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import ModelMeta, resolved_free_values
 
 
 class NutsDiagnosticTrace(NamedTuple):
