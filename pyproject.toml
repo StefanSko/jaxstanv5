@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     # The language and the backend move in lockstep: exact-commit pin, bumped
     # deliberately (the pin-bump diff is the compatibility review).
-    "bayeswire @ git+https://github.com/StefanSko/bayeswire.git@827a74b09fd19e1bfcc58e5418b74088958145aa",
+    "bayeswire @ git+https://github.com/StefanSko/bayeswire.git@15cdc51e3e09bed56838248f9b3becd2bbaf8423",
     "jax>=0.6.0",
     "blackjax>=1.2.0",
 ]
