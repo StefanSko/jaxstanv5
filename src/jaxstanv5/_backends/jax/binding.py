@@ -19,7 +19,7 @@ from jaxstanv5._backends.jax.distributions import (
     is_sampleable,
     validate_scale_tril,
 )
-from jaxstanv5.constraints import Positive
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
 from jaxstanv5.distributions.counts import (
     Bernoulli,
@@ -517,7 +517,12 @@ def _is_positive_scalar_expr(
 
     if isinstance(value, ParamRef):
         free_value = free_values.get(value.name)
-        return free_value is not None and isinstance(free_value.constraint, Positive)
+        if free_value is None:
+            return False
+        constraint = free_value.constraint
+        return isinstance(constraint, Positive | UnitInterval) or (
+            isinstance(constraint, Interval) and constraint.lower >= 0.0
+        )
     if isinstance(value, UnaryOp):
         return value.function in {"exp", "sigmoid"}
     if isinstance(value, BinOp):

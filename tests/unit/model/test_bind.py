@@ -9,13 +9,15 @@ import jax.numpy as jnp
 import pytest
 
 from jaxstanv5._backends.jax.binding import _param_count, _resolve_param_shape
-from jaxstanv5.constraints import Positive
+from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.distributions import (
+    Beta,
     Binomial,
     HalfNormal,
     MultivariateNormal,
     Normal,
     OrderedLogistic,
+    Uniform,
 )
 from jaxstanv5.model._data_schema import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
 from jaxstanv5.model.bound import BoundModel
@@ -392,6 +394,47 @@ def test_bind_accepts_mvn_scale_tril_data_times_positive_scalar_parameter() -> N
         free_values={"sigma": ResolvedFreeValue(constraint=Positive(), size=None)},
         stochastic_sites=(
             ResolvedStochasticSite("sigma", HalfNormal(1.0), ParamRef("sigma")),
+            ResolvedStochasticSite("y", dist, DataRef("y")),
+        ),
+    )
+
+    bound = bind_meta(meta, chol=jnp.eye(2), y=jnp.zeros((2,)))
+
+    assert bound.n_params == 1
+
+
+def test_bind_accepts_mvn_scale_tril_data_times_unit_interval_parameter() -> None:
+    scale_tril = BinOp("*", DataRef("chol"), ParamRef("rho"))
+    dist = MultivariateNormal(jnp.zeros((2,)), scale_tril)
+    meta = ModelMeta(
+        params={"rho": ResolvedParam(Beta(2.0, 2.0), constraint=UnitInterval(), size=None)},
+        data={"chol": ResolvedData(ResolvedDataRankSchema(2))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        free_values={"rho": ResolvedFreeValue(constraint=UnitInterval(), size=None)},
+        stochastic_sites=(
+            ResolvedStochasticSite("rho", Beta(2.0, 2.0), ParamRef("rho")),
+            ResolvedStochasticSite("y", dist, DataRef("y")),
+        ),
+    )
+
+    bound = bind_meta(meta, chol=jnp.eye(2), y=jnp.zeros((2,)))
+
+    assert bound.n_params == 1
+
+
+def test_bind_accepts_mvn_scale_tril_data_divided_by_positive_interval_parameter() -> None:
+    scale_tril = BinOp("/", DataRef("chol"), ParamRef("scale"))
+    dist = MultivariateNormal(jnp.zeros((2,)), scale_tril)
+    constraint = Interval(1.0, 2.0)
+    meta = ModelMeta(
+        params={"scale": ResolvedParam(Uniform(1.0, 2.0), constraint=constraint, size=None)},
+        data={"chol": ResolvedData(ResolvedDataRankSchema(2))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        free_values={"scale": ResolvedFreeValue(constraint=constraint, size=None)},
+        stochastic_sites=(
+            ResolvedStochasticSite("scale", Uniform(1.0, 2.0), ParamRef("scale")),
             ResolvedStochasticSite("y", dist, DataRef("y")),
         ),
     )
