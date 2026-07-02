@@ -3,8 +3,11 @@
 Status: proposal. This document sequences the extraction of the authoring/IR
 frontend out of `jaxstanv5` into a new repository, **`bayeswire`**, and the
 follow-through in `bayescycle`, `bayesite`, and CI. Each phase is independently
-shippable and ends with a validation gate; no phase requires a cross-repo flag
-day.
+shippable within its repo and ends with a validation gate. Because the wire
+envelope is renamed with no dual-key window, the *toolchain as a whole* is
+end-to-end broken between Phase 2 (bayeswire emits `bayeswire_ir`) and Phase 5
+(bayesite accepts it) — acceptable greenfield, so run Phases 2–5 as one
+sequenced burst rather than letting the window linger.
 
 ## End state
 
@@ -30,19 +33,25 @@ Dependency direction is one-way: `jaxstanv5 -> bayeswire`, never the reverse.
 `bayescycle -> bayeswire` (hard) and `bayescycle -> jaxstanv5` (optional).
 `bayesite` has no package dependency on anything; it vendors files.
 
-Two decisions fixed up front:
+Three decisions fixed up front:
 
-- **Package name is neutral (`bayeswire`); the wire envelope is not renamed.**
-  The v1 envelope stays `{"jaxstanv5_ir": 1, "model": ...}`. Bayesite's
-  `AGENTS.md` is explicit: *"Do not rename the v1 wire envelope casually. A
-  neutral or Bayesite-branded envelope is a deliberate v2 format decision."*
-  A `bayeswire_ir` envelope key is a v2 decision taken after this migration,
-  not during it.
-- **bayeswire is the spec home.** `docs/ir-format-v1.md`, `docs/ir-v1-tags.md`,
-  the dimension-sidecar format, and `tests/golden_ir/` move there. This
+- **This is a greenfield migration.** There are no external users. No
+  deprecation warnings, no re-export shims, no transitional releases, no
+  wire-format back-compat. Moved code is deleted at the source in the same
+  change that lands it at the destination; consumers update in lockstep PRs.
+  The discipline below (spec changelog, conformance CI, pinned tags) exists to
+  protect the *new* baseline going forward, not to preserve the old one.
+- **The wire envelope is renamed to `{"bayeswire_ir": 1, "model": ...}`.**
+  Bayesite's `AGENTS.md` says the envelope must not be renamed *casually* and
+  that a neutral envelope is a deliberate format decision — this migration is
+  that deliberate decision, recorded in the bayeswire spec changelog and in
+  bayesite's `AGENTS.md` (Phase 5). The `jaxstanv5_ir` key, its spec docs, and
+  all fixtures carrying it are deleted, not maintained alongside.
+- **bayeswire is the spec home.** The IR format doc, tag registry doc, the
+  dimension-sidecar format, and the golden fixture corpus live there. This
   resolves the current spec fork (the jaxstanv5 and bayesite copies of
-  `ir-format-v1.md` have already diverged textually) by making every other
-  copy a generated, hash-checked vendored file.
+  `ir-format-v1.md` have already diverged textually) by deleting both copies
+  and making every downstream copy a generated, hash-checked vendored file.
 
 ## Governing principles
 
@@ -72,9 +81,11 @@ invariant from a test to a package boundary.
 decoding executes no producer code; node tags and field lists are the wire
 contract, not producer class names; entry-array order is semantic; consumers
 hash received canonical bytes and never reserialize to hash; unknown non-core
-tags fail explicitly. The seed-compatibility section pins a jaxstanv5 commit
-and the envelope key — Phase 5 updates that section to pin a bayeswire release
-tag instead.
+tags fail explicitly. All of these survive the envelope rename untouched — the
+rename changes two envelope strings, not the node encoding. The
+seed-compatibility section currently pins a jaxstanv5 commit and the old
+envelope key; Phase 5 rewrites it to pin a bayeswire release tag and the
+`bayeswire_ir` envelope.
 
 **bayescycle `AGENTS.md` / `docs/invariants.md`.** bayescycle is a harness: it
 must not invent model semantics, contain distribution math, or interpret
@@ -140,21 +151,22 @@ extraction commit is a file move, not a redesign.
    `resolved_stochastic_sites(meta)`) to the frontend surface and migrate the
    backend callers. Per rust-style-python: typed return values, no incidental
    attribute access.
-3. **Flip `bind` ownership.** `@model` currently attaches a `.bind`
-   classmethod whose body lazily imports the JAX backend, and `ir.py` imports
-   `_make_bind` — the frontend reaching into the backend. Replace with:
-   `bind_model(model_cls, values)` (already public, backend-owned) is the
-   supported path; the attached `.bind` delegates to it and is documented as
-   deprecated; `bindable_from_meta` stops attaching any bind and returns pure
-   metadata classes. This is an explicit state transition owned by the layer
-   that performs it — the phase-boundary rule from both AGENTS.md files.
+3. **Flip `bind` ownership by deletion.** `@model` currently attaches a
+   `.bind` classmethod whose body lazily imports the JAX backend, and `ir.py`
+   imports `_make_bind` — the frontend reaching into the backend. Delete the
+   attached `.bind` and `_make_bind` outright: `bind_model(model_cls, values)`
+   (already public, backend-owned) becomes the only binding path, and
+   `bindable_from_meta` returns pure metadata classes. Update every test and
+   doc that calls `.bind(...)` in the same change. This is an explicit state
+   transition owned by the layer that performs it — the phase-boundary rule
+   from both AGENTS.md files — with no transitional alias.
 4. **Delete the `_jax_enable_x64_loaded` sniff** in `decorator.py`
    (declaration-time validation that peeks at `sys.modules["jax"]`).
    Declaration semantics must not depend on import order; in a frontend
    package with no JAX this check is unimplementable, so resolve it now:
    validate Uniform bounds with pure-Python float comparison only.
-5. Regenerate golden fixtures if (and only if) step 3 changes serialized
-   bytes; it should not — `bind` is not part of `ModelMeta`.
+5. Golden fixture bytes are unchanged by this phase — `bind` is not part of
+   `ModelMeta`. The envelope rename happens in Phase 2, not here.
 
 Gate: `ruff format --check`, `ruff check`, `ty check`, full pytest; golden
 fixture bytes unchanged; the expanded import-boundary test green.
@@ -175,33 +187,41 @@ fixture bytes unchanged; the expanded import-boundary test green.
    and imports nothing outside the standard library."* Invalid states the
    identity makes unrepresentable: a JAX import anywhere is a bug by
    definition, enforced by a repo-level test that walks every module.
-3. **Reconcile the spec fork as the first content commit.** Merge bayesite's
-   stricter envelope rules (envelope fields appear exactly once; fields
-   outside `jaxstanv5_ir`/`model` are malformed) with jaxstanv5's
+3. **Write the spec fresh as `bayeswire_ir` v1, first content commit.** Merge
+   bayesite's stricter envelope rules (envelope fields appear exactly once;
+   fields outside the envelope keys are malformed) with jaxstanv5's
    producer-side caveats into one normative `spec/ir-format-v1.md` +
-   `spec/ir-v1-tags.md` + `spec/dimension-sidecar-v1.md`. Record the merge as
-   a spec changelog entry, since bayesite treats these rules as wire contract.
-4. Move `tests/golden_ir/` fixtures in as `corpus/`. Keep the committed
-   logp/grad reference values, explicitly labeled as JAX-oracle outputs
-   (bayesite's correctness contract already treats them this way).
+   `spec/ir-v1-tags.md` + `spec/dimension-sidecar-v1.md`, all written against
+   the `{"bayeswire_ir": 1, "model": ...}` envelope. The old `jaxstanv5_ir`
+   docs are inputs to this rewrite, then deleted at their sources; nothing
+   documents the old key.
+4. **Regenerate the corpus under the new envelope.** Port the reference models
+   from `tests/golden_ir/`, re-serialize with the new envelope, and commit the
+   result as `corpus/` — the new baseline. Sanity check once during the port:
+   old and new fixture bytes must differ *only* in the envelope key
+   (structural diff), proving the rename smuggled in no encoding change. The
+   old fixtures are then deleted, not archived. Keep the committed logp/grad
+   reference values, explicitly labeled as JAX-oracle outputs (bayesite's
+   correctness contract already treats them this way).
 5. Add the conformance runner skeleton (see CI section): `produce` (reference
    models -> canonical bytes -> compare against corpus) is implementable
    immediately inside bayeswire; `consume` hooks are wired in Phases 3 and 5.
 6. Tag `bayeswire v0.1.0` once its own gate (`ruff`/`ty`/`pytest` + no-JAX
    walk + produce-conformance) is green.
 
-Gate: bayeswire CI green; canonical bytes of every corpus fixture identical to
-the pre-move jaxstanv5 golden bytes.
+Gate: bayeswire CI green; the one-time structural diff against the old
+fixtures shows the envelope key as the only delta.
 
 ## Phase 3 — jaxstanv5 consumes bayeswire
 
 1. Add `bayeswire` as a pinned dependency (exact version, not a range — the
    backend and the language must move in lockstep until the spec stabilizes).
-2. Delete the moved modules; replace the old import paths with **re-export
-   shims** (`jaxstanv5.model` re-exports `bayeswire.model`, etc.), each
-   emitting `DeprecationWarning`. One release of shims, no more — shims are a
-   migration device, not an API (rust-style-python: no convenience wrappers
-   that duplicate the happy path).
+2. **Delete the moved modules and rewrite every import in the same change.**
+   No re-export shims, no `DeprecationWarning`s: `from jaxstanv5.model import
+   Param` becomes `from bayeswire.model import Param` across src, tests,
+   scripts, and docs in one commit. rust-style-python's rule against
+   convenience wrappers duplicating the happy path applies with no external
+   users to soften it for — a shim would be pure liability.
 3. jaxstanv5's public story shrinks to its AGENTS.md identity: bind data,
    compile log densities, transforms/Jacobians, NUTS via BlackJAX, essential
    diagnostics, simulation, InferenceData schema. `bind_model` and
@@ -248,22 +268,29 @@ once: `check_poisson_stan_posterior_reference`,
 
 Gate: bayescycle validation loop green with `bayeswire` only (no JAX
 installed) for the bayesite-backend test subset; full loop green with
-`[inproc]`; one end-to-end walkthrough regenerated without shims or staging
-workarounds.
+`[inproc]`; one end-to-end walkthrough regenerated without engine wrappers or
+staging workarounds.
 
 ## Phase 5 — bayesite alignment
 
-1. Replace bayesite's `docs/ir-format-v1.md` / `docs/ir-v1-tags.md` with
+1. **Update the decoder envelope check** in `crates/core/src/ir.rs` from
+   `jaxstanv5_ir` to `bayeswire_ir` (two strings: the version-key lookup and
+   its error message). No other decoder change — tags, field lists, and
+   entry-array semantics are untouched by the rename. Old-envelope documents
+   fail with the standard unsupported-version error; there is no dual-key
+   acceptance window, because nothing produces the old key anymore.
+2. Replace bayesite's `docs/ir-format-v1.md` / `docs/ir-v1-tags.md` with
    vendored copies generated from the bayeswire spec at a pinned release tag,
    plus a CI check that the vendored bytes hash-match that tag (bayesite
    stays zero-dependency and offline-capable: files, not package management).
-2. Re-vendor `tests/golden_ir/fixtures/` from the bayeswire corpus, same
-   hash-check. Decoder/evaluator behavior is unchanged — Phase 2 guaranteed
-   byte-identical fixtures.
-3. Update the `AGENTS.md` seed-compatibility section: compatible IR source
-   becomes `bayeswire <tag>` instead of `jaxstanv5 main @ <commit>`. The
-   envelope key statement stays exactly as written.
-4. The optional oracle path (`check_validation_ladder.py --posterior
+3. Re-vendor `tests/golden_ir/fixtures/` from the regenerated bayeswire
+   corpus, same hash-check.
+4. Rewrite the `AGENTS.md` seed-compatibility section: compatible IR source
+   becomes `bayeswire <tag>`; current wire envelope becomes
+   `{"bayeswire_ir": 1, "model": ...}`; and the envelope-rename caution is
+   updated to record that the rename *was* the deliberate format decision the
+   old wording reserved, with a pointer to the bayeswire spec changelog entry.
+5. The optional oracle path (`check_validation_ladder.py --posterior
    --jaxstanv5-path ...`) keeps pointing at a jaxstanv5 checkout — the oracle
    is the backend, not the language — but the fixtures it compares against
    come from the shared corpus.
@@ -274,9 +301,14 @@ failure, per bayesite invariants).
 
 ## Phase 6 — Cleanup
 
-1. Remove the jaxstanv5 re-export shims (one release after Phase 3); remove
-   the deprecated `.bind` classmethod or reduce it to a one-line delegate with
-   no independent behavior.
+Most deletion already happened inside Phases 2–5 (greenfield: nothing is
+deprecated, everything is removed at the moment of replacement). What remains
+is the sweep for stragglers:
+
+1. Grep all four repos for `jaxstanv5_ir`, `_make_bind`, `.bind(`, and the old
+   import paths; every hit is either deleted or a historical reference in a
+   changelog. The old envelope key must not appear outside the bayeswire spec
+   changelog entry that records its removal.
 2. Delete jaxstanv5's copies of the spec docs; its `docs/` keeps only
    backend-owned documents (inferencedata compatibility, distribution
    coverage, invariants).
@@ -339,33 +371,37 @@ in bayeswire, plus hash checks in consumers:
 - purpose: early warning that a pending spec change breaks a consumer,
   *before* a tag is cut; a red nightly here blocks tagging, not merging
 - also greps consumers for normative spec prose (`"wire contract"`,
-  `"jaxstanv5_ir"` outside vendored files) to enforce the Phase 6 audit
+  the retired `"jaxstanv5_ir"` key anywhere) to enforce the Phase 6 audit
 
 Version discipline: consumers pin bayeswire by exact tag; bumping the pin is a
 PR whose diff *is* the compatibility review. The spec carries its own version
-(`jaxstanv5_ir` stays 1 throughout); package versions move freely underneath
-it as long as produce-conformance bytes are stable. Any change to canonical
+(`bayeswire_ir` starts and stays at 1 until a real format change); package
+versions move freely underneath it as long as produce-conformance bytes are
+stable. Any change to canonical
 bytes, tags, or field lists requires a spec changelog entry, regenerated
 corpus, and a coordinated consumer-pin bump — exactly the "golden-file diffs
 plus an IR version decision" rule both repos already state.
 
 ## Rollback
 
-Phases 1 and 2 are additive and independently revertible. Phase 3 is the
-commitment point; its rollback is "repoint jaxstanv5 imports at the shims'
-targets and restore the moved files from the bayeswire repo", which stays
-cheap exactly as long as the Phase 1 boundary tests keep the code split-clean.
-After Phase 5, rollback is a consumer-pin revert, never a code revert.
+Greenfield simplifies this to git: Phases 1 and 2 are additive and
+independently revertible; Phases 3–5 are ordinary commits in repos with no
+external users, so rollback is `git revert` of the lockstep PRs, coordinated
+in the reverse order they landed. No compatibility window needs managing in
+either direction. After the first post-migration bayeswire tag is consumed
+everywhere, rollback stops being meaningful — fix forward.
 
 ## Definition of done
 
 - [ ] bayeswire tagged; produce-conformance green; no-JAX walk green
-- [ ] jaxstanv5 depends on pinned bayeswire; shims removed after one release
+- [ ] jaxstanv5 depends on pinned bayeswire; old import paths, `.bind`, and
+      `_make_bind` deleted — no shims ever existed
 - [ ] bayescycle default path installs no JAX; no-JAX CI job green with a
       release bayesite binary
 - [ ] bayesite vendors spec + fixtures from a bayeswire tag with hash checks;
       seed-compat section updated; validation ladder green
 - [ ] exactly one normative copy of the wire spec exists, in bayeswire
 - [ ] golden artifact corpus committed; bayesite_idata tests consume it
-- [ ] envelope key still `jaxstanv5_ir: 1`; any rename deferred to an explicit
-      v2 spec decision
+- [ ] envelope is `bayeswire_ir: 1` everywhere; the retired `jaxstanv5_ir`
+      key appears nowhere but the bayeswire spec changelog entry recording
+      its removal
