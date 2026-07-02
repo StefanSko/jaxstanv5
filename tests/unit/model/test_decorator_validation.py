@@ -266,7 +266,7 @@ def test_private_model_declaration_resolution_requires_matching_truncated_bounds
     class MismatchedTruncatedNormal:
         sigma = Param(Truncated(Normal(0.0, 1.0), lower=-1.0), constraint=Positive())
 
-    with pytest.raises(TypeError, match="bounds must match"):
+    with pytest.raises(TypeError, match="effective support"):
         _resolve_model_declaration(MismatchedTruncatedNormal)
 
 
@@ -287,6 +287,21 @@ def test_private_model_declaration_resolution_rejects_truncated_discrete_prior()
 
     with pytest.raises(TypeError, match="Discrete distributions cannot be used as Param priors"):
         _resolve_model_declaration(TruncatedDiscrete)
+
+
+def test_private_model_declaration_resolution_validates_truncated_effective_support() -> None:
+    class MismatchedSupport:
+        theta = Param(Truncated(Uniform(0.0, 1.0), lower=0.0), constraint=Positive())
+
+    with pytest.raises(TypeError, match="effective support"):
+        _resolve_model_declaration(MismatchedSupport)
+
+    class MatchedSupport:
+        theta = Param(Truncated(Uniform(0.0, 1.0), lower=0.0), constraint=UnitInterval())
+
+    meta = _resolve_model_declaration(MatchedSupport)
+
+    assert tuple(meta.params) == ("theta",)
 
 
 def test_private_model_declaration_resolution_requires_unit_interval_for_beta_prior() -> None:

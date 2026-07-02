@@ -348,32 +348,18 @@ def _validate_truncated_param_prior_constraint(
             f"{type(distribution.base).__name__} has no supported CDF/ICDF backend"
         )
 
-    bounds = _concrete_truncated_bounds(distribution)
-    if bounds is None:
+    support = _truncated_effective_support(distribution)
+    if support is None:
         raise TypeError(
-            f"Parameter {name!r} Truncated prior uses symbolic bounds; constrained Param "
-            "priors require concrete truncation bounds that match the declared constraint"
+            f"Parameter {name!r} Truncated prior uses symbolic or unknown bounds; "
+            "constrained Param priors require concrete effective support that matches "
+            "the declared constraint"
         )
-    lower, upper = bounds
-    if (
-        upper is None
-        and lower is not None
-        and _same_scalar_bound(lower, 0.0)
-        and isinstance(constraint, Positive)
-    ):
-        return
-    if (
-        lower is not None
-        and upper is not None
-        and _constraint_matches_uniform_support(
-            constraint,
-            low=lower,
-            high=upper,
-        )
-    ):
+    lower, upper = support
+    if _constraint_matches_truncated_support(constraint, lower=lower, upper=upper):
         return
     raise TypeError(
-        f"Parameter {name!r} Truncated prior bounds must match its constraint; "
+        f"Parameter {name!r} Truncated prior effective support must match its constraint; "
         "use Positive() for lower=0 or Interval(lower, upper)/UnitInterval() for finite bounds"
     )
 
@@ -385,6 +371,67 @@ def _truncated_base_has_cdf(distribution: Distribution) -> bool:
     if isinstance(distribution, Truncated):
         return _truncated_base_has_cdf(distribution.base)
     return isinstance(distribution, InverseCdfDistribution)
+
+
+def _truncated_effective_support(
+    distribution: Truncated,
+) -> tuple[float | None, float | None] | None:
+    """Return concrete support after intersecting base support with truncation bounds."""
+    base_support = _known_distribution_support(distribution.base)
+    truncation_bounds = _concrete_truncated_bounds(distribution)
+    if base_support is None or truncation_bounds is None:
+        return None
+    base_lower, base_upper = base_support
+    truncation_lower, truncation_upper = truncation_bounds
+    lower = _max_optional_bound(base_lower, truncation_lower)
+    upper = _min_optional_bound(base_upper, truncation_upper)
+    if lower is not None and upper is not None and lower >= upper:
+        return None
+    return (lower, upper)
+
+
+def _known_distribution_support(
+    distribution: Distribution,
+) -> tuple[float | None, float | None] | None:
+    """Return concrete scalar support for built-in distributions, or None if unknown."""
+    if isinstance(distribution, Normal):
+        return (None, None)
+    if isinstance(distribution, HalfNormal | Exponential):
+        return (0.0, None)
+    if isinstance(distribution, Uniform):
+        return _concrete_uniform_bounds(distribution)
+    if isinstance(distribution, Truncated):
+        return _truncated_effective_support(distribution)
+    return None
+
+
+def _max_optional_bound(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
+
+
+def _min_optional_bound(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return min(left, right)
+
+
+def _constraint_matches_truncated_support(
+    constraint: Constraint | None,
+    *,
+    lower: float | None,
+    upper: float | None,
+) -> bool:
+    if upper is None and lower is not None and _same_scalar_bound(lower, 0.0):
+        return isinstance(constraint, Positive)
+    if lower is not None and upper is not None:
+        return _constraint_matches_uniform_support(constraint, low=lower, high=upper)
+    return False
 
 
 def _concrete_truncated_bounds(distribution: Truncated) -> tuple[float | None, float | None] | None:

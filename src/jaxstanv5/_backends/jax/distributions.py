@@ -8,7 +8,7 @@ from typing import Protocol, cast, runtime_checkable
 import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import solve_triangular
-from jax.scipy.special import gammaln, ndtr, ndtri, xlogy
+from jax.scipy.special import gammaln, log_ndtr, ndtr, ndtri, xlogy
 
 from jaxstanv5.distributions.continuous import (
     Beta,
@@ -327,6 +327,52 @@ def _truncated_value_in_bounds(distribution: Truncated, value: jax.Array) -> jax
     return above_lower & below_upper
 
 
+def _log_sub_exp(log_left: jax.Array, log_right: jax.Array) -> jax.Array:
+    """Return log(exp(log_left) - exp(log_right)) for log_left >= log_right."""
+    ratio = jnp.exp(log_right - log_left)
+    safe_ratio = jnp.minimum(ratio, 1.0)
+    return log_left + jnp.log1p(-safe_ratio)
+
+
+def _normal_log_interval_probability(
+    distribution: Normal,
+    lower: jax.Array | None,
+    upper: jax.Array | None,
+) -> tuple[jax.Array, jax.Array]:
+    """Return stable log probability that a Normal lies in the truncation interval."""
+    loc, scale = _normal_loc_scale(distribution)
+    valid_scale = scale > 0.0
+    safe_scale = jnp.where(valid_scale, scale, 1.0)
+
+    if lower is None:
+        if upper is None:
+            return jnp.zeros_like(loc + safe_scale), valid_scale
+        z_upper = (upper - loc) / safe_scale
+        return log_ndtr(z_upper), valid_scale
+    z_lower = (lower - loc) / safe_scale
+    if upper is None:
+        return log_ndtr(-z_lower), valid_scale
+
+    z_upper = (upper - loc) / safe_scale
+    valid_bounds = (upper > lower) & valid_scale
+    log_cdf_difference = _log_sub_exp(log_ndtr(z_upper), log_ndtr(z_lower))
+    log_survival_difference = _log_sub_exp(log_ndtr(-z_lower), log_ndtr(-z_upper))
+    log_probability = jnp.where(z_lower > 0.0, log_survival_difference, log_cdf_difference)
+    return log_probability, valid_bounds
+
+
+def _truncated_log_normalizer(distribution: Truncated) -> tuple[jax.Array, jax.Array]:
+    lower, upper = _truncated_bounds(distribution)
+    if isinstance(distribution.base, Normal):
+        return _normal_log_interval_probability(distribution.base, lower, upper)
+
+    lower_probability, upper_probability = _truncated_probability_bounds(distribution)
+    normalizer = upper_probability - lower_probability
+    valid_normalizer = normalizer > 0.0
+    safe_normalizer = jnp.where(valid_normalizer, normalizer, 1.0)
+    return jnp.log(safe_normalizer), valid_normalizer
+
+
 def log_prob(distribution: Distribution, x: DistributionValue) -> jax.Array:
     """Return element-wise/event-wise log probability with the JAX backend."""
     if isinstance(distribution, Normal):
@@ -390,11 +436,9 @@ def log_prob(distribution: Distribution, x: DistributionValue) -> jax.Array:
     if isinstance(distribution, Truncated):
         _validate_scalar_event_truncated(distribution)
         value = jnp.asarray(x)
-        lower_probability, upper_probability = _truncated_probability_bounds(distribution)
-        normalizer = upper_probability - lower_probability
-        valid_normalizer = normalizer > 0.0
-        safe_normalizer = jnp.where(valid_normalizer, normalizer, 1.0)
-        truncated_log_density = log_prob(distribution.base, value) - jnp.log(safe_normalizer)
+        log_normalizer, valid_normalizer = _truncated_log_normalizer(distribution)
+        safe_log_normalizer = jnp.where(valid_normalizer, log_normalizer, 0.0)
+        truncated_log_density = log_prob(distribution.base, value) - safe_log_normalizer
         support = _truncated_value_in_bounds(distribution, value) & valid_normalizer
         return jnp.where(support, truncated_log_density, -jnp.inf)
     if isinstance(distribution, Bernoulli):

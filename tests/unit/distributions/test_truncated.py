@@ -6,7 +6,7 @@ import math
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import ndtr
+from jax.scipy.special import log_ndtr, ndtr
 
 from jaxstanv5._backends.jax.distributions import cdf, icdf, log_prob
 from jaxstanv5._backends.jax.distributions import sample as distribution_sample
@@ -22,6 +22,18 @@ def test_truncated_normal_log_prob_includes_normalizer() -> None:
     base = -0.5 * ((value - 1.0) / 2.0) ** 2 - math.log(2.0) - 0.5 * math.log(2.0 * math.pi)
     expected = base - jnp.log(ndtr(0.5))
     assert jnp.allclose(actual, expected, atol=1e-6)
+
+
+def test_truncated_normal_log_prob_is_stable_in_upper_tail() -> None:
+    dist = Truncated(Normal(0.0, 1.0), lower=10.0)
+    value = jnp.asarray(10.5)
+
+    actual = log_prob(dist, value)
+
+    base = -0.5 * value**2 - 0.5 * math.log(2.0 * math.pi)
+    expected = base - log_ndtr(jnp.asarray(-10.0))
+    assert jnp.isfinite(actual)
+    assert jnp.allclose(actual, expected, atol=1e-5)
 
 
 def test_truncated_normal_log_prob_rejects_values_outside_bounds() -> None:
