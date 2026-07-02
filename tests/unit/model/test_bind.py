@@ -9,7 +9,14 @@ import jax.numpy as jnp
 import pytest
 
 from jaxstanv5._backends.jax.binding import _param_count, _resolve_param_shape
-from jaxstanv5.distributions import Binomial, MultivariateNormal, Normal, OrderedLogistic
+from jaxstanv5.constraints import Positive
+from jaxstanv5.distributions import (
+    Binomial,
+    HalfNormal,
+    MultivariateNormal,
+    Normal,
+    OrderedLogistic,
+)
 from jaxstanv5.model._data_schema import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import (
@@ -22,7 +29,7 @@ from jaxstanv5.model.decorator import (
     _make_bind,
 )
 from jaxstanv5.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
-from jaxstanv5.model.expr import DataRef, ParamRef, VectorScatterOp
+from jaxstanv5.model.expr import BinOp, DataRef, ParamRef, VectorScatterOp
 
 
 class BindFn(Protocol):
@@ -372,6 +379,64 @@ def test_bind_rejects_non_positive_mvn_scale_tril_diagonal_data() -> None:
             chol=jnp.asarray([[1.0, 0.0], [0.0, -1.0]]),
             y=jnp.zeros((2,)),
         )
+
+
+def test_bind_accepts_mvn_scale_tril_data_times_positive_scalar_parameter() -> None:
+    scale_tril = BinOp("*", DataRef("chol"), ParamRef("sigma"))
+    dist = MultivariateNormal(jnp.zeros((2,)), scale_tril)
+    meta = ModelMeta(
+        params={"sigma": ResolvedParam(HalfNormal(1.0), constraint=Positive(), size=None)},
+        data={"chol": ResolvedData(ResolvedDataRankSchema(2))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        free_values={"sigma": ResolvedFreeValue(constraint=Positive(), size=None)},
+        stochastic_sites=(
+            ResolvedStochasticSite("sigma", HalfNormal(1.0), ParamRef("sigma")),
+            ResolvedStochasticSite("y", dist, DataRef("y")),
+        ),
+    )
+
+    bound = bind_meta(meta, chol=jnp.eye(2), y=jnp.zeros((2,)))
+
+    assert bound.n_params == 1
+
+
+def test_bind_rejects_mvn_scale_tril_data_plus_parameter() -> None:
+    scale_tril = BinOp("+", DataRef("chol"), ParamRef("alpha"))
+    dist = MultivariateNormal(jnp.zeros((2,)), scale_tril)
+    meta = ModelMeta(
+        params={"alpha": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=None)},
+        data={"chol": ResolvedData(ResolvedDataRankSchema(2))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        free_values={"alpha": ResolvedFreeValue(constraint=None, size=None)},
+        stochastic_sites=(
+            ResolvedStochasticSite("alpha", Normal(0.0, 1.0), ParamRef("alpha")),
+            ResolvedStochasticSite("y", dist, DataRef("y")),
+        ),
+    )
+
+    with pytest.raises(TypeError, match="MultivariateNormal scale_tril"):
+        bind_meta(meta, chol=jnp.eye(2), y=jnp.zeros((2,)))
+
+
+def test_bind_rejects_mvn_scale_tril_data_times_unconstrained_parameter() -> None:
+    scale_tril = BinOp("*", DataRef("chol"), ParamRef("alpha"))
+    dist = MultivariateNormal(jnp.zeros((2,)), scale_tril)
+    meta = ModelMeta(
+        params={"alpha": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=None)},
+        data={"chol": ResolvedData(ResolvedDataRankSchema(2))},
+        observed_nodes=(ResolvedObserved("y", dist),),
+        expressions={},
+        free_values={"alpha": ResolvedFreeValue(constraint=None, size=None)},
+        stochastic_sites=(
+            ResolvedStochasticSite("alpha", Normal(0.0, 1.0), ParamRef("alpha")),
+            ResolvedStochasticSite("y", dist, DataRef("y")),
+        ),
+    )
+
+    with pytest.raises(TypeError, match="positive scalar"):
+        bind_meta(meta, chol=jnp.eye(2), y=jnp.zeros((2,)))
 
 
 def test_resolve_param_shape_rejects_negative_literal_size() -> None:

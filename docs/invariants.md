@@ -115,6 +115,10 @@ Core invariants that should remain true as the codebase changes.
 - Discrete distributions are observed-likelihood distributions only; NUTS
   parameters are continuous and discrete latent `Param(...)` or
   `PartiallyObserved(...)` declarations are rejected.
+- `MultivariateNormal.scale_tril` must be a valid lower-triangular Cholesky factor
+  at bind time. Arbitrary parameter-dependent scale matrices are unsupported;
+  a validated Cholesky factor may be multiplied or divided by a provably positive
+  scalar expression.
 - Sampling returns constrained parameter values.
 - Public sampler count arguments (`num_chains`, `num_warmup`, and `num_samples`)
   must be at least 1 and are validated before backend execution.
