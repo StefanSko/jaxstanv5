@@ -122,6 +122,10 @@ Core invariants that should remain true as the codebase changes.
   including declared zero-sized free values.
 - `rhat(...)` and `ess(...)` omit zero-sized sample arrays because they have no
   scalar coordinates to reduce.
+- `rhat(...)` reports the maximum classic split-R-hat per non-empty parameter.
+- `ess(...)` reports the minimum split-chain Geyer effective sample size per
+  non-empty parameter.
+- Split-chain diagnostics require at least four post-warmup draws per chain.
 - NUTS diagnostics are recorded separately for warmup and post-warmup sampling.
 - Diagnostic arrays have shape `(num_chains, num_steps)`, where `num_steps` is
   `num_warmup` for warmup diagnostics and `num_samples` for sampling diagnostics.
