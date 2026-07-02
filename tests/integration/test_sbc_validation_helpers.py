@@ -45,7 +45,14 @@ def test_projected_sbc_rank_counts_projected_draws_below_projected_truth() -> No
 
 
 def test_summarize_projected_draws_uses_projection_name() -> None:
-    samples = {"f": jnp.asarray([[[0.0, 1.0], [1.0, 2.0]], [[2.0, 3.0], [3.0, 4.0]]])}
+    samples = {
+        "f": jnp.asarray(
+            [
+                [[0.0, 1.0], [1.0, 2.0], [0.0, 1.0], [1.0, 2.0]],
+                [[2.0, 3.0], [3.0, 4.0], [2.0, 3.0], [3.0, 4.0]],
+            ]
+        )
+    }
     projection = ProjectionSpec(name="f_first", parameter="f", weights=jnp.asarray([1.0, 0.0]))
 
     summary = summarize_projected_draws(samples, projection=projection)

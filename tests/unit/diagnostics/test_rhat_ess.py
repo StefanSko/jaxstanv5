@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from jaxstanv5.diagnostics.core import ess, rhat
 
@@ -49,6 +50,16 @@ def test_ess_two_chains() -> None:
     assert result["mu"] > 50  # ESS should be a decent fraction of total draws
 
 
+def test_ess_splits_chains_before_computing_efficiency() -> None:
+    """Split ESS is conservative for identical within-chain drift."""
+    n = 100
+    trend = jnp.linspace(-2.0, 2.0, n)
+    samples = {"theta": jnp.tile(trend, (4, 1))}
+
+    result = ess(samples)
+    assert result["theta"] < 8.0
+
+
 def test_ess_multi_param() -> None:
     """Multiple parameters all return ESS values."""
     key = jax.random.PRNGKey(3)
@@ -76,6 +87,15 @@ def test_rhat_and_ess_skip_zero_sized_parameters() -> None:
 
     assert set(rhat(samples)) == {"mu"}
     assert set(ess(samples)) == {"mu"}
+
+
+def test_rhat_and_ess_reject_too_few_draws() -> None:
+    samples = {"theta": jnp.ones((4, 3))}
+
+    with pytest.raises(ValueError, match="at least 4 post-warmup draws"):
+        rhat(samples)
+    with pytest.raises(ValueError, match="at least 4 post-warmup draws"):
+        ess(samples)
 
 
 def test_rhat_single_chain_splits_internally() -> None:
