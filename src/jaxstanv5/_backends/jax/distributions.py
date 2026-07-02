@@ -44,7 +44,11 @@ class PythonLogProbDistribution(Protocol):
 
 @runtime_checkable
 class PythonSampleableDistribution(PythonLogProbDistribution, Protocol):
-    """Compatibility protocol for Python-defined JAX sample providers."""
+    """Compatibility protocol for Python-defined JAX sample providers.
+
+    Must stay structurally aligned with the backend-neutral
+    ``SampleableDistribution`` capability protocol.
+    """
 
     def batch_shape(self) -> tuple[int, ...]:
         """Return broadcasted non-sample, non-event dimensions."""
@@ -66,7 +70,11 @@ class PythonSampleableDistribution(PythonLogProbDistribution, Protocol):
 
 @runtime_checkable
 class PythonInverseCdfDistribution(PythonSampleableDistribution, Protocol):
-    """Compatibility protocol for Python-defined JAX inverse-CDF providers."""
+    """Compatibility protocol for Python-defined JAX inverse-CDF providers.
+
+    Must stay structurally aligned with the backend-neutral
+    ``InverseCdfDistribution`` capability protocol.
+    """
 
     def cdf(self, x: DistributionValue) -> object:
         """Return cumulative probability."""
