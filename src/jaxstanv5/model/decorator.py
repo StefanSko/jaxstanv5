@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import struct
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import SupportsFloat, cast
+from typing import TYPE_CHECKING, SupportsFloat, cast
 
 from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import Constraint
@@ -60,6 +60,9 @@ from jaxstanv5.model.expr import (
 
 type ModelClass = type[object]
 type SymbolTable = dict[DeclarationSymbol, str]
+
+if TYPE_CHECKING:
+    from jaxstanv5.model.bound import BoundModel
 
 
 @dataclass(frozen=True)
@@ -467,6 +470,51 @@ def model(cls: ModelClass) -> ModelClass:
     setattr(cls, "_model_dimensions", dimensions)  # noqa: B010
     setattr(cls, "bind", classmethod(_make_bind(meta, dimensions=dimensions)))  # noqa: B010
     return cls
+
+
+def is_model_class(value: object) -> bool:
+    """Return whether ``value`` is a jaxstanv5 model class."""
+    if not isinstance(value, type):
+        return False
+    return isinstance(value.__dict__.get("_model_meta"), ModelMeta)
+
+
+def model_meta(model_cls: object) -> ModelMeta:
+    """Return resolved model metadata attached by ``@model`` or IR decoding."""
+    _cls, meta = _require_model_class_and_meta(model_cls)
+    return meta
+
+
+def bind_model(model_cls: object, values: Mapping[str, object]) -> BoundModel:
+    """Bind concrete data values to a model class with the JAX backend."""
+    if not isinstance(values, Mapping):
+        raise TypeError("Model bind values must be a mapping")
+    cls, meta = _require_model_class_and_meta(model_cls)
+    from jaxstanv5._backends.jax.binding import bind_model_meta
+
+    return bind_model_meta(
+        meta,
+        values,
+        dimensions=_attached_model_dimensions(cls),
+    )
+
+
+def _require_model_class_and_meta(value: object) -> tuple[ModelClass, ModelMeta]:
+    if isinstance(value, type):
+        metadata = value.__dict__.get("_model_meta")
+        if isinstance(metadata, ModelMeta):
+            return value, metadata
+    raise TypeError(
+        "Object is not a jaxstanv5 model class; expected a class decorated with @model "
+        "or produced by bindable_from_meta"
+    )
+
+
+def _attached_model_dimensions(model_cls: ModelClass) -> ResolvedModelDimensions | None:
+    metadata = model_cls.__dict__.get("_model_dimensions")
+    if isinstance(metadata, ResolvedModelDimensions):
+        return metadata
+    return None
 
 
 def _make_bind(

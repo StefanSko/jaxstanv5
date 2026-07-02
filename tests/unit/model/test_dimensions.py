@@ -10,6 +10,7 @@ from jaxstanv5.distributions import Normal
 from jaxstanv5.model.dimensions import (
     ResolvedModelDimensions,
     ResolvedVariableDims,
+    dimension_metadata_from_dict,
     dimension_metadata_to_dict,
     model_dimensions,
 )
@@ -65,12 +66,83 @@ def test_dimension_metadata_to_dict_returns_json_ready_lists() -> None:
     }
 
 
+def test_dimension_metadata_round_trips_through_dict() -> None:
+    metadata = ResolvedModelDimensions(
+        variables={
+            "beta": ResolvedVariableDims(("predictor",)),
+            "alpha": ResolvedVariableDims(()),
+        },
+        coords={"predictor": ("x1", 1, 1.5, True, None)},
+    )
+
+    assert dimension_metadata_from_dict(dimension_metadata_to_dict(metadata)) == metadata
+
+
+def test_dimension_metadata_from_dict_rejects_non_object_documents() -> None:
+    with pytest.raises(TypeError, match="JSON objects"):
+        dimension_metadata_from_dict(["dims"])
+
+
+def test_dimension_metadata_from_dict_requires_exact_envelope_keys() -> None:
+    with pytest.raises(ValueError, match='"dims" and "coords"'):
+        dimension_metadata_from_dict({"dims": {}})
+
+    with pytest.raises(ValueError, match='"dims" and "coords"'):
+        dimension_metadata_from_dict({"dims": {}, "coords": {}, "extra": {}})
+
+
+def test_dimension_metadata_from_dict_rejects_malformed_dims() -> None:
+    with pytest.raises(TypeError, match="must be a JSON object"):
+        dimension_metadata_from_dict({"dims": [], "coords": {}})
+
+    with pytest.raises(TypeError, match="non-empty strings"):
+        dimension_metadata_from_dict({"dims": {"": []}, "coords": {}})
+
+    with pytest.raises(TypeError, match="must be an array"):
+        dimension_metadata_from_dict({"dims": {"beta": "predictor"}, "coords": {}})
+
+    with pytest.raises(TypeError, match="non-empty strings"):
+        dimension_metadata_from_dict({"dims": {"beta": [1]}, "coords": {}})
+
+
+def test_dimension_metadata_from_dict_rejects_malformed_coords() -> None:
+    with pytest.raises(TypeError, match="must be a JSON object"):
+        dimension_metadata_from_dict({"dims": {}, "coords": []})
+
+    with pytest.raises(TypeError, match="must be an array"):
+        dimension_metadata_from_dict(
+            {"dims": {"beta": ["predictor"]}, "coords": {"predictor": "x1"}}
+        )
+
+    with pytest.raises(TypeError, match="JSON scalar"):
+        dimension_metadata_from_dict(
+            {"dims": {"beta": ["predictor"]}, "coords": {"predictor": [object()]}}
+        )
+
+
+def test_dimension_metadata_from_dict_rejects_coords_for_undeclared_dimensions() -> None:
+    with pytest.raises(ValueError, match="undeclared dimensions"):
+        dimension_metadata_from_dict({"dims": {"beta": ["predictor"]}, "coords": {"group": ["a"]}})
+
+
 def test_model_dimensions_rejects_undecorated_classes() -> None:
     class Undecorated:
         pass
 
     with pytest.raises(TypeError, match="decorate it with @model"):
         model_dimensions(Undecorated)
+
+
+def test_model_dimensions_rejects_inherited_model_metadata() -> None:
+    @model
+    class ParentModel:
+        theta = Param(Normal(0.0, 1.0))
+
+    class ChildModel(ParentModel):
+        pass
+
+    with pytest.raises(TypeError, match="decorate it with @model"):
+        model_dimensions(ChildModel)
 
 
 def test_data_declarations_accept_matching_dimension_rank() -> None:

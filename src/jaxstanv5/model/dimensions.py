@@ -61,7 +61,7 @@ def normalize_dims(dims: Sequence[Dim] | None) -> tuple[Dim, ...] | None:
 
 def model_dimensions(model_cls: type[object]) -> ResolvedModelDimensions:
     """Return resolved dimension metadata attached by ``@model``."""
-    metadata = getattr(model_cls, "_model_dimensions", None)
+    metadata = model_cls.__dict__.get("_model_dimensions")
     if isinstance(metadata, ResolvedModelDimensions):
         return metadata
     raise TypeError("Model class has no resolved dimension metadata; decorate it with @model")
@@ -75,6 +75,59 @@ def dimension_metadata_to_dict(metadata: ResolvedModelDimensions) -> DimensionMe
         },
         "coords": {name: list(coords) for name, coords in metadata.coords.items()},
     }
+
+
+def dimension_metadata_from_dict(document: object) -> ResolvedModelDimensions:
+    """Decode a document produced by ``dimension_metadata_to_dict``."""
+    if not isinstance(document, dict):
+        raise TypeError("Dimension metadata documents must be JSON objects")
+    doc = cast("dict[object, object]", document)
+    if set(doc) != {"dims", "coords"}:
+        raise ValueError(
+            'Dimension metadata documents must contain exactly the keys "dims" and "coords"'
+        )
+    variables = _decode_variable_dims(doc["dims"])
+    coords = _decode_coords(doc["coords"])
+    declared_names = {name for variable_dims in variables.values() for name in variable_dims.names}
+    unknown_coords = sorted(set(coords) - declared_names)
+    if unknown_coords:
+        raise ValueError(
+            f"Dimension metadata coords reference undeclared dimensions: {unknown_coords}"
+        )
+    return ResolvedModelDimensions(variables=variables, coords=coords)
+
+
+def _decode_variable_dims(value: object) -> dict[str, ResolvedVariableDims]:
+    if not isinstance(value, dict):
+        raise TypeError('Dimension metadata "dims" must be a JSON object')
+    variables: dict[str, ResolvedVariableDims] = {}
+    for variable, names in cast("dict[object, object]", value).items():
+        if not isinstance(variable, str) or variable == "":
+            raise TypeError("Dimension metadata variable names must be non-empty strings")
+        if not isinstance(names, list):
+            raise TypeError(f"Dimension names for variable {variable!r} must be an array")
+        for name in cast("list[object]", names):
+            if not isinstance(name, str) or name == "":
+                raise TypeError(
+                    f"Dimension names for variable {variable!r} must be non-empty strings"
+                )
+        variables[variable] = ResolvedVariableDims(names=tuple(cast("list[str]", names)))
+    return variables
+
+
+def _decode_coords(value: object) -> dict[str, tuple[CoordValue, ...]]:
+    if not isinstance(value, dict):
+        raise TypeError('Dimension metadata "coords" must be a JSON object')
+    coords: dict[str, tuple[CoordValue, ...]] = {}
+    for name, values in cast("dict[object, object]", value).items():
+        if not isinstance(name, str) or name == "":
+            raise TypeError("Dimension coordinate names must be non-empty strings")
+        if not isinstance(values, list):
+            raise TypeError(f"Coordinates for dimension {name!r} must be an array")
+        coords[name] = tuple(
+            _normalize_coord(coord_value) for coord_value in cast("list[object]", values)
+        )
+    return coords
 
 
 def _normalize_coords(coords: Sequence[object] | None) -> tuple[CoordValue, ...] | None:
