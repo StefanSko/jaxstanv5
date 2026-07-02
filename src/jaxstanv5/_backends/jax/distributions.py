@@ -355,9 +355,14 @@ def _normal_log_interval_probability(
 
     z_upper = (upper - loc) / safe_scale
     valid_bounds = (upper > lower) & valid_scale
-    log_cdf_difference = _log_sub_exp(log_ndtr(z_upper), log_ndtr(z_lower))
-    log_survival_difference = _log_sub_exp(log_ndtr(-z_lower), log_ndtr(-z_upper))
-    log_probability = jnp.where(z_lower > 0.0, log_survival_difference, log_cdf_difference)
+    use_survival = z_lower > 0.0
+    cdf_lower = jnp.where(use_survival, -1.0, z_lower)
+    cdf_upper = jnp.where(use_survival, 0.0, z_upper)
+    survival_lower = jnp.where(use_survival, z_lower, 0.0)
+    survival_upper = jnp.where(use_survival, z_upper, 1.0)
+    log_cdf_difference = _log_sub_exp(log_ndtr(cdf_upper), log_ndtr(cdf_lower))
+    log_survival_difference = _log_sub_exp(log_ndtr(-survival_lower), log_ndtr(-survival_upper))
+    log_probability = jnp.where(use_survival, log_survival_difference, log_cdf_difference)
     return log_probability, valid_bounds
 
 
@@ -402,13 +407,20 @@ def _normal_truncated_cdf(distribution: Truncated, x: DistributionValue) -> jax.
         return jnp.clip(probability, 0.0, 1.0)
 
     z_upper = (upper - loc) / safe_scale
-    log_cdf_numerator = _log_sub_exp(log_ndtr(z_value), log_ndtr(z_lower))
-    log_cdf_denominator = _log_sub_exp(log_ndtr(z_upper), log_ndtr(z_lower))
-    log_survival_numerator = _log_sub_exp(log_ndtr(-z_lower), log_ndtr(-z_value))
-    log_survival_denominator = _log_sub_exp(log_ndtr(-z_lower), log_ndtr(-z_upper))
+    use_survival = z_lower > 0.0
+    cdf_lower = jnp.where(use_survival, -1.0, z_lower)
+    cdf_value = jnp.where(use_survival, -0.5, z_value)
+    cdf_upper = jnp.where(use_survival, 0.0, z_upper)
+    survival_lower = jnp.where(use_survival, z_lower, 0.0)
+    survival_value = jnp.where(use_survival, z_value, 0.5)
+    survival_upper = jnp.where(use_survival, z_upper, 1.0)
+    log_cdf_numerator = _log_sub_exp(log_ndtr(cdf_value), log_ndtr(cdf_lower))
+    log_cdf_denominator = _log_sub_exp(log_ndtr(cdf_upper), log_ndtr(cdf_lower))
+    log_survival_numerator = _log_sub_exp(log_ndtr(-survival_lower), log_ndtr(-survival_value))
+    log_survival_denominator = _log_sub_exp(log_ndtr(-survival_lower), log_ndtr(-survival_upper))
     cdf_probability = jnp.exp(log_cdf_numerator - log_cdf_denominator)
     survival_probability = jnp.exp(log_survival_numerator - log_survival_denominator)
-    probability = jnp.where(z_lower > 0.0, survival_probability, cdf_probability)
+    probability = jnp.where(use_survival, survival_probability, cdf_probability)
     return jnp.clip(probability, 0.0, 1.0)
 
 
@@ -432,18 +444,23 @@ def _normal_truncated_icdf(distribution: Truncated, p: DistributionValue) -> jax
         return loc + safe_scale * -ndtri(jnp.exp(log_survival))
 
     z_upper = (upper - loc) / safe_scale
-    log_cdf_lower = log_ndtr(z_lower)
-    log_cdf_upper = log_ndtr(z_upper)
+    use_survival = z_lower > 0.0
+    cdf_lower = jnp.where(use_survival, -1.0, z_lower)
+    cdf_upper = jnp.where(use_survival, 0.0, z_upper)
+    log_cdf_lower = log_ndtr(cdf_lower)
+    log_cdf_upper = log_ndtr(cdf_upper)
     cdf_ratio = jnp.exp(log_cdf_lower - log_cdf_upper)
     log_cdf_value = log_cdf_upper + jnp.log(cdf_ratio + probability * (1.0 - cdf_ratio))
     cdf_value = loc + safe_scale * ndtri(jnp.exp(log_cdf_value))
 
-    log_survival_lower = log_ndtr(-z_lower)
-    log_survival_upper = log_ndtr(-z_upper)
+    survival_lower = jnp.where(use_survival, z_lower, 0.0)
+    survival_upper = jnp.where(use_survival, z_upper, 1.0)
+    log_survival_lower = log_ndtr(-survival_lower)
+    log_survival_upper = log_ndtr(-survival_upper)
     survival_ratio = jnp.exp(log_survival_upper - log_survival_lower)
     log_survival_value = log_survival_lower + jnp.log1p(-probability * (1.0 - survival_ratio))
     survival_value = loc + safe_scale * -ndtri(jnp.exp(log_survival_value))
-    return jnp.where(z_lower > 0.0, survival_value, cdf_value)
+    return jnp.where(use_survival, survival_value, cdf_value)
 
 
 def log_prob(distribution: Distribution, x: DistributionValue) -> jax.Array:

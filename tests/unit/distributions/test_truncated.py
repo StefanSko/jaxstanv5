@@ -54,6 +54,15 @@ def test_truncated_normal_cdf_and_icdf_are_inverse_inside_bounds() -> None:
     assert jnp.allclose(cdf(dist, values), probabilities, atol=1e-6)
 
 
+def test_truncated_normal_interval_log_prob_has_finite_tail_gradient() -> None:
+    def density(loc: jax.Array) -> jax.Array:
+        return log_prob(Truncated(Normal(loc, 1.0), lower=10.0, upper=11.0), jnp.asarray(10.5))
+
+    gradient = jax.grad(density)(jnp.asarray(0.0))
+
+    assert jnp.isfinite(gradient)
+
+
 def test_truncated_normal_cdf_icdf_and_sample_are_stable_in_upper_tail() -> None:
     dist = Truncated(Normal(0.0, 1.0), lower=10.0)
     probabilities = jnp.asarray([0.1, 0.5, 0.9])
