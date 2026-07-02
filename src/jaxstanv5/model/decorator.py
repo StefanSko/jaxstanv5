@@ -11,8 +11,16 @@ from typing import TYPE_CHECKING, SupportsFloat, cast
 from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
-from jaxstanv5.distributions.continuous import Beta, Exponential, HalfNormal, Uniform
+from jaxstanv5.distributions.continuous import (
+    Beta,
+    Exponential,
+    HalfNormal,
+    Normal,
+    StudentT,
+    Uniform,
+)
 from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
+from jaxstanv5.distributions.truncated import Truncated
 from jaxstanv5.model._data_schema import (
     DataDimRef,
     DataDimSymbol,
@@ -268,6 +276,23 @@ def _validate_param_prior_constraint(
     constraint: Constraint | None,
 ) -> None:
     """Validate known concrete prior supports against explicit constraints."""
+    if isinstance(distribution, Truncated):
+        _validate_truncated_param_prior_constraint(
+            name=name,
+            distribution=distribution,
+            constraint=constraint,
+        )
+        return
+
+    if isinstance(distribution, Normal | StudentT) and isinstance(
+        constraint, Positive | Interval | UnitInterval
+    ):
+        raise TypeError(
+            f"Parameter {name!r} uses a constrained {type(distribution).__name__} prior. "
+            "Use Truncated(..., lower=..., upper=...) with a matching constraint so the "
+            "truncation normalizer is explicit."
+        )
+
     if isinstance(distribution, Exponential | HalfNormal):
         if not isinstance(constraint, Positive):
             raise TypeError(
@@ -295,6 +320,54 @@ def _validate_param_prior_constraint(
             f"Parameter {name!r} Uniform prior has support ({low}, {high}); declare "
             f"Param(Uniform({low}, {high}), constraint=Interval({low}, {high}))"
         )
+
+
+def _validate_truncated_param_prior_constraint(
+    *,
+    name: str,
+    distribution: Truncated,
+    constraint: Constraint | None,
+) -> None:
+    """Require explicit truncation bounds to match the parameter constraint."""
+    bounds = _concrete_truncated_bounds(distribution)
+    if bounds is None:
+        raise TypeError(
+            f"Parameter {name!r} Truncated prior uses symbolic bounds; constrained Param "
+            "priors require concrete truncation bounds that match the declared constraint"
+        )
+    lower, upper = bounds
+    if (
+        upper is None
+        and lower is not None
+        and _same_scalar_bound(lower, 0.0)
+        and isinstance(constraint, Positive)
+    ):
+        return
+    if (
+        lower is not None
+        and upper is not None
+        and _constraint_matches_uniform_support(
+            constraint,
+            low=lower,
+            high=upper,
+        )
+    ):
+        return
+    raise TypeError(
+        f"Parameter {name!r} Truncated prior bounds must match its constraint; "
+        "use Positive() for lower=0 or Interval(lower, upper)/UnitInterval() for finite bounds"
+    )
+
+
+def _concrete_truncated_bounds(distribution: Truncated) -> tuple[float | None, float | None] | None:
+    """Return concrete scalar Truncated bounds, or None for symbolic bounds."""
+    lower = None if distribution.lower is None else _concrete_scalar_bound(distribution.lower)
+    upper = None if distribution.upper is None else _concrete_scalar_bound(distribution.upper)
+    if (distribution.lower is not None and lower is None) or (
+        distribution.upper is not None and upper is None
+    ):
+        return None
+    return (lower, upper)
 
 
 def _concrete_uniform_bounds(distribution: Uniform) -> tuple[float, float] | None:

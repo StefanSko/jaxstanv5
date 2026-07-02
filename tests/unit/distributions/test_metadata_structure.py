@@ -17,6 +17,7 @@ from jaxstanv5.distributions import (
     OrderedLogistic,
     Poisson,
     StudentT,
+    Truncated,
     Uniform,
 )
 
@@ -37,6 +38,7 @@ def test_builtin_distributions_are_metadata_only() -> None:
         OrderedLogistic,
         Poisson,
         StudentT,
+        Truncated,
         Uniform,
     ):
         assert not hasattr(cls, "log_prob")

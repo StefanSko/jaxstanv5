@@ -40,6 +40,7 @@ Field kinds: `value` is a scalar, node, or null; `map` is an ordered
 | `Exponential` | `rate` (value) |
 | `Uniform` | `low` (value), `high` (value) |
 | `Beta` | `alpha` (value), `beta` (value) |
+| `Truncated` | `base` (value), `lower` (value), `upper` (value) |
 | `Bernoulli` | `probs` (value) |
 | `Poisson` | `rate` (value) |
 | `Binomial` | `total_count` (value), `probs` (value) |

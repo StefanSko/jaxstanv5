@@ -21,6 +21,7 @@ from jaxstanv5.distributions import (
     NegativeBinomial,
     Normal,
     Poisson,
+    Truncated,
     Uniform,
 )
 from jaxstanv5.distributions.core import (
@@ -241,6 +242,31 @@ def test_private_model_declaration_resolution_accepts_positive_prior_constraint(
     meta = _resolve_model_declaration(ValidPositivePrior)
 
     assert tuple(meta.params) == ("sigma",)
+
+
+def test_private_model_declaration_resolution_rejects_implicit_truncated_normal_prior() -> None:
+    class ImplicitTruncatedNormal:
+        sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+
+    with pytest.raises(TypeError, match="Use Truncated"):
+        _resolve_model_declaration(ImplicitTruncatedNormal)
+
+
+def test_private_model_declaration_resolution_accepts_explicit_truncated_normal_prior() -> None:
+    class ExplicitTruncatedNormal:
+        sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
+
+    meta = _resolve_model_declaration(ExplicitTruncatedNormal)
+
+    assert tuple(meta.params) == ("sigma",)
+
+
+def test_private_model_declaration_resolution_requires_matching_truncated_bounds() -> None:
+    class MismatchedTruncatedNormal:
+        sigma = Param(Truncated(Normal(0.0, 1.0), lower=-1.0), constraint=Positive())
+
+    with pytest.raises(TypeError, match="bounds must match"):
+        _resolve_model_declaration(MismatchedTruncatedNormal)
 
 
 def test_private_model_declaration_resolution_requires_unit_interval_for_beta_prior() -> None:

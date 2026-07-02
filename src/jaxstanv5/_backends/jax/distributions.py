@@ -28,6 +28,7 @@ from jaxstanv5.distributions.counts import (
 )
 from jaxstanv5.distributions.multivariate import MultivariateNormal
 from jaxstanv5.distributions.ordinal import OrderedLogistic
+from jaxstanv5.distributions.truncated import Truncated
 
 
 @runtime_checkable
@@ -102,6 +103,12 @@ def _beta_alpha_beta(distribution: Beta) -> tuple[jax.Array, jax.Array]:
     return _asarray(distribution.alpha), _asarray(distribution.beta)
 
 
+def _truncated_bounds(distribution: Truncated) -> tuple[jax.Array | None, jax.Array | None]:
+    lower = None if distribution.lower is None else _asarray(distribution.lower)
+    upper = None if distribution.upper is None else _asarray(distribution.upper)
+    return lower, upper
+
+
 def _bernoulli_probs(distribution: Bernoulli) -> jax.Array:
     return _asarray(distribution.probs)
 
@@ -154,6 +161,14 @@ def batch_shape(distribution: Distribution) -> tuple[int, ...]:
     if isinstance(distribution, Beta):
         alpha, beta = _beta_alpha_beta(distribution)
         return jnp.broadcast_shapes(alpha.shape, beta.shape)
+    if isinstance(distribution, Truncated):
+        lower, upper = _truncated_bounds(distribution)
+        shapes = [batch_shape(distribution.base)]
+        if lower is not None:
+            shapes.append(lower.shape)
+        if upper is not None:
+            shapes.append(upper.shape)
+        return jnp.broadcast_shapes(*shapes)
     if isinstance(distribution, Bernoulli):
         return _bernoulli_probs(distribution).shape
     if isinstance(distribution, Poisson):
@@ -200,6 +215,8 @@ def event_shape(distribution: Distribution) -> tuple[int, ...]:
         | OrderedLogistic,
     ):
         return ()
+    if isinstance(distribution, Truncated):
+        return event_shape(distribution.base)
     if isinstance(distribution, MultivariateNormal):
         _, scale_tril = _mvn_mean_tril(distribution)
         return (scale_tril.shape[-1],)
@@ -210,6 +227,8 @@ def event_shape(distribution: Distribution) -> tuple[int, ...]:
 
 def is_sampleable(distribution: Distribution) -> bool:
     """Return whether the JAX backend can sample from ``distribution``."""
+    if isinstance(distribution, Truncated):
+        return is_inverse_cdf(distribution.base)
     return isinstance(
         distribution,
         Normal
@@ -231,6 +250,8 @@ def is_sampleable(distribution: Distribution) -> bool:
 
 def is_inverse_cdf(distribution: Distribution) -> bool:
     """Return whether the JAX backend has scalar inverse-CDF support."""
+    if isinstance(distribution, Truncated):
+        return is_inverse_cdf(distribution.base)
     return isinstance(
         distribution,
         Normal | HalfNormal | Exponential | Uniform | PythonInverseCdfDistribution,
@@ -285,6 +306,25 @@ def _ordered_logistic_category_probabilities(distribution: OrderedLogistic) -> j
     middle = cumulative[..., 1:] - cumulative[..., :-1]
     last = 1.0 - cumulative[..., -1:]
     return jnp.concatenate((first, middle, last), axis=-1)
+
+
+def _validate_scalar_event_truncated(distribution: Truncated) -> None:
+    if event_shape(distribution.base) != ():
+        raise TypeError("Truncated distributions require scalar-event base distributions")
+
+
+def _truncated_probability_bounds(distribution: Truncated) -> tuple[jax.Array, jax.Array]:
+    lower, upper = _truncated_bounds(distribution)
+    lower_probability = jnp.asarray(0.0) if lower is None else cdf(distribution.base, lower)
+    upper_probability = jnp.asarray(1.0) if upper is None else cdf(distribution.base, upper)
+    return lower_probability, upper_probability
+
+
+def _truncated_value_in_bounds(distribution: Truncated, value: jax.Array) -> jax.Array:
+    lower, upper = _truncated_bounds(distribution)
+    above_lower = jnp.ones_like(value, dtype=bool) if lower is None else value >= lower
+    below_upper = jnp.ones_like(value, dtype=bool) if upper is None else value <= upper
+    return above_lower & below_upper
 
 
 def log_prob(distribution: Distribution, x: DistributionValue) -> jax.Array:
@@ -347,6 +387,16 @@ def log_prob(distribution: Distribution, x: DistributionValue) -> jax.Array:
         log_density += (beta - 1.0) * jnp.log1p(-safe_value)
         log_density -= log_normalizer
         return jnp.where(support, log_density, -jnp.inf)
+    if isinstance(distribution, Truncated):
+        _validate_scalar_event_truncated(distribution)
+        value = jnp.asarray(x)
+        lower_probability, upper_probability = _truncated_probability_bounds(distribution)
+        normalizer = upper_probability - lower_probability
+        valid_normalizer = normalizer > 0.0
+        safe_normalizer = jnp.where(valid_normalizer, normalizer, 1.0)
+        truncated_log_density = log_prob(distribution.base, value) - jnp.log(safe_normalizer)
+        support = _truncated_value_in_bounds(distribution, value) & valid_normalizer
+        return jnp.where(support, truncated_log_density, -jnp.inf)
     if isinstance(distribution, Bernoulli):
         probs = _bernoulli_probs(distribution)
         dtype = jnp.result_type(probs, 1.0)
@@ -506,6 +556,10 @@ def sample(
     if isinstance(distribution, Beta):
         alpha, beta = _beta_alpha_beta(distribution)
         return jax.random.beta(key, a=alpha, b=beta, shape=sample_shape + batch_shape(distribution))
+    if isinstance(distribution, Truncated):
+        _validate_scalar_event_truncated(distribution)
+        probabilities = jax.random.uniform(key, shape=sample_shape + batch_shape(distribution))
+        return icdf(distribution, probabilities)
     if isinstance(distribution, Bernoulli):
         return jax.random.bernoulli(
             key,
@@ -587,6 +641,13 @@ def cdf(distribution: Distribution, x: DistributionValue) -> jax.Array:
         low, high = _uniform_low_high(distribution)
         standardized = (jnp.asarray(x) - low) / (high - low)
         return jnp.clip(standardized, 0.0, 1.0)
+    if isinstance(distribution, Truncated):
+        _validate_scalar_event_truncated(distribution)
+        lower_probability, upper_probability = _truncated_probability_bounds(distribution)
+        normalizer = upper_probability - lower_probability
+        safe_normalizer = jnp.where(normalizer > 0.0, normalizer, 1.0)
+        standardized = (cdf(distribution.base, x) - lower_probability) / safe_normalizer
+        return jnp.clip(standardized, 0.0, 1.0)
     if isinstance(distribution, PythonInverseCdfDistribution):
         return cast(jax.Array, distribution.cdf(x))
     raise TypeError(f"Distribution has no JAX cdf support: {type(distribution).__name__}")
@@ -604,6 +665,13 @@ def icdf(distribution: Distribution, p: DistributionValue) -> jax.Array:
     if isinstance(distribution, Uniform):
         low, high = _uniform_low_high(distribution)
         return low + (high - low) * jnp.asarray(p)
+    if isinstance(distribution, Truncated):
+        _validate_scalar_event_truncated(distribution)
+        lower_probability, upper_probability = _truncated_probability_bounds(distribution)
+        base_probability = lower_probability + jnp.asarray(p) * (
+            upper_probability - lower_probability
+        )
+        return icdf(distribution.base, base_probability)
     if isinstance(distribution, PythonInverseCdfDistribution):
         return cast(jax.Array, distribution.icdf(p))
     raise TypeError(f"Distribution has no JAX icdf support: {type(distribution).__name__}")

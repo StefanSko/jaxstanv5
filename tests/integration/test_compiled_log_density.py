@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 from _helpers import bind_model
-from jax.scipy.special import gammaln
+from jax.scipy.special import gammaln, ndtr
 
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5._backends.jax.constraints import inverse_transform
@@ -24,6 +24,7 @@ from jaxstanv5.distributions import (
     Normal,
     OrderedLogistic,
     Poisson,
+    Truncated,
 )
 from jaxstanv5.distributions.core import DistributionParameter, DistributionValue, LogProbability
 from jaxstanv5.math import exp, sigmoid
@@ -52,15 +53,26 @@ class SimpleNormal:
 class ConstrainedNormal:
     """Scalar normal with constrained scale."""
 
-    sigma = Param(Normal(0, 1), constraint=Positive())
+    sigma = Param(Truncated(Normal(0, 1), lower=0.0), constraint=Positive())
     y = Observed(Normal(0, sigma))
+
+
+@model
+class HierarchicalTruncatedScale:
+    """Truncated prior with a parameter-dependent normalizer."""
+
+    mu = Param(Normal(0, 1))
+    tau = Param(Truncated(Normal(mu, 1), lower=0.0), constraint=Positive())
 
 
 @model
 class IntervalConstrainedNormal:
     """Scalar normal prior constrained to a finite interval."""
 
-    x = Param(Normal(0, 1), constraint=Interval(-2.0, 3.0))
+    x = Param(
+        Truncated(Normal(0, 1), lower=-2.0, upper=3.0),
+        constraint=Interval(-2.0, 3.0),
+    )
 
 
 @model
@@ -213,7 +225,7 @@ class MeasurementErrorLogDensity:
     alpha = Param(Normal(0, 1))
     b_age = Param(Normal(0, 1))
     b_marriage = Param(Normal(0, 1))
-    sigma = Param(Normal(0, 1), constraint=Positive())
+    sigma = Param(Truncated(Normal(0, 1), lower=0.0), constraint=Positive())
 
     marriage_true = Param(Normal(0, 1), size=n_states)
     divorce_mu = alpha + b_age * age + b_marriage * marriage_true
@@ -277,8 +289,25 @@ def test_compiled_log_density_for_constrained_model_includes_jacobian() -> None:
 
     sigma_constrained = jnp.exp(q[0])
     expected_prior = normal_log_prob(sigma_constrained, jnp.array(0.0), jnp.array(1.0))
+    expected_prior -= jnp.log(jnp.array(0.5))
     expected_obs = normal_log_prob(jnp.array(3.0), jnp.array(0.0), sigma_constrained)
     expected = expected_prior + expected_obs + q[0]
+
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_includes_parameter_dependent_truncation_normalizer() -> None:
+    bound = bind_model(HierarchicalTruncatedScale)
+    log_prob = compile_log_density(bound)
+
+    mu = jnp.array(-1.0)
+    log_tau = jnp.array(math.log(0.7))
+    tau = jnp.exp(log_tau)
+    lp = log_prob(jnp.array([mu, log_tau]))
+
+    expected = normal_log_prob(mu, jnp.array(0.0), jnp.array(1.0))
+    expected += normal_log_prob(tau, mu, jnp.array(1.0)) - jnp.log(ndtr(mu))
+    expected += log_tau
 
     assert jnp.allclose(lp, expected, atol=1e-6)
 
@@ -293,6 +322,7 @@ def test_compiled_log_density_for_interval_constrained_model_includes_jacobian()
     width = jnp.array(5.0)
     constrained = -2.0 + width * jax.nn.sigmoid(q[0])
     expected_prior = normal_log_prob(constrained, jnp.array(0.0), jnp.array(1.0))
+    expected_prior -= jnp.log(ndtr(jnp.array(3.0)) - ndtr(jnp.array(-2.0)))
     expected_log_jacobian = jnp.log(width) - jax.nn.softplus(-q[0]) - jax.nn.softplus(q[0])
     expected = expected_prior + expected_log_jacobian
 
@@ -493,7 +523,9 @@ def test_compiled_log_density_includes_measurement_error_observed_sites() -> Non
     expected = normal_log_prob(alpha, jnp.array(0.0), jnp.array(1.0))
     expected += normal_log_prob(b_age, jnp.array(0.0), jnp.array(1.0))
     expected += normal_log_prob(b_marriage, jnp.array(0.0), jnp.array(1.0))
-    expected += normal_log_prob(sigma, jnp.array(0.0), jnp.array(1.0)) + log_sigma
+    expected += normal_log_prob(sigma, jnp.array(0.0), jnp.array(1.0))
+    expected -= jnp.log(jnp.array(0.5))
+    expected += log_sigma
     expected += jnp.sum(normal_log_prob(marriage_true, jnp.array(0.0), jnp.array(1.0)))
     expected += jnp.sum(normal_log_prob(divorce_true, divorce_mu, sigma))
     expected += jnp.sum(normal_log_prob(marriage_obs, marriage_true, marriage_sd))

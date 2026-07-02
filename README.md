@@ -30,7 +30,7 @@ import jax.numpy as jnp
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.constraints import Positive
 from jaxstanv5.diagnostics import ess, rhat
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import Normal, Truncated
 from jaxstanv5.inference import sample
 
 
@@ -38,7 +38,7 @@ from jaxstanv5.inference import sample
 class LinearRegression:
     alpha = Param(Normal(0.0, 1.0))
     beta = Param(Normal(0.0, 1.0))
-    sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+    sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
 
     x = Data.vector()
     mu = alpha + beta * x
@@ -228,9 +228,12 @@ functions. Discrete distributions such as `Poisson`, `Binomial`,
 `BetaBinomial`, and `NegativeBinomial` are valid observed likelihoods, but not
 latent `Param(...)` priors because NUTS samples continuous parameters only.
 Continuous bounded latent parameters can use `Interval(lower, upper)` or
-`UnitInterval()` constraints. Ordered vector parameters can use `Ordered()`, for
-example ordinal-logistic cutpoints. `OrderedLogistic(eta, cutpoints)` uses
-zero-based observed labels: with `K` cutpoints, valid categories are `0..K`.
+`UnitInterval()` constraints. Constraints define NUTS transforms and Jacobians;
+when a prior needs truncation normalization, make it explicit with
+`Truncated(base, lower=..., upper=...)` and a matching constraint. Ordered vector
+parameters can use `Ordered()`, for example ordinal-logistic cutpoints.
+`OrderedLogistic(eta, cutpoints)` uses zero-based observed labels: with `K`
+cutpoints, valid categories are `0..K`.
 
 ## Hierarchical parameters
 
@@ -245,9 +248,9 @@ class HierarchicalRegression:
 
     alpha_pop = Param(Normal(0.0, 1.0))
     beta_pop = Param(Normal(0.0, 1.0))
-    sigma_alpha = Param(Normal(0.0, 1.0), constraint=Positive())
-    sigma_beta = Param(Normal(0.0, 1.0), constraint=Positive())
-    sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+    sigma_alpha = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
+    sigma_beta = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
+    sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
 
     alpha = Param(Normal(alpha_pop, sigma_alpha), size=n_groups)
     beta = Param(Normal(beta_pop, sigma_beta), size=n_groups)
@@ -272,7 +275,7 @@ class MeasurementErrorRegression:
 
     alpha = Param(Normal(0.0, 1.0))
     beta = Param(Normal(0.0, 1.0))
-    sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+    sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
 
     x_true = Param(Normal(0.0, 1.0), size=n)
     mu = alpha + beta * x_true

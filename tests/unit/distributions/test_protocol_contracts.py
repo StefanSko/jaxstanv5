@@ -13,6 +13,7 @@ from jaxstanv5.distributions import (
     OrderedLogistic,
     Poisson,
     StudentT,
+    Truncated,
     Uniform,
 )
 
@@ -31,6 +32,7 @@ def test_distribution_classes_are_available_from_package_root() -> None:
         OrderedLogistic,
         Poisson,
         StudentT,
+        Truncated,
         Uniform,
     )
 
@@ -47,5 +49,6 @@ def test_distribution_classes_are_available_from_package_root() -> None:
         "OrderedLogistic",
         "Poisson",
         "StudentT",
+        "Truncated",
         "Uniform",
     ]
