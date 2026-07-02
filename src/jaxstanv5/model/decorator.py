@@ -19,7 +19,7 @@ from jaxstanv5.distributions.continuous import (
     StudentT,
     Uniform,
 )
-from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
+from jaxstanv5.distributions.core import DiscreteDistribution, Distribution, InverseCdfDistribution
 from jaxstanv5.distributions.truncated import Truncated
 from jaxstanv5.model._data_schema import (
     DataDimRef,
@@ -284,13 +284,21 @@ def _validate_param_prior_constraint(
         )
         return
 
-    if isinstance(distribution, Normal | StudentT) and isinstance(
+    if isinstance(distribution, Normal) and isinstance(
         constraint, Positive | Interval | UnitInterval
     ):
         raise TypeError(
-            f"Parameter {name!r} uses a constrained {type(distribution).__name__} prior. "
-            "Use Truncated(..., lower=..., upper=...) with a matching constraint so the "
-            "truncation normalizer is explicit."
+            f"Parameter {name!r} uses a constrained Normal prior. Use Truncated(..., "
+            "lower=..., upper=...) with a matching constraint so the truncation "
+            "normalizer is explicit."
+        )
+
+    if isinstance(distribution, StudentT) and isinstance(
+        constraint, Positive | Interval | UnitInterval
+    ):
+        raise TypeError(
+            f"Parameter {name!r} uses a constrained StudentT prior, but StudentT "
+            "truncation is not supported because the backend has no StudentT CDF"
         )
 
     if isinstance(distribution, Exponential | HalfNormal):
@@ -329,6 +337,17 @@ def _validate_truncated_param_prior_constraint(
     constraint: Constraint | None,
 ) -> None:
     """Require explicit truncation bounds to match the parameter constraint."""
+    if isinstance(distribution.base, DiscreteDistribution):
+        raise TypeError(
+            "Discrete distributions cannot be used as Param priors; use them for Observed "
+            "likelihoods or marginalize discrete latents"
+        )
+    if not _truncated_base_has_cdf(distribution.base):
+        raise TypeError(
+            f"Parameter {name!r} Truncated prior base distribution "
+            f"{type(distribution.base).__name__} has no supported CDF/ICDF backend"
+        )
+
     bounds = _concrete_truncated_bounds(distribution)
     if bounds is None:
         raise TypeError(
@@ -357,6 +376,15 @@ def _validate_truncated_param_prior_constraint(
         f"Parameter {name!r} Truncated prior bounds must match its constraint; "
         "use Positive() for lower=0 or Interval(lower, upper)/UnitInterval() for finite bounds"
     )
+
+
+def _truncated_base_has_cdf(distribution: Distribution) -> bool:
+    """Return whether a Truncated base has declaration-known CDF support."""
+    if isinstance(distribution, Normal | HalfNormal | Exponential | Uniform):
+        return True
+    if isinstance(distribution, Truncated):
+        return _truncated_base_has_cdf(distribution.base)
+    return isinstance(distribution, InverseCdfDistribution)
 
 
 def _concrete_truncated_bounds(distribution: Truncated) -> tuple[float | None, float | None] | None:

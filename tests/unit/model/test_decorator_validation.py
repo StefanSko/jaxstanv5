@@ -21,6 +21,7 @@ from jaxstanv5.distributions import (
     NegativeBinomial,
     Normal,
     Poisson,
+    StudentT,
     Truncated,
     Uniform,
 )
@@ -267,6 +268,25 @@ def test_private_model_declaration_resolution_requires_matching_truncated_bounds
 
     with pytest.raises(TypeError, match="bounds must match"):
         _resolve_model_declaration(MismatchedTruncatedNormal)
+
+
+def test_private_model_declaration_resolution_rejects_truncated_prior_without_cdf_support() -> None:
+    class TruncatedStudentT:
+        sigma = Param(
+            Truncated(StudentT(4.0, 0.0, 1.0), lower=0.0),
+            constraint=Positive(),
+        )
+
+    with pytest.raises(TypeError, match="no supported CDF"):
+        _resolve_model_declaration(TruncatedStudentT)
+
+
+def test_private_model_declaration_resolution_rejects_truncated_discrete_prior() -> None:
+    class TruncatedDiscrete:
+        count = Param(Truncated(Poisson(1.0), lower=0.0), constraint=Positive())
+
+    with pytest.raises(TypeError, match="Discrete distributions cannot be used as Param priors"):
+        _resolve_model_declaration(TruncatedDiscrete)
 
 
 def test_private_model_declaration_resolution_requires_unit_interval_for_beta_prior() -> None:
