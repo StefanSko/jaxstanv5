@@ -92,7 +92,10 @@ Core invariants that should remain true as the codebase changes.
   field, or encoding changes require regenerated golden files and a format
   version decision (see `docs/ir-format-v1.md`).
 - A model reconstructed with `bindable_from_meta(...)` is indistinguishable
-  downstream from one produced by `@model`.
+  downstream from one produced by `@model`. Dimension labels travel in a
+  separate sidecar document: reconstructing a `Dim(...)`-labeled model requires
+  passing `dimensions=dimension_metadata_from_dict(...)`; without the sidecar
+  the reconstructed model carries no dimension metadata.
 - In serialized `ModelMeta`, `free_values` defines flat NUTS state layout,
   `stochastic_sites` defines log-density factors, and `data` plus
   `observed_nodes` define required bind inputs.

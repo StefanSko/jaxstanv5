@@ -27,6 +27,7 @@ from jaxstanv5._ir_registry import (
     register_node as _register_node,
 )
 from jaxstanv5.model.decorator import ModelMeta, _make_bind
+from jaxstanv5.model.dimensions import ResolvedModelDimensions
 
 __all__ = [
     "IR_VERSION",
@@ -165,17 +166,36 @@ def canonical_bytes(meta: ModelMeta) -> bytes:
     ).encode("utf-8")
 
 
-def bindable_from_meta(meta: ModelMeta) -> type[object]:
+def bindable_from_meta(
+    meta: ModelMeta,
+    *,
+    dimensions: ResolvedModelDimensions | None = None,
+) -> type[object]:
     """Return a bindable model class equivalent to one produced by ``@model``.
 
     Everything downstream of ``bind`` is unchanged and unaware of which path
-    produced the metadata.
+    produced the metadata. Dimension labels are a separate sidecar document;
+    pass the decoded ``dimensions`` (see ``dimension_metadata_from_dict``) to
+    reconstruct a ``Dim(...)``-labeled model faithfully.
     """
+    if dimensions is not None:
+        _validate_dimension_variables(meta, dimensions)
     namespace: dict[str, object] = {
         "_model_meta": meta,
-        "bind": classmethod(_make_bind(meta)),
+        "bind": classmethod(_make_bind(meta, dimensions=dimensions)),
     }
+    if dimensions is not None:
+        namespace["_model_dimensions"] = dimensions
     return type("IRModel", (object,), namespace)
+
+
+def _validate_dimension_variables(meta: ModelMeta, dimensions: ResolvedModelDimensions) -> None:
+    declared = set(meta.params) | set(meta.data) | {node.name for node in meta.observed_nodes}
+    unknown = sorted(set(dimensions.variables) - declared)
+    if unknown:
+        raise ValueError(
+            f"Dimension metadata references variables not declared by the model: {unknown}"
+        )
 
 
 def meta_from_dict(document: object) -> ModelMeta:

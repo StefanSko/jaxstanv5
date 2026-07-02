@@ -13,9 +13,11 @@ from jaxstanv5.model import (
     Observed,
     Param,
     bind_model,
+    dimension_metadata_from_dict,
     dimension_metadata_to_dict,
     is_model_class,
     model,
+    model_dimensions,
     model_meta,
 )
 
@@ -91,7 +93,32 @@ def test_public_hooks_accept_ir_bindable_models() -> None:
     assert model_meta(rebuilt) is meta
     bound = bind_model(rebuilt, {"y": [1.0, 2.0]})
     assert bound.meta is meta
+    # Without the decoded dimension sidecar there is nothing to reattach.
     assert bound.dimensions is None
+
+
+def test_ir_bindable_models_round_trip_dimension_metadata() -> None:
+    meta = model_meta(PublicHookModel)
+    declared_dimensions = model_dimensions(PublicHookModel)
+    document = dimension_metadata_to_dict(declared_dimensions)
+    rebuilt = bindable_from_meta(meta, dimensions=dimension_metadata_from_dict(document))
+
+    assert is_model_class(rebuilt)
+    assert model_dimensions(rebuilt) == declared_dimensions
+    bound = bind_model(rebuilt, {"y": [1.0, 2.0]})
+    assert bound.dimensions is not None
+    assert bound.dimensions == declared_dimensions
+    assert dimension_metadata_to_dict(bound.dimensions) == document
+
+
+def test_bindable_from_meta_rejects_dimensions_for_undeclared_variables() -> None:
+    meta = model_meta(PublicHookModel)
+    dimensions = dimension_metadata_from_dict(
+        {"dims": {"not_declared": ["obs"]}, "coords": {"obs": ["a", "b"]}}
+    )
+
+    with pytest.raises(ValueError, match="not declared by the model"):
+        bindable_from_meta(meta, dimensions=dimensions)
 
 
 def test_bind_model_rejects_non_model_objects() -> None:

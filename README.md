@@ -116,6 +116,22 @@ instead of private `_model_meta` access or duck-typing the attached `bind`
 classmethod. `model_meta(...)` and `is_model_class(...)` remain JAX-free;
 `bind_model(...)` is the explicit JAX runtime binding transition.
 
+Dimension labels declared with `Dim(...)` travel in a separate sidecar
+document, not in the IR. To reconstruct a labeled model faithfully, decode the
+sidecar and pass it to `bindable_from_meta(...)`:
+
+```python
+from jaxstanv5.ir import bindable_from_meta, meta_from_dict
+from jaxstanv5.model import dimension_metadata_from_dict
+
+meta = meta_from_dict(document)
+dimensions = dimension_metadata_from_dict(dimension_document)
+rebuilt = bindable_from_meta(meta, dimensions=dimensions)
+```
+
+Without the sidecar, the reconstructed model binds and samples identically but
+carries no dimension metadata.
+
 ## Model declarations
 
 The declaration language has three core node types:
