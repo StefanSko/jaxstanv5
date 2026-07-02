@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import struct
-import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING, SupportsFloat, cast
 
@@ -517,24 +515,13 @@ def _constraint_matches_uniform_support(
 
 
 def _same_scalar_bound(left: float, right: float) -> bool:
-    """Compare scalar bounds at the active JAX float resolution without importing JAX."""
-    if _jax_enable_x64_loaded():
-        return float(left) == float(right)
-    return _float32(left) == _float32(right)
+    """Compare scalar bounds as exact Python floats.
 
-
-def _jax_enable_x64_loaded() -> bool:
-    """Return the loaded JAX x64 flag without importing JAX on authoring paths."""
-    jax_module = sys.modules.get("jax")
-    config = getattr(jax_module, "config", None)
-    read = getattr(config, "read", None)
-    if callable(read):
-        return bool(read("jax_enable_x64"))
-    return bool(getattr(config, "jax_enable_x64", False))
-
-
-def _float32(value: float) -> float:
-    return struct.unpack("!f", struct.pack("!f", float(value)))[0]
+    Declaration semantics are backend-free: no import-order-dependent float
+    resolution sniffing. Bounds either match exactly or the declaration is
+    rejected.
+    """
+    return float(left) == float(right)
 
 
 def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, ExprNode]:
@@ -642,7 +629,6 @@ def model(cls: ModelClass) -> ModelClass:
     dimensions = _resolve_dimension_metadata(cls)
     setattr(cls, "_model_meta", meta)  # noqa: B010
     setattr(cls, "_model_dimensions", dimensions)  # noqa: B010
-    setattr(cls, "bind", classmethod(_make_bind(meta, dimensions=dimensions)))  # noqa: B010
     return cls
 
 
@@ -691,23 +677,12 @@ def _attached_model_dimensions(model_cls: ModelClass) -> ResolvedModelDimensions
     return None
 
 
-def _make_bind(
-    meta: ModelMeta,
-    *,
-    dimensions: ResolvedModelDimensions | None = None,
-) -> Callable[[ModelClass], object]:
-    """Create a classmethod-compatible bind function for model metadata."""
+def resolved_free_values(meta: ModelMeta) -> dict[str, ResolvedFreeValue]:
+    """Return the free NUTS values defining flat state layout, in insertion order.
 
-    def bind(_cls: ModelClass, **values: object) -> object:
-        from jaxstanv5._backends.jax.binding import bind_model_meta
-
-        return bind_model_meta(meta, values, dimensions=dimensions)
-
-    return bind
-
-
-def _resolved_free_values(meta: ModelMeta) -> dict[str, ResolvedFreeValue]:
-    """Return free NUTS values, deriving legacy metadata when absent."""
+    Falls back to deriving the layout from ``params`` for metadata whose
+    ``free_values`` field is empty.
+    """
     if meta.free_values:
         return meta.free_values
     return {
@@ -716,8 +691,12 @@ def _resolved_free_values(meta: ModelMeta) -> dict[str, ResolvedFreeValue]:
     }
 
 
-def _resolved_stochastic_sites(meta: ModelMeta) -> tuple[ResolvedStochasticSite, ...]:
-    """Return log-density sites, deriving legacy metadata when absent."""
+def resolved_stochastic_sites(meta: ModelMeta) -> tuple[ResolvedStochasticSite, ...]:
+    """Return the stochastic log-density sites, in declaration order.
+
+    Falls back to deriving the sites from ``params`` and ``observed_nodes`` for
+    metadata whose ``stochastic_sites`` field is empty.
+    """
     if meta.stochastic_sites:
         return meta.stochastic_sites
     param_sites = tuple(

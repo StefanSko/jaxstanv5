@@ -26,7 +26,7 @@ from jaxstanv5._ir_registry import (
 from jaxstanv5._ir_registry import (
     register_node as _register_node,
 )
-from jaxstanv5.model.decorator import ModelMeta, _make_bind
+from jaxstanv5.model.decorator import ModelMeta
 from jaxstanv5.model.dimensions import ResolvedModelDimensions
 
 __all__ = [
@@ -173,17 +173,15 @@ def bindable_from_meta(
 ) -> type[object]:
     """Return a bindable model class equivalent to one produced by ``@model``.
 
-    Everything downstream of ``bind`` is unchanged and unaware of which path
-    produced the metadata. Dimension labels are a separate sidecar document;
-    pass the decoded ``dimensions`` (see ``dimension_metadata_from_dict``) to
-    reconstruct a ``Dim(...)``-labeled model faithfully.
+    Everything downstream of ``bind_model(...)`` is unchanged and unaware of
+    which path produced the metadata. Dimension labels are a separate sidecar
+    document; pass the decoded ``dimensions`` (see
+    ``dimension_metadata_from_dict``) to reconstruct a ``Dim(...)``-labeled
+    model faithfully.
     """
     if dimensions is not None:
         _validate_dimension_variables(meta, dimensions)
-    namespace: dict[str, object] = {
-        "_model_meta": meta,
-        "bind": classmethod(_make_bind(meta, dimensions=dimensions)),
-    }
+    namespace: dict[str, object] = {"_model_meta": meta}
     if dimensions is not None:
         namespace["_model_dimensions"] = dimensions
     return type("IRModel", (object,), namespace)

@@ -17,7 +17,7 @@ import math
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 import jax
 
@@ -29,13 +29,8 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 from integration._ir_golden_models import golden_ir_cases  # noqa: E402
 from jaxstanv5.compiler import compile_log_density  # noqa: E402
 from jaxstanv5.ir import bindable_from_meta, meta_to_dict  # noqa: E402
-from jaxstanv5.model.bound import BoundModel  # noqa: E402
 
 FIXTURE_DIR = REPO_ROOT / "tests" / "golden_ir" / "fixtures"
-
-
-class _BindableModel(Protocol):
-    def bind(self, **values: object) -> BoundModel: ...
 
 
 def _q_points(n_params: int) -> list[list[float]]:
@@ -60,11 +55,13 @@ def _encode_data(data: Mapping[str, object]) -> dict[str, object]:
 
 
 def main() -> None:
+    from jaxstanv5.model import bind_model
+
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
 
     for case in golden_ir_cases():
-        rebuilt = cast(_BindableModel, bindable_from_meta(case.meta))
-        bound = rebuilt.bind(**case.bind_values)
+        rebuilt = bindable_from_meta(case.meta)
+        bound = bind_model(rebuilt, dict(**case.bind_values))
         log_density = compile_log_density(bound)
         gradient = jax.grad(log_density)
 

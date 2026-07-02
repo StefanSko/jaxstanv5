@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, cast
+from typing import cast
 
 import jax.numpy as jnp
 import pytest
@@ -11,12 +11,8 @@ from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.constraints import Positive
 from jaxstanv5.distributions import Normal, Truncated
 from jaxstanv5.ir import bindable_from_meta, meta_from_dict, meta_to_dict
-from jaxstanv5.model.bound import BoundModel
+from jaxstanv5.model import bind_model
 from jaxstanv5.model.decorator import ModelMeta
-
-
-class _BindableModel(Protocol):
-    def bind(self, **values: object) -> BoundModel: ...
 
 
 def declared_meta() -> ModelMeta:
@@ -36,8 +32,8 @@ def test_reconstructed_model_binds_like_the_decorated_class() -> None:
     meta = declared_meta()
     decoded = meta_from_dict(meta_to_dict(meta))
 
-    rebuilt = cast(_BindableModel, bindable_from_meta(decoded))
-    bound = rebuilt.bind(x=jnp.asarray([1.0, 2.0]), y=jnp.asarray([0.5, 1.5]))
+    rebuilt = bindable_from_meta(decoded)
+    bound = bind_model(rebuilt, {"x": jnp.asarray([1.0, 2.0]), "y": jnp.asarray([0.5, 1.5])})
 
     assert bound.meta == meta
     assert bound.param_shapes == {"alpha": (), "beta": (), "sigma": ()}
@@ -53,7 +49,7 @@ def test_reconstructed_model_exposes_model_meta() -> None:
 
 
 def test_reconstructed_model_validates_bound_data() -> None:
-    rebuilt = cast(_BindableModel, bindable_from_meta(declared_meta()))
+    rebuilt = bindable_from_meta(declared_meta())
 
     with pytest.raises(ValueError, match=r"Missing model data: \['y'\]"):
-        rebuilt.bind(x=jnp.asarray([1.0, 2.0]))
+        bind_model(rebuilt, {"x": jnp.asarray([1.0, 2.0])})

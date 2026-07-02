@@ -137,14 +137,6 @@ class CmdStanPyModule(Protocol):
         ...
 
 
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
-
-
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -210,6 +202,7 @@ def _cmdstan_model(stan_file: Path) -> StanPosteriorModel:
 def _build_bound(data: Mapping[str, object]) -> BoundModel:
     from jaxstanv5 import Data, PartiallyObserved, model
     from jaxstanv5.distributions import MultivariateNormal
+    from jaxstanv5.model import bind_model
 
     @model
     class PartiallyObservedMvnStanReference:
@@ -240,14 +233,17 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
         _float_sequence(data["observed_values"], name="observed_values"),
         dtype=jnp.float64,
     )
-    return cast(BindableModel, PartiallyObservedMvnStanReference).bind(
-        n=n,
-        n_obs=n_obs,
-        n_mis=n_mis,
-        chol=chol,
-        observed_idx=observed_idx,
-        missing_idx=missing_idx,
-        observed_values=observed_values,
+    return bind_model(
+        PartiallyObservedMvnStanReference,
+        dict(
+            n=n,
+            n_obs=n_obs,
+            n_mis=n_mis,
+            chol=chol,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            observed_values=observed_values,
+        ),
     )
 
 

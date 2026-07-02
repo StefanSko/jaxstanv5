@@ -40,9 +40,9 @@ from jaxstanv5.model.decorator import (
     ModelMeta,
     ResolvedFreeValue,
     _is_final_expr_node,
-    _resolved_free_values,
-    _resolved_stochastic_sites,
     _validate_parameter_size,
+    resolved_free_values,
+    resolved_stochastic_sites,
 )
 from jaxstanv5.model.dimensions import ResolvedModelDimensions
 from jaxstanv5.model.expr import (
@@ -99,7 +99,7 @@ def bind_model_meta(
     _validate_declared_data_values(meta, {name: data[name] for name in meta.data})
     param_shapes = {
         name: _resolve_param_shape(value.size, data)
-        for name, value in _resolved_free_values(meta).items()
+        for name, value in resolved_free_values(meta).items()
     }
     n_params = sum(_param_count(shape) for shape in param_shapes.values())
     _validate_bound_index_expressions(meta, data, param_shapes)
@@ -248,7 +248,7 @@ def _validate_bound_index_expressions(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Validate concrete data indexes before JAX gather semantics can clamp them."""
-    for site in _resolved_stochastic_sites(meta):
+    for site in resolved_stochastic_sites(meta):
         _validate_distribution_index_expressions(site.distribution, data, param_shapes)
         _validate_index_expr(site.value, data, param_shapes)
     for expression in meta.expressions.values():
@@ -261,7 +261,7 @@ def _validate_stochastic_site_shapes(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Reject stochastic-site broadcasting that would expand the site value."""
-    for site in _resolved_stochastic_sites(meta):
+    for site in resolved_stochastic_sites(meta):
         value_shape = _infer_expr_shape(site.value, data, param_shapes)
         distribution_shape = _distribution_value_shape(site.distribution, data, param_shapes)
         if distribution_shape is None:
@@ -326,7 +326,7 @@ def _validate_observed_discrete_values(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Validate concrete observed values for discrete likelihoods."""
-    for site in _resolved_stochastic_sites(meta):
+    for site in resolved_stochastic_sites(meta):
         if not isinstance(site.distribution, DiscreteDistribution):
             continue
         value = _evaluate_data_index_expr(site.value, data)
@@ -398,8 +398,8 @@ def _validate_bound_distribution_parameters(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Validate concrete and safely symbolic distribution parameters at bind time."""
-    free_values = _resolved_free_values(meta)
-    for site in _resolved_stochastic_sites(meta):
+    free_values = resolved_free_values(meta)
+    for site in resolved_stochastic_sites(meta):
         _validate_bound_distribution_parameter(
             site.name,
             site.distribution,

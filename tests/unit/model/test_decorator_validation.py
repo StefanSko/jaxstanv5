@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import cast
 
-import jax
 import jax.numpy as jnp
 import pytest
 
@@ -375,15 +374,26 @@ def test_private_model_declaration_resolution_validates_uniform_prior_constraint
 
 
 def test_private_model_declaration_resolution_matches_scalar_array_uniform_bounds() -> None:
-    lower = jnp.asarray(0.1, dtype=jnp.float32)
-    upper = jnp.asarray(0.9, dtype=jnp.float32)
+    lower = jnp.asarray(0.25, dtype=jnp.float32)
+    upper = jnp.asarray(0.75, dtype=jnp.float32)
 
     class ScalarArrayUniformPrior:
-        theta = Param(Uniform(lower, upper), constraint=Interval(0.1, 0.9))
+        theta = Param(Uniform(lower, upper), constraint=Interval(0.25, 0.75))
 
     meta = _resolve_model_declaration(ScalarArrayUniformPrior)
 
     assert tuple(meta.params) == ("theta",)
+
+
+def test_private_model_declaration_resolution_compares_bounds_as_exact_python_floats() -> None:
+    lower = jnp.asarray(0.1, dtype=jnp.float32)
+    upper = jnp.asarray(0.9, dtype=jnp.float32)
+
+    class Float32UniformPrior:
+        theta = Param(Uniform(lower, upper), constraint=Interval(0.1, 0.9))
+
+    with pytest.raises(TypeError, match="Uniform prior has support"):
+        _resolve_model_declaration(Float32UniformPrior)
 
 
 def test_private_model_declaration_resolution_rejects_near_but_unequal_uniform_bounds() -> None:
@@ -405,17 +415,12 @@ def test_private_model_declaration_resolution_rejects_shifted_large_uniform_boun
         _resolve_model_declaration(LargeUniformPrior)
 
 
-def test_private_model_declaration_resolution_compares_uniform_bounds_at_x64_resolution() -> None:
-    jax.config.update("jax_enable_x64", True)
-    try:
+def test_private_model_declaration_resolution_rejects_sub_ulp_uniform_bound_mismatch() -> None:
+    class NearUnitUniformPrior:
+        theta = Param(Uniform(0.0, 1.0 + 1e-12), constraint=UnitInterval())
 
-        class X64UniformPrior:
-            theta = Param(Uniform(0.0, 1.0 + 1e-12), constraint=UnitInterval())
-
-        with pytest.raises(TypeError, match="Uniform prior has support"):
-            _resolve_model_declaration(X64UniformPrior)
-    finally:
-        jax.config.update("jax_enable_x64", False)
+    with pytest.raises(TypeError, match="Uniform prior has support"):
+        _resolve_model_declaration(NearUnitUniformPrior)
 
 
 def test_model_resolution_skips_symbolic_uniform_bound_constraint_check() -> None:

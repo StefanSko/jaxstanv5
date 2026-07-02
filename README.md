@@ -32,6 +32,7 @@ from jaxstanv5.constraints import Positive
 from jaxstanv5.diagnostics import ess, rhat
 from jaxstanv5.distributions import Normal, Truncated
 from jaxstanv5.inference import sample
+from jaxstanv5.model import bind_model
 
 
 @model
@@ -48,7 +49,7 @@ class LinearRegression:
 x_data = jnp.linspace(-3.0, 3.0, 50)
 y_data = 2.0 + 0.5 * x_data
 
-bound = LinearRegression.bind(x=x_data, y=y_data)
+bound = bind_model(LinearRegression, {"x": x_data, "y": y_data})
 result = sample(bound, seed=42, num_warmup=200, num_samples=500, num_chains=4)
 
 rhat_values = rhat(result.samples)

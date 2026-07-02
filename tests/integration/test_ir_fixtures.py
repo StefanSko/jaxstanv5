@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Protocol, cast
 
 import jax
 import jax.numpy as jnp
@@ -20,7 +19,7 @@ from _ir_golden_models import GoldenIRCase, golden_ir_cases
 
 from jaxstanv5.compiler import compile_log_density
 from jaxstanv5.ir import bindable_from_meta, meta_from_dict
-from jaxstanv5.model.bound import BoundModel
+from jaxstanv5.model import bind_model
 
 FIXTURE_DIR = Path(__file__).parent.parent / "golden_ir" / "fixtures"
 
@@ -28,10 +27,6 @@ REGENERATE_HINT = (
     "Cross-backend IR fixtures are out of date. If this change is deliberate, "
     "run scripts/generate_ir_fixtures.py and review the diff."
 )
-
-
-class _BindableModel(Protocol):
-    def bind(self, **values: object) -> BoundModel: ...
 
 
 def _case_ids() -> list[str]:
@@ -46,8 +41,8 @@ def test_fixture_matches_compiled_log_density(case: GoldenIRCase) -> None:
     decoded = meta_from_dict(fixture["ir"])
     assert decoded == case.meta, REGENERATE_HINT
 
-    rebuilt = cast(_BindableModel, bindable_from_meta(decoded))
-    bound = rebuilt.bind(**case.bind_values)
+    rebuilt = bindable_from_meta(decoded)
+    bound = bind_model(rebuilt, case.bind_values)
     log_density = compile_log_density(bound)
 
     evaluations = fixture["evaluations"]

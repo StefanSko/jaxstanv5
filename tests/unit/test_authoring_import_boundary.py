@@ -37,16 +37,23 @@ def _run_with_backend_imports_blocked(code: str) -> subprocess.CompletedProcess[
     )
 
 
-def test_authoring_modules_import_without_jax_or_blackjax() -> None:
-    result = _run_with_backend_imports_blocked(
-        """
-        import jaxstanv5
-        import jaxstanv5.constraints
-        import jaxstanv5.distributions
-        import jaxstanv5.ir
-        import jaxstanv5.math
-        import jaxstanv5.model
+def _frontend_module_names() -> tuple[str, ...]:
+    """Every authoring/IR module: the full inventory, not a sampled subset."""
+    package_root = PROJECT_ROOT / "src" / "jaxstanv5"
+    modules = ["jaxstanv5", "jaxstanv5._ir_registry", "jaxstanv5.ir", "jaxstanv5.math"]
+    for subpackage in ("constraints", "distributions", "model"):
+        modules.append(f"jaxstanv5.{subpackage}")
+        for path in sorted((package_root / subpackage).glob("*.py")):
+            if path.stem == "__init__":
+                continue
+            modules.append(f"jaxstanv5.{subpackage}.{path.stem}")
+    return tuple(modules)
 
+
+def test_every_frontend_module_imports_without_jax_or_blackjax() -> None:
+    imports = "\n".join(f"import {name}" for name in _frontend_module_names())
+    checks = textwrap.dedent(
+        """
         forbidden = [
             name for name in sys.modules
             if name == "jax" or name.startswith("jax.")
@@ -56,6 +63,7 @@ def test_authoring_modules_import_without_jax_or_blackjax() -> None:
         assert hasattr(jaxstanv5, "__all__")
         """
     )
+    result = _run_with_backend_imports_blocked(imports + "\n" + checks)
 
     assert result.returncode == 0, result.stderr
 

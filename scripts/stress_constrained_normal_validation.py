@@ -25,7 +25,6 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
 
 import jax
 import jax.numpy as jnp
@@ -88,6 +87,8 @@ def _block_until_ready(samples: dict[str, jax.Array]) -> None:
 
 
 def _run_stress(config: StressConfig) -> StressResult:
+    from jaxstanv5.model import bind_model
+
     _add_repo_paths()
 
     from integration._validation import positive_scale_grid_reference, summarize_scalar_draws
@@ -95,15 +96,7 @@ def _run_stress(config: StressConfig) -> StressResult:
     from jaxstanv5.constraints import Positive
     from jaxstanv5.distributions import Normal
     from jaxstanv5.inference import compile_sampler
-    from jaxstanv5.model.bound import BoundModel
     from jaxstanv5.validation import standardized_discrepancy
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
 
     @model
     class PositiveScaleNormalValidationModel:
@@ -113,7 +106,7 @@ def _run_stress(config: StressConfig) -> StressResult:
         y = Observed(Normal(0.0, sigma))
 
     y_data = jnp.array([-0.5, 0.25, 1.0, -1.25])
-    bound = cast(BindableModel, PositiveScaleNormalValidationModel).bind(y=y_data)
+    bound = bind_model(PositiveScaleNormalValidationModel, dict(y=y_data))
     compiled = compile_sampler(bound)
     reference = positive_scale_grid_reference(
         parameter="sigma",

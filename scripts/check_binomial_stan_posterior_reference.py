@@ -115,14 +115,6 @@ class CmdStanPyModule(Protocol):
         ...
 
 
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
-
-
 class StanDrawResult(NamedTuple):
     """Stan scalar samples."""
 
@@ -181,6 +173,7 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     from jaxstanv5.constraints import Positive
     from jaxstanv5.distributions import Binomial, HalfNormal, Normal
     from jaxstanv5.math import sigmoid
+    from jaxstanv5.model import bind_model
 
     @model
     class HierarchicalBinomialStanReferenceModel:
@@ -208,12 +201,15 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     trials = jnp.array(_int_sequence(data["trials"], name="trials"), dtype=jnp.int32)
     y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32)
-    return cast(BindableModel, HierarchicalBinomialStanReferenceModel).bind(
-        n_groups=n_groups,
-        group_idx=group_idx,
-        x=x,
-        trials=trials,
-        y=y,
+    return bind_model(
+        HierarchicalBinomialStanReferenceModel,
+        dict(
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            trials=trials,
+            y=y,
+        ),
     )
 
 

@@ -19,6 +19,8 @@ from jaxstanv5.model import (
     model,
     model_dimensions,
     model_meta,
+    resolved_free_values,
+    resolved_stochastic_sites,
 )
 
 
@@ -124,3 +126,37 @@ def test_bindable_from_meta_rejects_dimensions_for_undeclared_variables() -> Non
 def test_bind_model_rejects_non_model_objects() -> None:
     with pytest.raises(TypeError, match="@model"):
         bind_model(object, {})
+
+
+def test_resolved_free_values_returns_flat_nuts_layout() -> None:
+    free_values = resolved_free_values(model_meta(PublicHookModel))
+
+    assert tuple(free_values) == ("theta",)
+    assert free_values["theta"].constraint is None
+    assert free_values["theta"].size is None
+
+
+def test_resolved_stochastic_sites_returns_log_density_factors() -> None:
+    sites = resolved_stochastic_sites(model_meta(PublicHookModel))
+
+    assert tuple(site.name for site in sites) == ("theta", "y")
+
+
+def test_resolved_accessors_derive_layout_from_params_when_absent() -> None:
+    meta = model_meta(PublicHookModel)
+    legacy = ModelMeta(
+        params=meta.params,
+        data=meta.data,
+        observed_nodes=meta.observed_nodes,
+        expressions=meta.expressions,
+    )
+
+    assert tuple(resolved_free_values(legacy)) == ("theta",)
+    assert tuple(site.name for site in resolved_stochastic_sites(legacy)) == ("theta", "y")
+
+
+def test_model_classes_carry_no_runtime_bind_attribute() -> None:
+    assert "bind" not in PublicHookModel.__dict__
+
+    rebuilt = bindable_from_meta(model_meta(PublicHookModel))
+    assert not hasattr(rebuilt, "bind")

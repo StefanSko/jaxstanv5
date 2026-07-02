@@ -27,7 +27,7 @@ from jaxstanv5._backends.jax.distributions import (
 from jaxstanv5.compiler.core import _evaluate_distribution
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values, model_meta
+from jaxstanv5.model.decorator import ModelMeta, model_meta, resolved_free_values
 from jaxstanv5.simulation.domains import (
     OrderedVectorDomain,
     ScalarIntervalDomain,
@@ -240,7 +240,7 @@ def simulate_prior_predictive(
         raise ValueError("num_samples must be at least 1")
 
     meta = model_meta(model_cls)
-    non_param_free_values = set(_resolved_free_values(meta)) - set(meta.params)
+    non_param_free_values = set(resolved_free_values(meta)) - set(meta.params)
     if non_param_free_values:
         raise TypeError(
             "PartiallyObserved declarations are not supported by prior-predictive simulation"

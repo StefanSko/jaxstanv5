@@ -16,7 +16,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -24,7 +24,7 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 if TYPE_CHECKING:
-    from jaxstanv5.model.bound import BoundModel
+    pass
 
 
 @dataclass(frozen=True)
@@ -55,14 +55,6 @@ class PoissonSbcResult:
     max_abs_bin_z: float
     mean_rank_z: float
     elapsed_seconds: float
-
-
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
 
 
 def _repo_root() -> Path:
@@ -116,6 +108,7 @@ def _data_values(config: PoissonSbcConfig) -> Mapping[str, object]:
 def _run_sbc(config: PoissonSbcConfig) -> tuple[PoissonSbcResult, ...]:
     from integration._validation import assert_sbc_rank_uniformity
     from jaxstanv5.inference import compile_sampler
+    from jaxstanv5.model import bind_model
     from jaxstanv5.simulation import simulate_prior_predictive
     from jaxstanv5.validation import SbcValidationResult, scalar_sbc_rank
 
@@ -133,10 +126,10 @@ def _run_sbc(config: PoissonSbcConfig) -> tuple[PoissonSbcResult, ...]:
     y_draws = jnp.asarray(prior_predictive.observed["y"])
     ranks: dict[str, list[int]] = {name: [] for name in parameters}
     num_posterior_draws: int | None = None
-    bindable = cast(BindableModel, model_cls)
+    bindable = model_cls
 
     for simulation_index in range(config.num_simulations):
-        bound = bindable.bind(**prior_predictive.data, y=y_draws[simulation_index])
+        bound = bind_model(bindable, dict(**prior_predictive.data, y=y_draws[simulation_index]))
         compiled = compile_sampler(bound, target_acceptance_rate=config.target_acceptance_rate)
         result = compiled.sample(
             seed=config.seed + 10_000 + simulation_index,
