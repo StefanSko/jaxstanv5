@@ -7,7 +7,7 @@ import pytest
 
 from jaxstanv5 import Data, Observed, Param, PartiallyObserved, model
 from jaxstanv5.constraints import Interval, Ordered, Positive
-from jaxstanv5.distributions import MultivariateNormal, Normal, OrderedLogistic, Uniform
+from jaxstanv5.distributions import MultivariateNormal, Normal, OrderedLogistic, Truncated, Uniform
 from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation import simulate_prior_predictive
 
@@ -31,7 +31,7 @@ class NormalWithObserved:
 class PositiveScalePrior:
     """Positive-constrained prior-only model."""
 
-    sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+    sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
 
 
 @model

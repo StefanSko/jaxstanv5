@@ -24,6 +24,7 @@ from jaxstanv5.distributions.counts import (
 )
 from jaxstanv5.distributions.multivariate import MultivariateNormal
 from jaxstanv5.distributions.ordinal import OrderedLogistic
+from jaxstanv5.distributions.truncated import Truncated
 
 __all__ = [
     "Bernoulli",
@@ -43,5 +44,6 @@ __all__ = [
     "OrderedLogistic",
     "Poisson",
     "StudentT",
+    "Truncated",
     "Uniform",
 ]

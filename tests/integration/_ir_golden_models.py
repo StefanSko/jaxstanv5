@@ -20,6 +20,7 @@ from jaxstanv5.distributions import (
     Normal,
     OrderedLogistic,
     Poisson,
+    Truncated,
 )
 from jaxstanv5.math import exp
 from jaxstanv5.model.decorator import ModelMeta
@@ -43,7 +44,7 @@ def _linear_regression() -> GoldenIRCase:
     class LinearRegression:
         alpha = Param(Normal(0.0, 1.0))
         beta = Param(Normal(0.0, 1.0))
-        sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+        sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
         x = Data.vector()
         mu = alpha + beta * x
         y = Observed(Normal(mu, sigma))
@@ -169,7 +170,10 @@ def _bounded_rates() -> GoldenIRCase:
     @model
     class BoundedRates:
         p = Param(Beta(2.0, 2.0), constraint=UnitInterval())
-        level = Param(Normal(1.0, 1.0), constraint=Interval(-1.0, 3.0))
+        level = Param(
+            Truncated(Normal(1.0, 1.0), lower=-1.0, upper=3.0),
+            constraint=Interval(-1.0, 3.0),
+        )
         y = Observed(Bernoulli(p))
 
     return GoldenIRCase(

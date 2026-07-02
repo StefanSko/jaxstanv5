@@ -115,6 +115,9 @@ Core invariants that should remain true as the codebase changes.
 - Discrete distributions are observed-likelihood distributions only; NUTS
   parameters are continuous and discrete latent `Param(...)` or
   `PartiallyObserved(...)` declarations are rejected.
+- Constraints are transform/support metadata, not implicit prior truncation
+  syntax. Constrained priors whose base support is wider than the constraint must
+  use an explicit `Truncated(...)` distribution with matching concrete bounds.
 - `MultivariateNormal.scale_tril` must be a valid lower-triangular Cholesky factor
   at bind time. Arbitrary parameter-dependent scale matrices are unsupported;
   a validated Cholesky factor may be multiplied or divided by a provably positive

@@ -25,6 +25,7 @@ from jaxstanv5.distributions import (
     OrderedLogistic,
     Poisson,
     StudentT,
+    Truncated,
     Uniform,
 )
 from jaxstanv5.model._data_schema import (
@@ -171,6 +172,7 @@ _BUILTIN_NODE_CLASSES: tuple[type, ...] = (
     Exponential,
     Uniform,
     Beta,
+    Truncated,
     Bernoulli,
     Poisson,
     Binomial,

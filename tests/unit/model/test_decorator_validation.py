@@ -21,6 +21,8 @@ from jaxstanv5.distributions import (
     NegativeBinomial,
     Normal,
     Poisson,
+    StudentT,
+    Truncated,
     Uniform,
 )
 from jaxstanv5.distributions.core import (
@@ -241,6 +243,84 @@ def test_private_model_declaration_resolution_accepts_positive_prior_constraint(
     meta = _resolve_model_declaration(ValidPositivePrior)
 
     assert tuple(meta.params) == ("sigma",)
+
+
+def test_private_model_declaration_resolution_rejects_implicit_truncated_normal_prior() -> None:
+    class ImplicitTruncatedNormal:
+        sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+
+    with pytest.raises(TypeError, match="Use Truncated"):
+        _resolve_model_declaration(ImplicitTruncatedNormal)
+
+
+def test_private_model_declaration_resolution_accepts_explicit_truncated_normal_prior() -> None:
+    class ExplicitTruncatedNormal:
+        sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
+
+    meta = _resolve_model_declaration(ExplicitTruncatedNormal)
+
+    assert tuple(meta.params) == ("sigma",)
+
+
+def test_private_model_declaration_resolution_requires_matching_truncated_bounds() -> None:
+    class MismatchedTruncatedNormal:
+        sigma = Param(Truncated(Normal(0.0, 1.0), lower=-1.0), constraint=Positive())
+
+    with pytest.raises(TypeError, match="effective support"):
+        _resolve_model_declaration(MismatchedTruncatedNormal)
+
+
+def test_private_model_declaration_resolution_rejects_truncated_prior_without_cdf_support() -> None:
+    class TruncatedStudentT:
+        sigma = Param(
+            Truncated(StudentT(4.0, 0.0, 1.0), lower=0.0),
+            constraint=Positive(),
+        )
+
+    with pytest.raises(TypeError, match="no supported CDF"):
+        _resolve_model_declaration(TruncatedStudentT)
+
+
+def test_private_model_declaration_resolution_rejects_truncated_discrete_prior() -> None:
+    class TruncatedDiscrete:
+        count = Param(Truncated(Poisson(1.0), lower=0.0), constraint=Positive())
+
+    with pytest.raises(TypeError, match="Discrete distributions cannot be used as Param priors"):
+        _resolve_model_declaration(TruncatedDiscrete)
+
+
+def test_private_model_declaration_resolution_rejects_truncated_discrete_partially_observed() -> (
+    None
+):
+    class TruncatedDiscretePartial:
+        observed_values = Data.vector(0)
+        observed_idx = Data.vector(0)
+        missing_idx = Data.vector(1)
+        y = PartiallyObserved.vector(
+            Truncated(Poisson(1.0), lower=0.0),
+            length=1,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+        )
+
+    with pytest.raises(TypeError, match="Discrete distributions cannot be partially observed"):
+        _resolve_model_declaration(TruncatedDiscretePartial)
+
+
+def test_private_model_declaration_resolution_validates_truncated_effective_support() -> None:
+    class MismatchedSupport:
+        theta = Param(Truncated(Uniform(0.0, 1.0), lower=0.0), constraint=Positive())
+
+    with pytest.raises(TypeError, match="effective support"):
+        _resolve_model_declaration(MismatchedSupport)
+
+    class MatchedSupport:
+        theta = Param(Truncated(Uniform(0.0, 1.0), lower=0.0), constraint=UnitInterval())
+
+    meta = _resolve_model_declaration(MatchedSupport)
+
+    assert tuple(meta.params) == ("theta",)
 
 
 def test_private_model_declaration_resolution_requires_unit_interval_for_beta_prior() -> None:

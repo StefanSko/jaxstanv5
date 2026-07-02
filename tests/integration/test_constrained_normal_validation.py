@@ -12,14 +12,14 @@ from _validation import (
 
 from jaxstanv5 import Observed, Param, model
 from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import Normal, Truncated
 
 
 @model
 class PositiveScaleNormalValidationModel:
     """Zero-location Normal model with unknown positive scale."""
 
-    sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+    sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
     y = Observed(Normal(0.0, sigma))
 
 

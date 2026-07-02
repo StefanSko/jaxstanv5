@@ -9,7 +9,7 @@ import pytest
 
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import Normal, Truncated
 from jaxstanv5.ir import bindable_from_meta, meta_from_dict, meta_to_dict
 from jaxstanv5.model.bound import BoundModel
 from jaxstanv5.model.decorator import ModelMeta
@@ -24,7 +24,7 @@ def declared_meta() -> ModelMeta:
     class LinearRegression:
         alpha = Param(Normal(0.0, 1.0))
         beta = Param(Normal(0.0, 1.0))
-        sigma = Param(Normal(0.0, 1.0), constraint=Positive())
+        sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
         x = Data.vector()
         mu = alpha + beta * x
         y = Observed(Normal(mu, sigma))

@@ -11,8 +11,16 @@ from typing import TYPE_CHECKING, SupportsFloat, cast
 from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import Constraint
 from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
-from jaxstanv5.distributions.continuous import Beta, Exponential, HalfNormal, Uniform
-from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
+from jaxstanv5.distributions.continuous import (
+    Beta,
+    Exponential,
+    HalfNormal,
+    Normal,
+    StudentT,
+    Uniform,
+)
+from jaxstanv5.distributions.core import DiscreteDistribution, Distribution, InverseCdfDistribution
+from jaxstanv5.distributions.truncated import Truncated
 from jaxstanv5.model._data_schema import (
     DataDimRef,
     DataDimSymbol,
@@ -186,7 +194,7 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
     for name, value in cls.__dict__.items():
         if isinstance(value, Param):
             distribution = _resolve_declaration_distribution(value.distribution, symbols)
-            if isinstance(distribution, DiscreteDistribution):
+            if _contains_discrete_distribution(distribution):
                 raise TypeError(
                     "Discrete distributions cannot be used as Param priors; "
                     "use them for Observed likelihoods or marginalize discrete latents"
@@ -232,7 +240,7 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
             )
         elif isinstance(value, PartiallyObserved):
             distribution = _resolve_declaration_distribution(value.distribution, symbols)
-            if isinstance(distribution, DiscreteDistribution):
+            if _contains_discrete_distribution(distribution):
                 raise TypeError(
                     "Discrete distributions cannot be partially observed NUTS values; "
                     "marginalize discrete missing values or impute them posterior-predictively"
@@ -261,6 +269,15 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
     )
 
 
+def _contains_discrete_distribution(distribution: Distribution) -> bool:
+    """Return whether a distribution wrapper contains a discrete distribution."""
+    if isinstance(distribution, DiscreteDistribution):
+        return True
+    if isinstance(distribution, Truncated):
+        return _contains_discrete_distribution(distribution.base)
+    return False
+
+
 def _validate_param_prior_constraint(
     *,
     name: str,
@@ -268,6 +285,31 @@ def _validate_param_prior_constraint(
     constraint: Constraint | None,
 ) -> None:
     """Validate known concrete prior supports against explicit constraints."""
+    if isinstance(distribution, Truncated):
+        _validate_truncated_param_prior_constraint(
+            name=name,
+            distribution=distribution,
+            constraint=constraint,
+        )
+        return
+
+    if isinstance(distribution, Normal) and isinstance(
+        constraint, Positive | Interval | UnitInterval
+    ):
+        raise TypeError(
+            f"Parameter {name!r} uses a constrained Normal prior. Use Truncated(..., "
+            "lower=..., upper=...) with a matching constraint so the truncation "
+            "normalizer is explicit."
+        )
+
+    if isinstance(distribution, StudentT) and isinstance(
+        constraint, Positive | Interval | UnitInterval
+    ):
+        raise TypeError(
+            f"Parameter {name!r} uses a constrained StudentT prior, but StudentT "
+            "truncation is not supported because the backend has no StudentT CDF"
+        )
+
     if isinstance(distribution, Exponential | HalfNormal):
         if not isinstance(constraint, Positive):
             raise TypeError(
@@ -295,6 +337,121 @@ def _validate_param_prior_constraint(
             f"Parameter {name!r} Uniform prior has support ({low}, {high}); declare "
             f"Param(Uniform({low}, {high}), constraint=Interval({low}, {high}))"
         )
+
+
+def _validate_truncated_param_prior_constraint(
+    *,
+    name: str,
+    distribution: Truncated,
+    constraint: Constraint | None,
+) -> None:
+    """Require explicit truncation bounds to match the parameter constraint."""
+    if isinstance(distribution.base, DiscreteDistribution):
+        raise TypeError(
+            "Discrete distributions cannot be used as Param priors; use them for Observed "
+            "likelihoods or marginalize discrete latents"
+        )
+    if not _truncated_base_has_cdf(distribution.base):
+        raise TypeError(
+            f"Parameter {name!r} Truncated prior base distribution "
+            f"{type(distribution.base).__name__} has no supported CDF/ICDF backend"
+        )
+
+    support = _truncated_effective_support(distribution)
+    if support is None:
+        raise TypeError(
+            f"Parameter {name!r} Truncated prior uses symbolic or unknown bounds; "
+            "constrained Param priors require concrete effective support that matches "
+            "the declared constraint"
+        )
+    lower, upper = support
+    if _constraint_matches_truncated_support(constraint, lower=lower, upper=upper):
+        return
+    raise TypeError(
+        f"Parameter {name!r} Truncated prior effective support must match its constraint; "
+        "use Positive() for lower=0 or Interval(lower, upper)/UnitInterval() for finite bounds"
+    )
+
+
+def _truncated_base_has_cdf(distribution: Distribution) -> bool:
+    """Return whether a Truncated base has declaration-known CDF support."""
+    if isinstance(distribution, Normal | HalfNormal | Exponential | Uniform):
+        return True
+    if isinstance(distribution, Truncated):
+        return _truncated_base_has_cdf(distribution.base)
+    return isinstance(distribution, InverseCdfDistribution)
+
+
+def _truncated_effective_support(
+    distribution: Truncated,
+) -> tuple[float | None, float | None] | None:
+    """Return concrete support after intersecting base support with truncation bounds."""
+    base_support = _known_distribution_support(distribution.base)
+    truncation_bounds = _concrete_truncated_bounds(distribution)
+    if base_support is None or truncation_bounds is None:
+        return None
+    base_lower, base_upper = base_support
+    truncation_lower, truncation_upper = truncation_bounds
+    lower = _max_optional_bound(base_lower, truncation_lower)
+    upper = _min_optional_bound(base_upper, truncation_upper)
+    if lower is not None and upper is not None and lower >= upper:
+        return None
+    return (lower, upper)
+
+
+def _known_distribution_support(
+    distribution: Distribution,
+) -> tuple[float | None, float | None] | None:
+    """Return concrete scalar support for built-in distributions, or None if unknown."""
+    if isinstance(distribution, Normal):
+        return (None, None)
+    if isinstance(distribution, HalfNormal | Exponential):
+        return (0.0, None)
+    if isinstance(distribution, Uniform):
+        return _concrete_uniform_bounds(distribution)
+    if isinstance(distribution, Truncated):
+        return _truncated_effective_support(distribution)
+    return None
+
+
+def _max_optional_bound(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
+
+
+def _min_optional_bound(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return min(left, right)
+
+
+def _constraint_matches_truncated_support(
+    constraint: Constraint | None,
+    *,
+    lower: float | None,
+    upper: float | None,
+) -> bool:
+    if upper is None and lower is not None and _same_scalar_bound(lower, 0.0):
+        return isinstance(constraint, Positive)
+    if lower is not None and upper is not None:
+        return _constraint_matches_uniform_support(constraint, low=lower, high=upper)
+    return False
+
+
+def _concrete_truncated_bounds(distribution: Truncated) -> tuple[float | None, float | None] | None:
+    """Return concrete scalar Truncated bounds, or None for symbolic bounds."""
+    lower = None if distribution.lower is None else _concrete_scalar_bound(distribution.lower)
+    upper = None if distribution.upper is None else _concrete_scalar_bound(distribution.upper)
+    if (distribution.lower is not None and lower is None) or (
+        distribution.upper is not None and upper is None
+    ):
+        return None
+    return (lower, upper)
 
 
 def _concrete_uniform_bounds(distribution: Uniform) -> tuple[float, float] | None:

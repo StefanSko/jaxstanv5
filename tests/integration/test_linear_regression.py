@@ -7,7 +7,7 @@ from _helpers import bind_model
 from jaxstanv5 import Data, Observed, Param, model
 from jaxstanv5.constraints import Positive
 from jaxstanv5.diagnostics import ess, rhat
-from jaxstanv5.distributions import Normal
+from jaxstanv5.distributions import Normal, Truncated
 from jaxstanv5.inference import sample
 
 
@@ -17,7 +17,7 @@ class LinearRegression:
 
     alpha = Param(Normal(0, 1))
     beta = Param(Normal(0, 1))
-    sigma = Param(Normal(0, 1), constraint=Positive())
+    sigma = Param(Truncated(Normal(0, 1), lower=0.0), constraint=Positive())
     x = Data.vector()
     mu = alpha + beta * x
     y = Observed(Normal(mu, sigma))
