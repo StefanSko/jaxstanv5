@@ -66,6 +66,13 @@ class HierarchicalTruncatedScale:
 
 
 @model
+class TruncatedObservedNormal:
+    """Observed likelihood with explicit truncation."""
+
+    y = Observed(Truncated(Normal(0, 1), lower=0.0))
+
+
+@model
 class IntervalConstrainedNormal:
     """Scalar normal prior constrained to a finite interval."""
 
@@ -309,6 +316,17 @@ def test_compiled_log_density_includes_parameter_dependent_truncation_normalizer
     expected += normal_log_prob(tau, mu, jnp.array(1.0)) - jnp.log(ndtr(mu))
     expected += log_tau
 
+    assert jnp.allclose(lp, expected, atol=1e-6)
+
+
+def test_compiled_log_density_evaluates_truncated_observed_likelihood() -> None:
+    bound = bind_model(TruncatedObservedNormal, y=jnp.array(0.7))
+    log_prob = compile_log_density(bound)
+
+    lp = log_prob(jnp.array([]))
+
+    expected = normal_log_prob(jnp.array(0.7), jnp.array(0.0), jnp.array(1.0))
+    expected -= jnp.log(jnp.array(0.5))
     assert jnp.allclose(lp, expected, atol=1e-6)
 
 

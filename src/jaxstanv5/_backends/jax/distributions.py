@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Protocol, cast, runtime_checkable
 
 import jax
@@ -10,6 +11,7 @@ import jax.numpy as jnp
 from jax.scipy.linalg import solve_triangular
 from jax.scipy.special import gammaln, log_ndtr, ndtr, ndtri, xlogy
 
+from jaxstanv5.distributions._capabilities import has_scalar_inverse_cdf
 from jaxstanv5.distributions.continuous import (
     Beta,
     Exponential,
@@ -228,7 +230,7 @@ def event_shape(distribution: Distribution) -> tuple[int, ...]:
 def is_sampleable(distribution: Distribution) -> bool:
     """Return whether the JAX backend can sample from ``distribution``."""
     if isinstance(distribution, Truncated):
-        return is_inverse_cdf(distribution.base)
+        return is_inverse_cdf(distribution)
     return isinstance(
         distribution,
         Normal
@@ -250,12 +252,7 @@ def is_sampleable(distribution: Distribution) -> bool:
 
 def is_inverse_cdf(distribution: Distribution) -> bool:
     """Return whether the JAX backend has scalar inverse-CDF support."""
-    if isinstance(distribution, Truncated):
-        return is_inverse_cdf(distribution.base)
-    return isinstance(
-        distribution,
-        Normal | HalfNormal | Exponential | Uniform | PythonInverseCdfDistribution,
-    )
+    return has_scalar_inverse_cdf(distribution)
 
 
 def validate_scale_tril(scale_tril: jax.Array, *, name: str = "scale_tril") -> None:
@@ -334,6 +331,71 @@ def _log_sub_exp(log_left: jax.Array, log_right: jax.Array) -> jax.Array:
     return log_left + jnp.log1p(-safe_ratio)
 
 
+@dataclass(frozen=True)
+class _MaskedNormalInterval:
+    """Finite standard-normal interval with stable masked branch arguments."""
+
+    use_survival: jax.Array
+    cdf_lower: jax.Array
+    cdf_upper: jax.Array
+    survival_lower: jax.Array
+    survival_upper: jax.Array
+
+
+def _masked_normal_interval(z_lower: jax.Array, z_upper: jax.Array) -> _MaskedNormalInterval:
+    """Return branch-safe CDF and survival arguments for a finite interval."""
+    use_survival = z_lower > 0.0
+    return _MaskedNormalInterval(
+        use_survival=use_survival,
+        cdf_lower=jnp.where(use_survival, -1.0, z_lower),
+        cdf_upper=jnp.where(use_survival, 0.0, z_upper),
+        survival_lower=jnp.where(use_survival, z_lower, 0.0),
+        survival_upper=jnp.where(use_survival, z_upper, 1.0),
+    )
+
+
+def _normal_log_standard_interval_probability(
+    z_lower: jax.Array,
+    z_upper: jax.Array,
+) -> jax.Array:
+    """Return stable log P(z_lower < Z < z_upper) for standard normal Z."""
+    interval = _masked_normal_interval(z_lower, z_upper)
+    log_cdf_difference = _log_sub_exp(log_ndtr(interval.cdf_upper), log_ndtr(interval.cdf_lower))
+    log_survival_difference = _log_sub_exp(
+        log_ndtr(-interval.survival_lower),
+        log_ndtr(-interval.survival_upper),
+    )
+    return jnp.where(interval.use_survival, log_survival_difference, log_cdf_difference)
+
+
+def _normal_finite_interval_icdf_z(
+    z_lower: jax.Array,
+    z_upper: jax.Array,
+    probability: jax.Array,
+) -> jax.Array:
+    """Return a standard-normal quantile inside a finite truncated interval."""
+    interval = _masked_normal_interval(z_lower, z_upper)
+
+    log_cdf_lower = log_ndtr(interval.cdf_lower)
+    log_cdf_upper = log_ndtr(interval.cdf_upper)
+    cdf_ratio = jnp.exp(log_cdf_lower - log_cdf_upper)
+    log_cdf_value = log_cdf_upper + jnp.log(cdf_ratio + probability * (1.0 - cdf_ratio))
+    cdf_value = ndtri(jnp.exp(log_cdf_value))
+
+    log_survival_lower = log_ndtr(-interval.survival_lower)
+    log_survival_upper = log_ndtr(-interval.survival_upper)
+    survival_ratio = jnp.exp(log_survival_upper - log_survival_lower)
+    log_survival_value = log_survival_lower + jnp.log1p(-probability * (1.0 - survival_ratio))
+    survival_value = -ndtri(jnp.exp(log_survival_value))
+
+    return jnp.where(interval.use_survival, survival_value, cdf_value)
+
+
+def _where_valid_normal_scale(valid_scale: jax.Array, value: jax.Array) -> jax.Array:
+    """Propagate invalid Normal scales through CDF/ICDF-style operations."""
+    return jnp.where(valid_scale, value, jnp.nan)
+
+
 def _normal_log_interval_probability(
     distribution: Normal,
     lower: jax.Array | None,
@@ -355,14 +417,7 @@ def _normal_log_interval_probability(
 
     z_upper = (upper - loc) / safe_scale
     valid_bounds = (upper > lower) & valid_scale
-    use_survival = z_lower > 0.0
-    cdf_lower = jnp.where(use_survival, -1.0, z_lower)
-    cdf_upper = jnp.where(use_survival, 0.0, z_upper)
-    survival_lower = jnp.where(use_survival, z_lower, 0.0)
-    survival_upper = jnp.where(use_survival, z_upper, 1.0)
-    log_cdf_difference = _log_sub_exp(log_ndtr(cdf_upper), log_ndtr(cdf_lower))
-    log_survival_difference = _log_sub_exp(log_ndtr(-survival_lower), log_ndtr(-survival_upper))
-    log_probability = jnp.where(use_survival, log_survival_difference, log_cdf_difference)
+    log_probability = _normal_log_standard_interval_probability(z_lower, z_upper)
     return log_probability, valid_bounds
 
 
@@ -382,7 +437,8 @@ def _normal_truncated_cdf(distribution: Truncated, x: DistributionValue) -> jax.
     base = cast(Normal, distribution.base)
     lower, upper = _truncated_bounds(distribution)
     loc, scale = _normal_loc_scale(base)
-    safe_scale = jnp.where(scale > 0.0, scale, 1.0)
+    valid_scale = scale > 0.0
+    safe_scale = jnp.where(valid_scale, scale, 1.0)
     value = jnp.asarray(x)
     if lower is not None:
         value = jnp.maximum(value, lower)
@@ -392,75 +448,53 @@ def _normal_truncated_cdf(distribution: Truncated, x: DistributionValue) -> jax.
 
     if lower is None:
         if upper is None:
-            return jnp.ones_like(value)
+            probability = jnp.ones_like(value + loc + safe_scale)
+            return _where_valid_normal_scale(valid_scale, probability)
         z_upper = (upper - loc) / safe_scale
         probability = jnp.exp(log_ndtr(z_value) - log_ndtr(z_upper))
-        return jnp.clip(probability, 0.0, 1.0)
+        return _where_valid_normal_scale(valid_scale, jnp.clip(probability, 0.0, 1.0))
 
     z_lower = (lower - loc) / safe_scale
     if upper is None:
-        log_survival_lower = log_ndtr(-z_lower)
-        log_survival_value = log_ndtr(-z_value)
-        probability = jnp.exp(
-            _log_sub_exp(log_survival_lower, log_survival_value) - log_survival_lower
-        )
-        return jnp.clip(probability, 0.0, 1.0)
+        log_numerator = _normal_log_standard_interval_probability(z_lower, z_value)
+        log_denominator = log_ndtr(-z_lower)
+        probability = jnp.exp(log_numerator - log_denominator)
+        return _where_valid_normal_scale(valid_scale, jnp.clip(probability, 0.0, 1.0))
 
     z_upper = (upper - loc) / safe_scale
-    use_survival = z_lower > 0.0
-    cdf_lower = jnp.where(use_survival, -1.0, z_lower)
-    cdf_value = jnp.where(use_survival, -0.5, z_value)
-    cdf_upper = jnp.where(use_survival, 0.0, z_upper)
-    survival_lower = jnp.where(use_survival, z_lower, 0.0)
-    survival_value = jnp.where(use_survival, z_value, 0.5)
-    survival_upper = jnp.where(use_survival, z_upper, 1.0)
-    log_cdf_numerator = _log_sub_exp(log_ndtr(cdf_value), log_ndtr(cdf_lower))
-    log_cdf_denominator = _log_sub_exp(log_ndtr(cdf_upper), log_ndtr(cdf_lower))
-    log_survival_numerator = _log_sub_exp(log_ndtr(-survival_lower), log_ndtr(-survival_value))
-    log_survival_denominator = _log_sub_exp(log_ndtr(-survival_lower), log_ndtr(-survival_upper))
-    cdf_probability = jnp.exp(log_cdf_numerator - log_cdf_denominator)
-    survival_probability = jnp.exp(log_survival_numerator - log_survival_denominator)
-    probability = jnp.where(use_survival, survival_probability, cdf_probability)
-    return jnp.clip(probability, 0.0, 1.0)
+    log_numerator = _normal_log_standard_interval_probability(z_lower, z_value)
+    log_denominator = _normal_log_standard_interval_probability(z_lower, z_upper)
+    probability = jnp.exp(log_numerator - log_denominator)
+    return _where_valid_normal_scale(valid_scale, jnp.clip(probability, 0.0, 1.0))
 
 
 def _normal_truncated_icdf(distribution: Truncated, p: DistributionValue) -> jax.Array:
     base = cast(Normal, distribution.base)
     lower, upper = _truncated_bounds(distribution)
     loc, scale = _normal_loc_scale(base)
-    safe_scale = jnp.where(scale > 0.0, scale, 1.0)
+    valid_scale = scale > 0.0
+    safe_scale = jnp.where(valid_scale, scale, 1.0)
     probability = jnp.clip(jnp.asarray(p), 0.0, 1.0)
 
     if lower is None:
         if upper is None:
-            return loc + safe_scale * ndtri(probability)
+            value = loc + safe_scale * ndtri(probability)
+            return _where_valid_normal_scale(valid_scale, value)
         z_upper = (upper - loc) / safe_scale
         log_base_probability = log_ndtr(z_upper) + jnp.log(probability)
-        return loc + safe_scale * ndtri(jnp.exp(log_base_probability))
+        value = loc + safe_scale * ndtri(jnp.exp(log_base_probability))
+        return _where_valid_normal_scale(valid_scale, value)
 
     z_lower = (lower - loc) / safe_scale
     if upper is None:
         log_survival = log_ndtr(-z_lower) + jnp.log1p(-probability)
-        return loc + safe_scale * -ndtri(jnp.exp(log_survival))
+        value = loc + safe_scale * -ndtri(jnp.exp(log_survival))
+        return _where_valid_normal_scale(valid_scale, value)
 
     z_upper = (upper - loc) / safe_scale
-    use_survival = z_lower > 0.0
-    cdf_lower = jnp.where(use_survival, -1.0, z_lower)
-    cdf_upper = jnp.where(use_survival, 0.0, z_upper)
-    log_cdf_lower = log_ndtr(cdf_lower)
-    log_cdf_upper = log_ndtr(cdf_upper)
-    cdf_ratio = jnp.exp(log_cdf_lower - log_cdf_upper)
-    log_cdf_value = log_cdf_upper + jnp.log(cdf_ratio + probability * (1.0 - cdf_ratio))
-    cdf_value = loc + safe_scale * ndtri(jnp.exp(log_cdf_value))
-
-    survival_lower = jnp.where(use_survival, z_lower, 0.0)
-    survival_upper = jnp.where(use_survival, z_upper, 1.0)
-    log_survival_lower = log_ndtr(-survival_lower)
-    log_survival_upper = log_ndtr(-survival_upper)
-    survival_ratio = jnp.exp(log_survival_upper - log_survival_lower)
-    log_survival_value = log_survival_lower + jnp.log1p(-probability * (1.0 - survival_ratio))
-    survival_value = loc + safe_scale * -ndtri(jnp.exp(log_survival_value))
-    return jnp.where(use_survival, survival_value, cdf_value)
+    z_value = _normal_finite_interval_icdf_z(z_lower, z_upper, probability)
+    value = loc + safe_scale * z_value
+    return _where_valid_normal_scale(valid_scale, value)
 
 
 def log_prob(distribution: Distribution, x: DistributionValue) -> jax.Array:

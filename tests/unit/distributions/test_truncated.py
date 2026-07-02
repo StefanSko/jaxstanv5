@@ -6,11 +6,19 @@ import math
 
 import jax
 import jax.numpy as jnp
+import pytest
 from jax.scipy.special import log_ndtr, ndtr
 
 from jaxstanv5._backends.jax.distributions import cdf, icdf, log_prob
 from jaxstanv5._backends.jax.distributions import sample as distribution_sample
 from jaxstanv5.distributions import Normal, Truncated
+
+
+def test_truncated_rejects_nested_distribution() -> None:
+    inner = Truncated(Normal(0.0, 1.0), lower=0.0)
+
+    with pytest.raises(ValueError, match="Nested Truncated"):
+        Truncated(inner, upper=1.0)
 
 
 def test_truncated_normal_log_prob_includes_normalizer() -> None:
@@ -85,3 +93,14 @@ def test_truncated_normal_sample_stays_inside_bounds() -> None:
     assert draws.shape == (20, 2)
     assert jnp.all(draws >= 0.0)
     assert jnp.all(draws <= 2.0)
+
+
+def test_truncated_normal_cdf_icdf_and_sample_propagate_invalid_scale() -> None:
+    dist = Truncated(Normal(0.0, -1.0), lower=0.0)
+
+    assert jnp.isnan(cdf(dist, jnp.asarray(0.5)))
+    assert jnp.isnan(icdf(dist, jnp.asarray(0.5)))
+
+    draws = distribution_sample(dist, jax.random.PRNGKey(3), sample_shape=(4,))
+
+    assert jnp.all(jnp.isnan(draws))

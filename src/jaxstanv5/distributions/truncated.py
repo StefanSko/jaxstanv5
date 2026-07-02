@@ -16,6 +16,8 @@ class Truncated:
     upper: DistributionParameter | None = None
 
     def __post_init__(self) -> None:
-        """Require at least one truncation bound."""
+        """Require a single explicit truncation wrapper with at least one bound."""
+        if isinstance(self.base, Truncated):
+            raise ValueError("Nested Truncated distributions are not supported; flatten bounds")
         if self.lower is None and self.upper is None:
             raise ValueError("Truncated distributions require at least one bound")
