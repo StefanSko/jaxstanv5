@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, SupportsFloat, cast
 
 from jaxstanv5.constraints import Interval, Positive, UnitInterval
 from jaxstanv5.constraints.core import Constraint
+from jaxstanv5.distributions._capabilities import has_scalar_inverse_cdf
 from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
 from jaxstanv5.distributions.continuous import (
     Beta,
@@ -19,7 +20,7 @@ from jaxstanv5.distributions.continuous import (
     StudentT,
     Uniform,
 )
-from jaxstanv5.distributions.core import DiscreteDistribution, Distribution, InverseCdfDistribution
+from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
 from jaxstanv5.distributions.truncated import Truncated
 from jaxstanv5.model._data_schema import (
     DataDimRef,
@@ -225,6 +226,11 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
             data[name] = ResolvedData(_resolve_data_schema(value.schema, symbols))
         elif isinstance(value, Observed):
             distribution = _resolve_declaration_distribution(value.distribution, symbols)
+            _validate_supported_truncated_distribution(
+                name=name,
+                distribution=distribution,
+                role="Observed",
+            )
             observed_nodes.append(
                 ResolvedObserved(
                     name=name,
@@ -245,6 +251,11 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                     "Discrete distributions cannot be partially observed NUTS values; "
                     "marginalize discrete missing values or impute them posterior-predictively"
                 )
+            _validate_supported_truncated_distribution(
+                name=name,
+                distribution=distribution,
+                role="PartiallyObserved",
+            )
             free_values[name] = ResolvedFreeValue(
                 constraint=None,
                 size=_resolve_partially_observed_missing_size(value, symbols),
@@ -270,11 +281,11 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
 
 
 def _contains_discrete_distribution(distribution: Distribution) -> bool:
-    """Return whether a distribution wrapper contains a discrete distribution."""
+    """Return whether a distribution or first-level wrapper is discrete."""
     if isinstance(distribution, DiscreteDistribution):
         return True
     if isinstance(distribution, Truncated):
-        return _contains_discrete_distribution(distribution.base)
+        return isinstance(distribution.base, DiscreteDistribution)
     return False
 
 
@@ -351,11 +362,11 @@ def _validate_truncated_param_prior_constraint(
             "Discrete distributions cannot be used as Param priors; use them for Observed "
             "likelihoods or marginalize discrete latents"
         )
-    if not _truncated_base_has_cdf(distribution.base):
-        raise TypeError(
-            f"Parameter {name!r} Truncated prior base distribution "
-            f"{type(distribution.base).__name__} has no supported CDF/ICDF backend"
-        )
+    _validate_supported_truncated_distribution(
+        name=name,
+        distribution=distribution,
+        role="Parameter",
+    )
 
     support = _truncated_effective_support(distribution)
     if support is None:
@@ -373,13 +384,21 @@ def _validate_truncated_param_prior_constraint(
     )
 
 
-def _truncated_base_has_cdf(distribution: Distribution) -> bool:
-    """Return whether a Truncated base has declaration-known CDF support."""
-    if isinstance(distribution, Normal | HalfNormal | Exponential | Uniform):
-        return True
-    if isinstance(distribution, Truncated):
-        return _truncated_base_has_cdf(distribution.base)
-    return isinstance(distribution, InverseCdfDistribution)
+def _validate_supported_truncated_distribution(
+    *,
+    name: str,
+    distribution: Distribution,
+    role: str,
+) -> None:
+    """Reject Truncated distributions whose base cannot support normalization."""
+    if not isinstance(distribution, Truncated):
+        return
+    if has_scalar_inverse_cdf(distribution.base):
+        return
+    raise TypeError(
+        f"{role} {name!r} Truncated distribution base "
+        f"{type(distribution.base).__name__} has no supported CDF/ICDF backend"
+    )
 
 
 def _truncated_effective_support(
@@ -409,8 +428,6 @@ def _known_distribution_support(
         return (0.0, None)
     if isinstance(distribution, Uniform):
         return _concrete_uniform_bounds(distribution)
-    if isinstance(distribution, Truncated):
-        return _truncated_effective_support(distribution)
     return None
 
 

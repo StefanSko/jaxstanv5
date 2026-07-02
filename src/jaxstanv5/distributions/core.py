@@ -27,7 +27,15 @@ class Distribution(Protocol):
 
 @runtime_checkable
 class SampleableDistribution(Distribution, Protocol):
-    """Python compatibility protocol for distributions with sampling behavior."""
+    """Python compatibility protocol for distributions with sampling behavior.
+
+    Must stay structurally aligned with the JAX backend dispatch protocol
+    ``PythonSampleableDistribution`` so capability predicates match dispatch.
+    """
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        """Return element-wise log probability."""
+        ...
 
     def batch_shape(self) -> tuple[int, ...]:
         """Return broadcasted non-sample, non-event dimensions."""
@@ -49,7 +57,11 @@ class SampleableDistribution(Distribution, Protocol):
 
 @runtime_checkable
 class InverseCdfDistribution(SampleableDistribution, Protocol):
-    """Python compatibility protocol for scalar inverse-CDF behavior."""
+    """Python compatibility protocol for scalar inverse-CDF behavior.
+
+    Must stay structurally aligned with the JAX backend dispatch protocol
+    ``PythonInverseCdfDistribution`` so capability predicates match dispatch.
+    """
 
     def cdf(self, x: DistributionValue) -> DistributionValue:
         """Return element-wise cumulative probability at ``x``."""

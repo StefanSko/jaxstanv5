@@ -281,6 +281,25 @@ def test_private_model_declaration_resolution_rejects_truncated_prior_without_cd
         _resolve_model_declaration(TruncatedStudentT)
 
 
+def test_private_model_declaration_resolution_rejects_truncated_observed_without_cdf_support() -> (
+    None
+):
+    class TruncatedStudentTObserved:
+        y = Observed(Truncated(StudentT(4.0, 0.0, 1.0), lower=0.0))
+
+    with pytest.raises(TypeError, match="Observed.*no supported CDF"):
+        _resolve_model_declaration(TruncatedStudentTObserved)
+
+
+def test_private_model_declaration_resolution_accepts_truncated_observed_with_cdf_support() -> None:
+    class TruncatedNormalObserved:
+        y = Observed(Truncated(Normal(0.0, 1.0), lower=0.0))
+
+    meta = _resolve_model_declaration(TruncatedNormalObserved)
+
+    assert tuple(node.name for node in meta.observed_nodes) == ("y",)
+
+
 def test_private_model_declaration_resolution_rejects_truncated_discrete_prior() -> None:
     class TruncatedDiscrete:
         count = Param(Truncated(Poisson(1.0), lower=0.0), constraint=Positive())

@@ -118,6 +118,8 @@ Core invariants that should remain true as the codebase changes.
 - Constraints are transform/support metadata, not implicit prior truncation
   syntax. Constrained priors whose base support is wider than the constraint must
   use an explicit `Truncated(...)` distribution with matching concrete bounds.
+- `Truncated(...)` is a single explicit wrapper; nested truncation wrappers are
+  rejected, and multiple bounds must be flattened into one declaration.
 - `MultivariateNormal.scale_tril` must be a valid lower-triangular Cholesky factor
   at bind time. Arbitrary parameter-dependent scale matrices are unsupported;
   a validated Cholesky factor may be multiplied or divided by a provably positive
