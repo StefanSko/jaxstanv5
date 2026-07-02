@@ -194,7 +194,7 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
     for name, value in cls.__dict__.items():
         if isinstance(value, Param):
             distribution = _resolve_declaration_distribution(value.distribution, symbols)
-            if isinstance(distribution, DiscreteDistribution):
+            if _contains_discrete_distribution(distribution):
                 raise TypeError(
                     "Discrete distributions cannot be used as Param priors; "
                     "use them for Observed likelihoods or marginalize discrete latents"
@@ -240,7 +240,7 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
             )
         elif isinstance(value, PartiallyObserved):
             distribution = _resolve_declaration_distribution(value.distribution, symbols)
-            if isinstance(distribution, DiscreteDistribution):
+            if _contains_discrete_distribution(distribution):
                 raise TypeError(
                     "Discrete distributions cannot be partially observed NUTS values; "
                     "marginalize discrete missing values or impute them posterior-predictively"
@@ -267,6 +267,15 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
         free_values=free_values,
         stochastic_sites=tuple(stochastic_sites),
     )
+
+
+def _contains_discrete_distribution(distribution: Distribution) -> bool:
+    """Return whether a distribution wrapper contains a discrete distribution."""
+    if isinstance(distribution, DiscreteDistribution):
+        return True
+    if isinstance(distribution, Truncated):
+        return _contains_discrete_distribution(distribution.base)
+    return False
 
 
 def _validate_param_prior_constraint(

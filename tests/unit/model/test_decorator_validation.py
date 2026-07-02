@@ -289,6 +289,25 @@ def test_private_model_declaration_resolution_rejects_truncated_discrete_prior()
         _resolve_model_declaration(TruncatedDiscrete)
 
 
+def test_private_model_declaration_resolution_rejects_truncated_discrete_partially_observed() -> (
+    None
+):
+    class TruncatedDiscretePartial:
+        observed_values = Data.vector(0)
+        observed_idx = Data.vector(0)
+        missing_idx = Data.vector(1)
+        y = PartiallyObserved.vector(
+            Truncated(Poisson(1.0), lower=0.0),
+            length=1,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+        )
+
+    with pytest.raises(TypeError, match="Discrete distributions cannot be partially observed"):
+        _resolve_model_declaration(TruncatedDiscretePartial)
+
+
 def test_private_model_declaration_resolution_validates_truncated_effective_support() -> None:
     class MismatchedSupport:
         theta = Param(Truncated(Uniform(0.0, 1.0), lower=0.0), constraint=Positive())
