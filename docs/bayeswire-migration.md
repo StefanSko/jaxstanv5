@@ -9,6 +9,58 @@ end-to-end broken between Phase 2 (bayeswire emits `bayeswire_ir`) and Phase 5
 (bayesite accepts it) — acceptable greenfield, so run Phases 2–5 as one
 sequenced burst rather than letting the window linger.
 
+## Motivation
+
+The value proposition of this toolchain is: **a Bayesian workflow an agent can
+run end-to-end through files, deterministically, with an audit trail.** Every
+workflow step is a command that reads files and writes files; every run is
+seeded and replayable; run directories are append-only; provenance records
+what was actually done. The customer is an agent (and the human auditing it),
+and the product is trustworthy *process*, not a sampler.
+
+Three conclusions from that proposition drive this migration:
+
+**The contract is the product.** The system's real interface is not any one
+tool — it is the model language and the artifact formats the tools exchange.
+Today that language (`jaxstanv5_ir`) is philosophically homeless: named after,
+versioned by, and produced by one component that is simultaneously the
+authoring frontend and a sampling backend. The spec is documented in two
+copies that have already diverged, each repo tests against fixtures it
+synthesized itself, and every design dispute defaults to the owning
+component's convenience. Extraction inverts the ownership: bayeswire *is* the
+language — spec, corpus, and conformance runner versioned together — and every
+other component is a producer or consumer that provably conforms. One
+normative copy of the truth; drift becomes a red CI job instead of an
+archaeology finding.
+
+**The audit trail needs the model as data, not as code.** If a run directory
+bottoms out at "a hash of arbitrary Python", the provenance chain requires
+re-executing untrusted code to interpret. The IR is what makes the model an
+inspectable document: `meta_from_dict` runs no user code, so every downstream
+phase — diagnose, posterior-predictive, a re-fit months later — proceeds from
+the artifact alone. This is why the IR survives even though the multi-backend
+portability argument alone never justified it: it is an audit-trail primitive
+first, an interchange format second.
+
+**Minimal trust surface, honestly stated.** "Zero dependencies" is a
+mitigation, not a security property, and it currently protects only the
+sampling step while the authoring leg drags in the full JAX dependency tree.
+After this migration the default agent path — author a model, serialize IR,
+sample with Bayesite — executes Python in an environment containing exactly
+one stdlib-only package plus one auditable Rust binary. That is the honest,
+defensible version of the original supply-chain claim: not "no supply-chain
+danger", but *every step of the default path is small enough to audit, pinned
+enough to reproduce, and deterministic enough to replay*.
+
+The clean end state, stated as properties rather than repositories: one
+language with exactly one normative definition; every producer and consumer
+conformance-tested against the same corpus rather than against private
+fixtures; a default execution path whose entire trust surface is enumerable in
+one sentence; backends that are interchangeable exactly where the conformance
+suite proves they are, and honestly asymmetric everywhere else; and a workflow
+harness that composes all of it through files an agent can read, replay, and
+be held accountable to.
+
 ## End state
 
 ```text
