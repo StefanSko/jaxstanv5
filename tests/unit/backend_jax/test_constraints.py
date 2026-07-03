@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import jax.numpy as jnp
+from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval
 
 from jaxstanv5._backends.jax.constraints import (
     inverse_transform,
     log_abs_det_jacobian,
     transform,
 )
-from jaxstanv5.constraints import Interval, Ordered, Positive, UnitInterval
 
 
 def test_positive_constraint_operations_are_backend_operations() -> None:

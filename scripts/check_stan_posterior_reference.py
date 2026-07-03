@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare jaxstan posterior summaries against Stan fixed-data references."""
 
@@ -208,15 +210,10 @@ def _cases(root: Path) -> tuple[PosteriorCase, ...]:
 
 
 def _build_normal_known_scale_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.distributions import Normal
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal
 
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
@@ -230,20 +227,15 @@ def _build_normal_known_scale_bound(data: Mapping[str, object]) -> BoundModel:
         y = Observed(Normal(mu, obs_scale))
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    return cast(BindableModel, NormalKnownScaleStanReferenceModel).bind(y=y)
+    return bind_model(NormalKnownScaleStanReferenceModel, dict(y=y))
 
 
 def _build_positive_scale_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Normal
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Normal
 
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
@@ -256,20 +248,15 @@ def _build_positive_scale_bound(data: Mapping[str, object]) -> BoundModel:
         y = Observed(Normal(0.0, sigma))
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    return cast(BindableModel, PositiveScaleStanReferenceModel).bind(y=y)
+    return bind_model(PositiveScaleStanReferenceModel, dict(y=y))
 
 
 def _build_exponential_rate_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Exponential, HalfNormal
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Exponential, HalfNormal
 
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
 
@@ -281,19 +268,14 @@ def _build_exponential_rate_bound(data: Mapping[str, object]) -> BoundModel:
         y = Observed(Exponential(rate))
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    return cast(BindableModel, ExponentialRateStanReferenceModel).bind(y=y)
+    return bind_model(ExponentialRateStanReferenceModel, dict(y=y))
 
 
 def _build_student_t_location_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.distributions import Normal, StudentT
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal, StudentT
 
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     nu = _as_float(data["nu"], name="nu")
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
@@ -308,7 +290,7 @@ def _build_student_t_location_bound(data: Mapping[str, object]) -> BoundModel:
         y = Observed(StudentT(nu, mu, obs_scale))
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    return cast(BindableModel, StudentTLocationStanReferenceModel).bind(y=y)
+    return bind_model(StudentTLocationStanReferenceModel, dict(y=y))
 
 
 def _build_bound(case: PosteriorCase, data: Mapping[str, object]) -> BoundModel:

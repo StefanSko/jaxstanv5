@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import pytest
+from bayeswire.distributions import OrderedLogistic
 
 from jaxstanv5._backends.jax.distributions import (
     batch_shape,
@@ -11,7 +12,6 @@ from jaxstanv5._backends.jax.distributions import (
 from jaxstanv5._backends.jax.distributions import (
     sample as distribution_sample,
 )
-from jaxstanv5.distributions import OrderedLogistic
 
 
 def _manual_ordered_logistic_probs(eta: jax.Array, cutpoints: jax.Array) -> jax.Array:

@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare hierarchical Poisson posterior summaries against Stan."""
 
@@ -115,14 +117,6 @@ class CmdStanPyModule(Protocol):
         ...
 
 
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
-
-
 class StanDrawResult(NamedTuple):
     """Stan scalar samples."""
 
@@ -177,10 +171,12 @@ def _cmdstan_model(stan_file: Path) -> StanPosteriorModel:
 
 
 def _build_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, Normal, Poisson
-    from jaxstanv5.math import exp
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, Normal, Poisson
+    from bayeswire.math import exp
+
+    from jaxstanv5.model import bind_model
 
     @model
     class HierarchicalPoissonStanReferenceModel:
@@ -206,11 +202,14 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     group_idx = jnp.array(_int_sequence(data["group_idx"], name="group_idx"), dtype=jnp.int32) - 1
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32)
-    return cast(BindableModel, HierarchicalPoissonStanReferenceModel).bind(
-        n_groups=n_groups,
-        group_idx=group_idx,
-        x=x,
-        y=y,
+    return bind_model(
+        HierarchicalPoissonStanReferenceModel,
+        dict(
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            y=y,
+        ),
     )
 
 

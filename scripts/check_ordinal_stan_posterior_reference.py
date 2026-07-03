@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare ordinal-logistic posterior summaries against Stan."""
 
@@ -115,14 +117,6 @@ class CmdStanPyModule(Protocol):
         ...
 
 
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
-
-
 class DrawResult(NamedTuple):
     """Scalar posterior samples keyed by comparable parameter names."""
 
@@ -177,9 +171,11 @@ def _cmdstan_model(stan_file: Path) -> StanPosteriorModel:
 
 
 def _build_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Ordered
-    from jaxstanv5.distributions import Normal, OrderedLogistic
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Ordered
+    from bayeswire.distributions import Normal, OrderedLogistic
+
+    from jaxstanv5.model import bind_model
 
     @model
     class OrdinalLogisticStanReferenceModel:
@@ -197,10 +193,13 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     n_cutpoints = _as_int(data["K"], name="K")
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32) - 1
-    return cast(BindableModel, OrdinalLogisticStanReferenceModel).bind(
-        n_cutpoints=n_cutpoints,
-        x=x,
-        y=y,
+    return bind_model(
+        OrdinalLogisticStanReferenceModel,
+        dict(
+            n_cutpoints=n_cutpoints,
+            x=x,
+            y=y,
+        ),
     )
 
 

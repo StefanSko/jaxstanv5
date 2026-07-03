@@ -5,6 +5,7 @@ import math
 import jax
 import jax.numpy as jnp
 import pytest
+from bayeswire.distributions import MultivariateNormal
 from jax.scipy.linalg import solve_triangular
 
 from jaxstanv5._backends.jax.distributions import (
@@ -14,7 +15,6 @@ from jaxstanv5._backends.jax.distributions import (
 from jaxstanv5._backends.jax.distributions import (
     sample as distribution_sample,
 )
-from jaxstanv5.distributions import MultivariateNormal
 
 
 def test_multivariate_normal_log_prob_matches_standard_identity_value() -> None:

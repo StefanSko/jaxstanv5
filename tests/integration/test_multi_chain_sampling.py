@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 from _helpers import bind_model
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Normal, Truncated
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
 from jaxstanv5.diagnostics import ess, rhat
-from jaxstanv5.distributions import Normal, Truncated
 from jaxstanv5.inference import sample
 
 

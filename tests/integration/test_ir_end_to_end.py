@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Protocol, cast
+from typing import Protocol
 
 import jax
 import jax.numpy as jnp
@@ -30,18 +30,15 @@ from _reference_models import (
     robust_regression_fixture,
     student_t_location_fixture,
 )
+from bayeswire.ir import bindable_from_meta, canonical_bytes, meta_from_dict, meta_to_dict
 
 from jaxstanv5.compiler import compile_log_density
-from jaxstanv5.ir import bindable_from_meta, canonical_bytes, meta_from_dict, meta_to_dict
+from jaxstanv5.model import bind_model
 from jaxstanv5.model.bound import BoundModel
 
 
 class _BoundFixture(Protocol):
     bound: BoundModel
-
-
-class _BindableModel(Protocol):
-    def bind(self, **values: object) -> BoundModel: ...
 
 
 type FixtureBuilder = Callable[[], _BoundFixture]
@@ -78,8 +75,8 @@ EQUIVALENCE_CASES: tuple[FixtureBuilder, ...] = (
 def _round_trip_meta(bound: BoundModel) -> BoundModel:
     """Serialize, decode, and rebind through the public IR path."""
     document = json.loads(canonical_bytes(bound.meta).decode("utf-8"))
-    rebuilt = cast(_BindableModel, bindable_from_meta(meta_from_dict(document)))
-    return rebuilt.bind(**bound.data)
+    rebuilt = bindable_from_meta(meta_from_dict(document))
+    return bind_model(rebuilt, bound.data)
 
 
 @pytest.mark.parametrize("build_fixture", CORPUS, ids=lambda builder: builder.__name__)

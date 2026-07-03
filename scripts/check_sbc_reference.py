@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Run optional simulation-based calibration reference checks."""
 
@@ -26,7 +28,6 @@ import jax.numpy as jnp
 
 if TYPE_CHECKING:
     from integration._validation import SbcSimulation
-    from jaxstanv5.model.bound import BoundModel
 
 
 @dataclass(frozen=True)
@@ -59,14 +60,6 @@ class SbcCaseResult:
     elapsed_seconds: float
 
 
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
-
-
 class SbcCase(Protocol):
     """A complete SBC generative case."""
 
@@ -90,6 +83,7 @@ class PriorPredictiveSbcCase:
 
     def simulations(self, config: SbcScriptConfig) -> tuple[SbcSimulation, ...]:
         from integration._validation import SbcSimulation
+        from jaxstanv5.model import bind_model
         from jaxstanv5.simulation import simulate_prior_predictive
 
         result = simulate_prior_predictive(
@@ -103,7 +97,7 @@ class PriorPredictiveSbcCase:
         if truth_draws.ndim != 1:
             raise ValueError("SBC ranked parameter must be scalar")
 
-        bindable = cast(BindableModel, self.model_cls)
+        bindable = self.model_cls
         simulations: list[SbcSimulation] = []
         for simulation_index in range(config.num_simulations):
             values: dict[str, object] = {name: value for name, value in result.data.items()}
@@ -113,7 +107,7 @@ class PriorPredictiveSbcCase:
             simulations.append(
                 SbcSimulation(
                     true_value=float(truth_draws[simulation_index]),
-                    bound=bindable.bind(**values),
+                    bound=bind_model(bindable, dict(**values)),
                 )
             )
         return tuple(simulations)
@@ -130,9 +124,9 @@ def _add_repo_paths() -> None:
 
 
 def _built_in_cases(config: SbcScriptConfig) -> Mapping[str, SbcCase]:
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Normal
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Normal
 
     @model
     class NormalKnownScaleSbcModel:

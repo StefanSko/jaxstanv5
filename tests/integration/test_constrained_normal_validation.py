@@ -9,10 +9,9 @@ from _validation import (
     assert_scalar_mean_matches_reference,
     positive_scale_grid_reference,
 )
-
-from jaxstanv5 import Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import Normal, Truncated
+from bayeswire import Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Normal, Truncated
 
 
 @model

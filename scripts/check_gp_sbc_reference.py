@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Run projected fixed-kernel GP simulation-based calibration checks."""
 
@@ -16,7 +18,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -24,7 +26,6 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 if TYPE_CHECKING:
-    from jaxstanv5.model.bound import BoundModel
     from jaxstanv5.validation import ProjectionSpec
 
 
@@ -58,14 +59,6 @@ class GpSbcProjectionResult:
     bin_counts: tuple[int, ...]
     max_abs_bin_z: float
     mean_rank_z: float
-
-
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
 
 
 def _repo_root() -> Path:
@@ -102,8 +95,8 @@ def _projection_specs(n: int) -> tuple[ProjectionSpec, ...]:
 
 
 def _build_model() -> object:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import MultivariateNormal, Normal
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
 
     @model
     class FixedKernelGpSbcModel:
@@ -139,6 +132,7 @@ def _simulated_values(
 def _run_projected_sbc(config: GpSbcConfig) -> tuple[GpSbcProjectionResult, ...]:
     from integration._validation import assert_sbc_rank_uniformity
     from jaxstanv5.inference import compile_sampler
+    from jaxstanv5.model import bind_model
     from jaxstanv5.validation import (
         SbcValidationResult,
         project_vector_truth,
@@ -158,10 +152,10 @@ def _run_projected_sbc(config: GpSbcConfig) -> tuple[GpSbcProjectionResult, ...]
     projections = _projection_specs(config.n)
     ranks: dict[str, list[int]] = {projection.name: [] for projection in projections}
     num_posterior_draws: int | None = None
-    bindable = cast(BindableModel, model_cls)
+    bindable = model_cls
 
     for simulation_index in range(config.num_simulations):
-        bound = bindable.bind(**data, y=y_draws[simulation_index])
+        bound = bind_model(bindable, dict(**data, y=y_draws[simulation_index]))
         compiled = compile_sampler(bound, target_acceptance_rate=config.target_acceptance_rate)
         result = compiled.sample(
             seed=config.seed + 10_000 + simulation_index,

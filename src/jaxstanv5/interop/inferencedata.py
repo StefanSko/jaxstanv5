@@ -15,10 +15,10 @@ from typing import cast
 
 import jax
 import jax.numpy as jnp
+from bayeswire.model.dimensions import CoordValue, ResolvedModelDimensions
 
 from jaxstanv5.inference import SamplerResult
 from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.dimensions import CoordValue, ResolvedModelDimensions
 
 _CHAIN_DIM = "chain"
 _DRAW_DIM = "draw"

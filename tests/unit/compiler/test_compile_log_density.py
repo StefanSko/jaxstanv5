@@ -7,14 +7,14 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 import pytest
+from bayeswire.distributions import Bernoulli, Binomial, Normal
+from bayeswire.distributions.core import DistributionValue, LogProbability
+from bayeswire.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
+from bayeswire.model.expr import ConstNode, ParamRef, UnaryOp
 
 from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.compiler.core import compile_log_density
-from jaxstanv5.distributions import Bernoulli, Binomial, Normal
-from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
-from jaxstanv5.model.expr import ConstNode, ParamRef, UnaryOp
 
 
 @dataclass(frozen=True)

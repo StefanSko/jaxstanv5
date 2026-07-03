@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from jaxstanv5.model.decorator import ModelMeta
-from jaxstanv5.model.dimensions import ResolvedModelDimensions
+from bayeswire.model.decorator import ModelMeta
+from bayeswire.model.dimensions import ResolvedModelDimensions
 
 
 @dataclass(frozen=True)

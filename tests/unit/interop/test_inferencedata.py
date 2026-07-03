@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Protocol, cast
-
 import jax
 import jax.numpy as jnp
 import pytest
+from bayeswire import Data, Dim, Observed, Param, model, model_dimensions
+from bayeswire.distributions import Normal
 
-from jaxstanv5 import Data, Dim, Observed, Param, model, model_dimensions
-from jaxstanv5.distributions import Normal
 from jaxstanv5.inference import (
     NutsDiagnosticTrace,
     SamplerAdaptation,
@@ -16,15 +14,12 @@ from jaxstanv5.inference import (
     SamplerSettings,
 )
 from jaxstanv5.interop.inferencedata import inferencedata_groups
+from jaxstanv5.model import bind_model
 from jaxstanv5.model.bound import BoundModel
 
 
-class _BindableModel(Protocol):
-    def bind(self, **values: object) -> BoundModel: ...
-
-
 def _bind(model_cls: object, **values: object) -> BoundModel:
-    return cast(_BindableModel, model_cls).bind(**values)
+    return bind_model(model_cls, values)
 
 
 def _diagnostics(*, chains: int, draws: int) -> SamplerDiagnostics:

@@ -9,11 +9,11 @@ from typing import NamedTuple, Protocol, cast
 import blackjax
 import jax
 import jax.numpy as jnp
+from bayeswire.model.decorator import ModelMeta, resolved_free_values
 
 from jaxstanv5._backends.jax.constraints import inverse_transform
 from jaxstanv5.compiler.core import compile_log_density
 from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values
 
 
 class NutsDiagnosticTrace(NamedTuple):
@@ -237,7 +237,7 @@ def _constrain_sample_values(
 ) -> dict[str, jax.Array]:
     """Map sampled unconstrained parameter values back to constrained values."""
     result: dict[str, jax.Array] = {}
-    free_values = _resolved_free_values(meta)
+    free_values = resolved_free_values(meta)
     for name, values in samples.items():
         constraint = free_values[name].constraint
         if constraint is None:

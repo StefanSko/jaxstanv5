@@ -1,41 +1,29 @@
-"""Generate cross-backend IR evaluation fixtures in float64.
+"""Generate cross-backend IR evaluation fixtures in float64 (the JAX oracle).
 
-Run from the repository root:
+Run from the repository root against a bayeswire checkout:
 
-    uv run scripts/generate_ir_fixtures.py
+    uv run scripts/generate_ir_fixtures.py --bayeswire-path ../bayeswire
 
 Each fixture bundles the IR document, concrete bind data, and log-density
-plus gradient values at deterministic unconstrained points. Non-Python
-backends parse the IR, bind the data, and differential-test their
-evaluation against the recorded float64 values.
+plus gradient values at deterministic unconstrained points. The fixtures are
+committed to the bayeswire corpus; non-Python backends parse the IR, bind
+the data, and differential-test their evaluation against the recorded
+float64 values within the tolerance policy stated in the bayeswire spec.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 import jax
 
 jax.config.update("jax_enable_x64", True)
-
-REPO_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(REPO_ROOT / "tests"))
-
-from integration._ir_golden_models import golden_ir_cases  # noqa: E402
-from jaxstanv5.compiler import compile_log_density  # noqa: E402
-from jaxstanv5.ir import bindable_from_meta, meta_to_dict  # noqa: E402
-from jaxstanv5.model.bound import BoundModel  # noqa: E402
-
-FIXTURE_DIR = REPO_ROOT / "tests" / "golden_ir" / "fixtures"
-
-
-class _BindableModel(Protocol):
-    def bind(self, **values: object) -> BoundModel: ...
 
 
 def _q_points(n_params: int) -> list[list[float]]:
@@ -60,11 +48,32 @@ def _encode_data(data: Mapping[str, object]) -> dict[str, object]:
 
 
 def main() -> None:
-    FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--bayeswire-path",
+        type=Path,
+        required=True,
+        help="Path to a bayeswire checkout; fixtures are written into its corpus",
+    )
+    args = parser.parse_args()
 
-    for case in golden_ir_cases():
-        rebuilt = cast(_BindableModel, bindable_from_meta(case.meta))
-        bound = rebuilt.bind(**case.bind_values)
+    bayeswire_root = args.bayeswire_path.resolve()
+    fixture_dir = bayeswire_root / "src" / "bayeswire" / "corpus" / "fixtures"
+    if not fixture_dir.is_dir():
+        raise SystemExit(f"Not a bayeswire checkout (no corpus fixtures dir): {bayeswire_root}")
+    sys.path.insert(0, str(bayeswire_root / "tests"))
+
+    from bayeswire.ir import bindable_from_meta, meta_to_dict
+    from conformance.reference_models import (  # ty: ignore[unresolved-import]
+        reference_model_cases,
+    )
+
+    from jaxstanv5.compiler import compile_log_density
+    from jaxstanv5.model import bind_model
+
+    for case in reference_model_cases():
+        rebuilt = bindable_from_meta(case.meta)
+        bound = bind_model(rebuilt, dict(**case.bind_values))
         log_density = compile_log_density(bound)
         gradient = jax.grad(log_density)
 
@@ -85,12 +94,12 @@ def main() -> None:
             "data": _encode_data(bound.data),
             "evaluations": evaluations,
         }
-        path = FIXTURE_DIR / f"{case.name}.json"
+        path = fixture_dir / f"{case.name}.json"
         path.write_text(
             json.dumps(fixture, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        print(f"wrote {path.relative_to(REPO_ROOT)}")
+        print(f"wrote {path}")
 
 
 if __name__ == "__main__":

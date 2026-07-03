@@ -2,18 +2,24 @@
 
 ## Project identity
 
-`jaxstanv5` is a **minimal declarative Bayesian modeling library for JAX**.
+`jaxstanv5` is the **JAX/BlackJAX sampling backend for
+[bayeswire](https://github.com/StefanSko/bayeswire) models**.
 
 It exists to help users:
-- define models with `@model`, `Param`, `Data`, and `Observed`
-- express hierarchical models as first-class model declarations
+- bind concrete data to bayeswire model declarations (`bind_model`)
 - compile models to executable log densities
 - handle constraints and Jacobian-aware transforms
 - run **NUTS only**
 - inspect essential diagnostics (`rhat`, `ess`, divergences)
+- simulate priors/prior-predictive and export the InferenceData-compatible schema
+
+The model declaration language, distributions/constraints metadata, IR wire
+format, spec, and conformance corpus live in bayeswire, pinned by exact
+version; the pin-bump diff is the compatibility review.
 
 It does **not** exist to be a workflow platform, reporting system, plotting toolkit,
-multi-algorithm inference playground, session/artifact product, or viewer.
+multi-algorithm inference playground, session/artifact product, viewer, or a
+second home for the declaration language.
 
 ## Communication
 
@@ -70,7 +76,8 @@ Typical flow:
 
 1. If no public workflow target exists yet, add or update a red integration test
    for the intended behavior. For new distributions or other conceptual modeling
-   surfaces, start with a north-star fixture in
+   surfaces, the declaration metadata lands in bayeswire first (with a corpus
+   reference model there); the backend work starts with a north-star fixture in
    `tests/integration/_reference_models.py` and coverage in
    `tests/integration/test_distribution_coverage.py`.
 2. If the integration test is too broad or noisy, add a focused red seam test for

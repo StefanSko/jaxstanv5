@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from jaxstanv5.constraints.core import Constraint
-from jaxstanv5.constraints.interval import Interval, UnitInterval
-from jaxstanv5.constraints.ordered import Ordered
-from jaxstanv5.constraints.positive import Positive
-from jaxstanv5.distributions.core import DistributionValue
+from bayeswire.constraints.core import Constraint
+from bayeswire.constraints.interval import Interval, UnitInterval
+from bayeswire.constraints.ordered import Ordered
+from bayeswire.constraints.positive import Positive
+from bayeswire.distributions.core import DistributionValue
 
 
 @dataclass(frozen=True)

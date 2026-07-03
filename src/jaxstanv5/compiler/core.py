@@ -8,17 +8,10 @@ from typing import cast
 
 import jax
 import jax.numpy as jnp
-
-from jaxstanv5._backends.jax.constraints import (
-    inverse_transform,
-    log_abs_det_jacobian,
-)
-from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
-from jaxstanv5.distributions._symbolic_validation import reject_opaque_symbolic_distribution
-from jaxstanv5.distributions.core import Distribution
-from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import ModelMeta, _resolved_free_values, _resolved_stochastic_sites
-from jaxstanv5.model.expr import (
+from bayeswire.distributions._symbolic_validation import reject_opaque_symbolic_distribution
+from bayeswire.distributions.core import Distribution
+from bayeswire.model.decorator import ModelMeta, resolved_free_values, resolved_stochastic_sites
+from bayeswire.model.expr import (
     BinOp,
     ConstNode,
     DataRef,
@@ -32,6 +25,13 @@ from jaxstanv5.model.expr import (
     UnaryOp,
     VectorScatterOp,
 )
+
+from jaxstanv5._backends.jax.constraints import (
+    inverse_transform,
+    log_abs_det_jacobian,
+)
+from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
+from jaxstanv5.model.bound import BoundModel
 
 _BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
     "+": jnp.add,
@@ -186,7 +186,7 @@ def _constrain_params(
     """Apply constraint transforms and return constrained params + log-Jacobian sum."""
     constrained: dict[str, jax.Array] = {}
     log_jac: jax.Array = jnp.array(0.0)
-    for name, value in _resolved_free_values(meta).items():
+    for name, value in resolved_free_values(meta).items():
         val = params[name]
         if value.constraint is not None:
             constrained[name] = inverse_transform(value.constraint, val)
@@ -208,7 +208,7 @@ def _build_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
 
         lp: jax.Array = log_jac
 
-        for site in _resolved_stochastic_sites(meta):
+        for site in resolved_stochastic_sites(meta):
             dist = _evaluate_distribution(site.distribution, values)
             value = _evaluate_expr(site.value, values)
             lp = lp + jnp.sum(distribution_log_prob(dist, value))

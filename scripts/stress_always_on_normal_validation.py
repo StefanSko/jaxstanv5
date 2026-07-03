@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Stress-test the always-on Normal validation thresholds.
 
@@ -25,7 +27,6 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
 
 import jax
 import jax.numpy as jnp
@@ -85,21 +86,16 @@ def _block_until_ready(samples: dict[str, jax.Array]) -> None:
 
 
 def _run_stress(config: StressConfig) -> StressResult:
+    from jaxstanv5.model import bind_model
+
     _add_repo_paths()
 
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal
+
     from integration._validation import normal_known_scale_reference, summarize_scalar_draws
-    from jaxstanv5 import Observed, Param, model
-    from jaxstanv5.distributions import Normal
     from jaxstanv5.inference import compile_sampler
-    from jaxstanv5.model.bound import BoundModel
     from jaxstanv5.validation import standardized_discrepancy
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
 
     @model
     class NormalKnownScaleValidationModel:
@@ -109,7 +105,7 @@ def _run_stress(config: StressConfig) -> StressResult:
         y = Observed(Normal(mu, 1.0))
 
     y_data = jnp.array([1.0, 1.5, 2.0, 2.5])
-    bound = cast(BindableModel, NormalKnownScaleValidationModel).bind(y=y_data)
+    bound = bind_model(NormalKnownScaleValidationModel, dict(y=y_data))
     compiled = compile_sampler(bound)
     reference = normal_known_scale_reference(
         parameter="mu",

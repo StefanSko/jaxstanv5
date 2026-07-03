@@ -8,44 +8,30 @@ from typing import cast
 
 import jax
 import jax.numpy as jnp
-
-from jaxstanv5._backends.jax.distributions import (
-    batch_shape as distribution_batch_shape,
-)
-from jaxstanv5._backends.jax.distributions import (
-    event_shape as distribution_event_shape,
-)
-from jaxstanv5._backends.jax.distributions import (
-    is_sampleable,
-    validate_scale_tril,
-)
-from jaxstanv5.constraints import Interval, Positive, UnitInterval
-from jaxstanv5.distributions.core import DiscreteDistribution, Distribution
-from jaxstanv5.distributions.counts import (
+from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.distributions.core import DiscreteDistribution, Distribution
+from bayeswire.distributions.counts import (
     Bernoulli,
     BetaBinomial,
     Binomial,
     NegativeBinomial,
     Poisson,
 )
-from jaxstanv5.distributions.multivariate import MultivariateNormal
-from jaxstanv5.distributions.ordinal import OrderedLogistic
-from jaxstanv5.model._data_schema import (
+from bayeswire.distributions.multivariate import MultivariateNormal
+from bayeswire.distributions.ordinal import OrderedLogistic
+from bayeswire.model import (
     ResolvedDataRankSchema,
     ResolvedDataShapeDim,
     ResolvedDataShapeSchema,
 )
-from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import (
+from bayeswire.model.decorator import (
     ModelMeta,
     ResolvedFreeValue,
-    _is_final_expr_node,
-    _resolved_free_values,
-    _resolved_stochastic_sites,
-    _validate_parameter_size,
+    resolved_free_values,
+    resolved_stochastic_sites,
 )
-from jaxstanv5.model.dimensions import ResolvedModelDimensions
-from jaxstanv5.model.expr import (
+from bayeswire.model.dimensions import ResolvedModelDimensions
+from bayeswire.model.expr import (
     BinOp,
     ConstNode,
     DataRef,
@@ -58,7 +44,20 @@ from jaxstanv5.model.expr import (
     ScalarIndex,
     UnaryOp,
     VectorScatterOp,
+    is_final_expr_node,
 )
+
+from jaxstanv5._backends.jax.distributions import (
+    batch_shape as distribution_batch_shape,
+)
+from jaxstanv5._backends.jax.distributions import (
+    event_shape as distribution_event_shape,
+)
+from jaxstanv5._backends.jax.distributions import (
+    is_sampleable,
+    validate_scale_tril,
+)
+from jaxstanv5.model.bound import BoundModel
 
 type EvaluatedIndexAtom = jax.Array | slice
 type EvaluatedIndex = EvaluatedIndexAtom | tuple[EvaluatedIndexAtom, ...]
@@ -99,7 +98,7 @@ def bind_model_meta(
     _validate_declared_data_values(meta, {name: data[name] for name in meta.data})
     param_shapes = {
         name: _resolve_param_shape(value.size, data)
-        for name, value in _resolved_free_values(meta).items()
+        for name, value in resolved_free_values(meta).items()
     }
     n_params = sum(_param_count(shape) for shape in param_shapes.values())
     _validate_bound_index_expressions(meta, data, param_shapes)
@@ -248,7 +247,7 @@ def _validate_bound_index_expressions(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Validate concrete data indexes before JAX gather semantics can clamp them."""
-    for site in _resolved_stochastic_sites(meta):
+    for site in resolved_stochastic_sites(meta):
         _validate_distribution_index_expressions(site.distribution, data, param_shapes)
         _validate_index_expr(site.value, data, param_shapes)
     for expression in meta.expressions.values():
@@ -261,7 +260,7 @@ def _validate_stochastic_site_shapes(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Reject stochastic-site broadcasting that would expand the site value."""
-    for site in _resolved_stochastic_sites(meta):
+    for site in resolved_stochastic_sites(meta):
         value_shape = _infer_expr_shape(site.value, data, param_shapes)
         distribution_shape = _distribution_value_shape(site.distribution, data, param_shapes)
         if distribution_shape is None:
@@ -306,7 +305,7 @@ def _shape_stub_distribution[DistributionT: Distribution](
     resolved: dict[str, object] = {}
     for distribution_field in fields(distribution):
         value = getattr(distribution, distribution_field.name)
-        if _is_final_expr_node(value):
+        if is_final_expr_node(value):
             shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
             resolved[distribution_field.name] = jnp.zeros(shape)
         elif is_dataclass(value) and not isinstance(value, type):
@@ -326,7 +325,7 @@ def _validate_observed_discrete_values(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Validate concrete observed values for discrete likelihoods."""
-    for site in _resolved_stochastic_sites(meta):
+    for site in resolved_stochastic_sites(meta):
         if not isinstance(site.distribution, DiscreteDistribution):
             continue
         value = _evaluate_data_index_expr(site.value, data)
@@ -367,7 +366,7 @@ def _distribution_field_shape(
     data: dict[str, jax.Array],
     param_shapes: dict[str, tuple[int, ...]],
 ) -> tuple[int, ...]:
-    if _is_final_expr_node(value):
+    if is_final_expr_node(value):
         return _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
     return jnp.asarray(value).shape
 
@@ -398,8 +397,8 @@ def _validate_bound_distribution_parameters(
     param_shapes: dict[str, tuple[int, ...]],
 ) -> None:
     """Validate concrete and safely symbolic distribution parameters at bind time."""
-    free_values = _resolved_free_values(meta)
-    for site in _resolved_stochastic_sites(meta):
+    free_values = resolved_free_values(meta)
+    for site in resolved_stochastic_sites(meta):
         _validate_bound_distribution_parameter(
             site.name,
             site.distribution,
@@ -504,7 +503,7 @@ def _is_positive_scalar_expr(
     free_values: dict[str, ResolvedFreeValue],
 ) -> bool:
     """Return whether an expression is provably scalar and strictly positive."""
-    if _is_final_expr_node(value):
+    if is_final_expr_node(value):
         shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
         if shape != ():
             return False
@@ -535,7 +534,7 @@ def _is_positive_scalar_expr(
 
 def _evaluate_optional_data_expr(value: object, data: dict[str, jax.Array]) -> jax.Array | None:
     """Evaluate a data/constant expression, or return None for parameter-dependent values."""
-    if _is_final_expr_node(value):
+    if is_final_expr_node(value):
         try:
             return _evaluate_data_index_expr(cast(ExprNode, value), data)
         except TypeError:
@@ -554,7 +553,7 @@ def _validate_distribution_index_expressions(
 
     for distribution_field in fields(distribution):
         value = getattr(distribution, distribution_field.name)
-        if _is_final_expr_node(value):
+        if is_final_expr_node(value):
             _validate_index_expr(cast(ExprNode, value), data, param_shapes)
         elif is_dataclass(value) and not isinstance(value, type):
             _validate_distribution_index_expressions(cast(Distribution, value), data, param_shapes)
@@ -829,3 +828,11 @@ def _param_count(shape: tuple[int, ...]) -> int:
             raise ValueError("Parameter shape dimensions must be non-negative")
         count *= dim
     return count
+
+
+def _validate_parameter_size(size: int, label: str) -> int:
+    if isinstance(size, bool):
+        raise TypeError(f"{label} must be an integer, not bool")
+    if size < 0:
+        raise ValueError(f"{label} must be non-negative")
+    return size

@@ -2,9 +2,11 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Run SBC for the ordinal-logistic regression model."""
 
@@ -16,7 +18,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -25,7 +27,6 @@ jax.config.update("jax_enable_x64", True)
 
 if TYPE_CHECKING:
     from jaxstanv5.inference import SamplerResult
-    from jaxstanv5.model.bound import BoundModel
 
 
 @dataclass(frozen=True)
@@ -57,14 +58,6 @@ class OrdinalSbcResult:
     elapsed_seconds: float
 
 
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
-
-
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -76,9 +69,9 @@ def _add_repo_paths() -> None:
 
 
 def _build_model() -> object:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.constraints import Ordered
-    from jaxstanv5.distributions import Normal, OrderedLogistic
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Ordered
+    from bayeswire.distributions import Normal, OrderedLogistic
 
     @model
     class OrdinalLogisticSbcModel:
@@ -134,6 +127,7 @@ def _truth_value(
 def _run_sbc(config: OrdinalSbcConfig) -> tuple[OrdinalSbcResult, ...]:
     from integration._validation import assert_sbc_rank_uniformity
     from jaxstanv5.inference import compile_sampler
+    from jaxstanv5.model import bind_model
     from jaxstanv5.simulation import simulate_prior_predictive
     from jaxstanv5.validation import SbcValidationResult, scalar_sbc_rank
 
@@ -154,10 +148,10 @@ def _run_sbc(config: OrdinalSbcConfig) -> tuple[OrdinalSbcResult, ...]:
     y_draws = jnp.asarray(prior_predictive.observed["y"])
     ranks: dict[str, list[int]] = {name: [] for name in parameters}
     num_posterior_draws: int | None = None
-    bindable = cast(BindableModel, model_cls)
+    bindable = model_cls
 
     for simulation_index in range(config.num_simulations):
-        bound = bindable.bind(**prior_predictive.data, y=y_draws[simulation_index])
+        bound = bind_model(bindable, dict(**prior_predictive.data, y=y_draws[simulation_index]))
         compiled = compile_sampler(bound, target_acceptance_rate=config.target_acceptance_rate)
         result = compiled.sample(
             seed=config.seed + 10_000 + simulation_index,

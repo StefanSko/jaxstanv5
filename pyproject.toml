@@ -4,18 +4,16 @@ version = "0.1.0"
 description = "A Python project built with the Astral stack: uv, ruff, and ty."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
-
-[project.optional-dependencies]
-jax = [
+dependencies = [
+    # The language and the backend move in lockstep: exact-commit pin, bumped
+    # deliberately (the pin-bump diff is the compatibility review).
+    "bayeswire @ git+https://github.com/StefanSko/bayeswire.git@15cdc51e3e09bed56838248f9b3becd2bbaf8423",
     "jax>=0.6.0",
     "blackjax>=1.2.0",
 ]
 
 [dependency-groups]
 dev = [
-    "blackjax>=1.2.0",
-    "jax>=0.6.0",
     "pytest>=8.0.0",
     "ruff>=0.13.0",
     "ty>=0.0.1a20",

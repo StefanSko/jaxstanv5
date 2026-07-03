@@ -4,6 +4,7 @@ import math
 
 import jax
 import jax.numpy as jnp
+from bayeswire.distributions import Bernoulli, BetaBinomial, Binomial, NegativeBinomial, Poisson
 from jax.scipy.special import gammaln
 
 from jaxstanv5._backends.jax.distributions import (
@@ -13,7 +14,6 @@ from jaxstanv5._backends.jax.distributions import (
 from jaxstanv5._backends.jax.distributions import (
     sample as distribution_sample,
 )
-from jaxstanv5.distributions import Bernoulli, BetaBinomial, Binomial, NegativeBinomial, Poisson
 
 
 def beta_log_function(a: jax.Array, b: jax.Array) -> jax.Array:

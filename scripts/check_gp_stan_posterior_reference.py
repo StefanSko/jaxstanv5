@@ -2,10 +2,12 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "blackjax>=1.2.0",
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare projected fixed-kernel GP posterior summaries against Stan."""
 
@@ -134,14 +136,6 @@ class CmdStanPyModule(Protocol):
         ...
 
 
-class BindableModel(Protocol):
-    """Runtime model class with decorator-attached bind method."""
-
-    def bind(self, **values: object) -> BoundModel:
-        """Bind concrete model data."""
-        ...
-
-
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -214,8 +208,10 @@ def _projection_specs(n: int) -> tuple[ProjectionSpec, ...]:
 
 
 def _build_bound(data: Mapping[str, object]) -> BoundModel:
-    from jaxstanv5 import Data, Observed, Param, model
-    from jaxstanv5.distributions import MultivariateNormal, Normal
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
+
+    from jaxstanv5.model import bind_model
 
     @model
     class FixedKernelGpStanProjectionModel:
@@ -232,9 +228,7 @@ def _build_bound(data: Mapping[str, object]) -> BoundModel:
     chol = jnp.array(_float_matrix(data["chol"], name="chol"), dtype=jnp.float64)
     obs_sd = _as_float(data["obs_sd"], name="obs_sd")
     n = _as_int(data["N"], name="N")
-    return cast(BindableModel, FixedKernelGpStanProjectionModel).bind(
-        n=n, chol=chol, obs_sd=obs_sd, y=y
-    )
+    return bind_model(FixedKernelGpStanProjectionModel, dict(n=n, chol=chol, obs_sd=obs_sd, y=y))
 
 
 def _block_trace(trace: NutsDiagnosticTrace) -> None:

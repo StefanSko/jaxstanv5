@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from bayeswire.distributions import Exponential, HalfNormal, Normal, StudentT, Truncated, Uniform
+from bayeswire.distributions._capabilities import has_scalar_inverse_cdf
+from bayeswire.distributions.core import Distribution, DistributionValue, LogProbability
 
 from jaxstanv5._backends.jax.distributions import is_inverse_cdf, is_sampleable
-from jaxstanv5.distributions import Exponential, HalfNormal, Normal, StudentT, Truncated, Uniform
-from jaxstanv5.distributions._capabilities import has_scalar_inverse_cdf
-from jaxstanv5.distributions.core import Distribution, DistributionValue, LogProbability
 
 
 class _InverseCdfWithoutLogProb:

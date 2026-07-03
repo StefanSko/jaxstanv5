@@ -5,11 +5,11 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import pytest
+from bayeswire.constraints import Ordered, Positive
+from bayeswire.constraints.core import ConstrainedValue, LogAbsDetJacobian, UnconstrainedValue
+from bayeswire.distributions import MultivariateNormal, Normal
+from bayeswire.distributions.core import DistributionValue, LogProbability
 
-from jaxstanv5.constraints import Ordered, Positive
-from jaxstanv5.constraints.core import ConstrainedValue, LogAbsDetJacobian, UnconstrainedValue
-from jaxstanv5.distributions import MultivariateNormal, Normal
-from jaxstanv5.distributions.core import DistributionValue, LogProbability
 from jaxstanv5.simulation.core import _leading_sample_shape, _sample_prior_value
 
 

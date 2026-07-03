@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Protocol, cast
-
 import jax
 import jax.numpy as jnp
 import pytest
-
-from jaxstanv5._backends.jax.binding import _param_count, _resolve_param_shape
-from jaxstanv5.constraints import Interval, Positive, UnitInterval
-from jaxstanv5.distributions import (
+from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.distributions import (
     Beta,
     Binomial,
     HalfNormal,
@@ -19,23 +15,22 @@ from jaxstanv5.distributions import (
     OrderedLogistic,
     Uniform,
 )
-from jaxstanv5.model._data_schema import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
-from jaxstanv5.model.bound import BoundModel
-from jaxstanv5.model.decorator import (
+from bayeswire.ir import bindable_from_meta
+from bayeswire.model import DataDimRef, ResolvedDataRankSchema, ResolvedDataShapeSchema
+from bayeswire.model.decorator import (
     ModelMeta,
     ResolvedData,
     ResolvedFreeValue,
     ResolvedObserved,
     ResolvedParam,
     ResolvedStochasticSite,
-    _make_bind,
 )
-from jaxstanv5.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
-from jaxstanv5.model.expr import BinOp, DataRef, ParamRef, VectorScatterOp
+from bayeswire.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
+from bayeswire.model.expr import BinOp, DataRef, ParamRef, VectorScatterOp
 
-
-class BindFn(Protocol):
-    def __call__(self, _cls: type[object], **values: object) -> object: ...
+from jaxstanv5._backends.jax.binding import _param_count, _resolve_param_shape
+from jaxstanv5.model import bind_model
+from jaxstanv5.model.bound import BoundModel
 
 
 def make_meta() -> ModelMeta:
@@ -55,8 +50,7 @@ def make_meta() -> ModelMeta:
 
 
 def bind_meta(meta: ModelMeta, **values: object) -> BoundModel:
-    bind = cast(BindFn, _make_bind(meta))
-    return cast(BoundModel, bind(type("Model", (), {}), **values))
+    return bind_model(bindable_from_meta(meta), values)
 
 
 def bind_meta_with_dimensions(
@@ -64,8 +58,7 @@ def bind_meta_with_dimensions(
     dimensions: ResolvedModelDimensions,
     **values: object,
 ) -> BoundModel:
-    bind = cast(BindFn, _make_bind(meta, dimensions=dimensions))
-    return cast(BoundModel, bind(type("Model", (), {}), **values))
+    return bind_model(bindable_from_meta(meta, dimensions=dimensions), values)
 
 
 def test_bind_requires_all_observed_node_values() -> None:

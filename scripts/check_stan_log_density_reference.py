@@ -3,8 +3,11 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #   "cmdstanpy>=1.3.0",
-#   "jax>=0.6.0",
+#   "jaxstanv5",
 # ]
+#
+# [tool.uv.sources]
+# jaxstanv5 = { path = "..", editable = true }
 # ///
 """Compare jaxstan compiled log-density differences against Stan references.
 
@@ -197,17 +200,11 @@ def _cmdstan_model(stan_file: Path) -> StanLogDensityModel:
 
 
 def _normal_known_scale_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Observed, Param, model
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.distributions import Normal
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
@@ -221,23 +218,17 @@ def _normal_known_scale_log_density(data: Mapping[str, object]) -> Callable[[jax
         y = Observed(Normal(mu, obs_scale))
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    bound = cast(BindableModel, NormalKnownScaleStanReferenceModel).bind(y=y)
+    bound = bind_model(NormalKnownScaleStanReferenceModel, dict(y=y))
     return compile_log_density(bound)
 
 
 def _positive_scale_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Observed, Param, model
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Normal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Normal
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
@@ -250,23 +241,17 @@ def _positive_scale_log_density(data: Mapping[str, object]) -> Callable[[jax.Arr
         y = Observed(Normal(0.0, sigma))
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    bound = cast(BindableModel, PositiveScaleStanReferenceModel).bind(y=y)
+    bound = bind_model(PositiveScaleStanReferenceModel, dict(y=y))
     return compile_log_density(bound)
 
 
 def _exponential_rate_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Observed, Param, model
+    from bayeswire import Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Exponential, HalfNormal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Exponential, HalfNormal
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
 
@@ -278,22 +263,16 @@ def _exponential_rate_log_density(data: Mapping[str, object]) -> Callable[[jax.A
         y = Observed(Exponential(rate))
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    bound = cast(BindableModel, ExponentialRateStanReferenceModel).bind(y=y)
+    bound = bind_model(ExponentialRateStanReferenceModel, dict(y=y))
     return compile_log_density(bound)
 
 
 def _student_t_location_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Observed, Param, model
+    from bayeswire import Observed, Param, model
+    from bayeswire.distributions import Normal, StudentT
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.distributions import Normal, StudentT
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     nu = _as_float(data["nu"], name="nu")
     prior_loc = _as_float(data["prior_loc"], name="prior_loc")
@@ -308,24 +287,18 @@ def _student_t_location_log_density(data: Mapping[str, object]) -> Callable[[jax
         y = Observed(StudentT(nu, mu, obs_scale))
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    bound = cast(BindableModel, StudentTLocationStanReferenceModel).bind(y=y)
+    bound = bind_model(StudentTLocationStanReferenceModel, dict(y=y))
     return compile_log_density(bound)
 
 
 def _multivariate_normal_likelihood_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.distributions import MultivariateNormal, Normal
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     prior_scale = _as_float(data["prior_scale"], name="prior_scale")
 
@@ -341,8 +314,8 @@ def _multivariate_normal_likelihood_log_density(
 
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
     chol = jnp.array(_float_matrix(data["chol"], name="chol"), dtype=jnp.float64)
-    bound = cast(BindableModel, MultivariateNormalLikelihoodStanReferenceModel).bind(
-        n_dim=y.shape[0], chol=chol, y=y
+    bound = bind_model(
+        MultivariateNormalLikelihoodStanReferenceModel, dict(n_dim=y.shape[0], chol=chol, y=y)
     )
     return compile_log_density(bound)
 
@@ -350,19 +323,13 @@ def _multivariate_normal_likelihood_log_density(
 def _hierarchical_poisson_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, Normal, Poisson
+    from bayeswire.math import exp
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, Normal, Poisson
-    from jaxstanv5.math import exp
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     @model
     class HierarchicalPoissonStanReferenceModel:
@@ -388,11 +355,14 @@ def _hierarchical_poisson_log_density(
     group_idx = jnp.array(_int_sequence(data["group_idx"], name="group_idx"), dtype=jnp.int32) - 1
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32)
-    bound = cast(BindableModel, HierarchicalPoissonStanReferenceModel).bind(
-        n_groups=n_groups,
-        group_idx=group_idx,
-        x=x,
-        y=y,
+    bound = bind_model(
+        HierarchicalPoissonStanReferenceModel,
+        dict(
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            y=y,
+        ),
     )
     return compile_log_density(bound)
 
@@ -400,19 +370,13 @@ def _hierarchical_poisson_log_density(
 def _hierarchical_binomial_logistic_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Binomial, HalfNormal, Normal
+    from bayeswire.math import sigmoid
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Binomial, HalfNormal, Normal
-    from jaxstanv5.math import sigmoid
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     @model
     class HierarchicalBinomialLogisticStanReferenceModel:
@@ -440,12 +404,15 @@ def _hierarchical_binomial_logistic_log_density(
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     trials = jnp.array(_int_sequence(data["trials"], name="trials"), dtype=jnp.int32)
     y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32)
-    bound = cast(BindableModel, HierarchicalBinomialLogisticStanReferenceModel).bind(
-        n_groups=n_groups,
-        group_idx=group_idx,
-        x=x,
-        trials=trials,
-        y=y,
+    bound = bind_model(
+        HierarchicalBinomialLogisticStanReferenceModel,
+        dict(
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            trials=trials,
+            y=y,
+        ),
     )
     return compile_log_density(bound)
 
@@ -455,19 +422,13 @@ def _hierarchical_beta_binomial_logistic_log_density(
 ) -> Callable[[jax.Array], jax.Array]:
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import BetaBinomial, HalfNormal, Normal
+    from bayeswire.math import exp, sigmoid
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import BetaBinomial, HalfNormal, Normal
-    from jaxstanv5.math import exp, sigmoid
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     @model
     class HierarchicalBetaBinomialLogisticStanReferenceModel:
@@ -500,12 +461,15 @@ def _hierarchical_beta_binomial_logistic_log_density(
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     trials = jnp.array(_int_sequence(data["trials"], name="trials"), dtype=jnp.int32)
     y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32)
-    bound = cast(BindableModel, HierarchicalBetaBinomialLogisticStanReferenceModel).bind(
-        n_groups=n_groups,
-        group_idx=group_idx,
-        x=x,
-        trials=trials,
-        y=y,
+    bound = bind_model(
+        HierarchicalBetaBinomialLogisticStanReferenceModel,
+        dict(
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            trials=trials,
+            y=y,
+        ),
     )
     return compile_log_density(bound)
 
@@ -515,19 +479,13 @@ def _hierarchical_beta_regression_log_density(
 ) -> Callable[[jax.Array], jax.Array]:
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Beta, HalfNormal, Normal
+    from bayeswire.math import exp, sigmoid
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import Beta, HalfNormal, Normal
-    from jaxstanv5.math import exp, sigmoid
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     @model
     class HierarchicalBetaRegressionStanReferenceModel:
@@ -558,11 +516,14 @@ def _hierarchical_beta_regression_log_density(
     group_idx = jnp.array(_int_sequence(data["group_idx"], name="group_idx"), dtype=jnp.int32) - 1
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
-    bound = cast(BindableModel, HierarchicalBetaRegressionStanReferenceModel).bind(
-        n_groups=n_groups,
-        group_idx=group_idx,
-        x=x,
-        y=y,
+    bound = bind_model(
+        HierarchicalBetaRegressionStanReferenceModel,
+        dict(
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            y=y,
+        ),
     )
     return compile_log_density(bound)
 
@@ -572,19 +533,13 @@ def _hierarchical_negative_binomial_log_density(
 ) -> Callable[[jax.Array], jax.Array]:
     from math import log
 
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import HalfNormal, NegativeBinomial, Normal
+    from bayeswire.math import exp
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Positive
-    from jaxstanv5.distributions import HalfNormal, NegativeBinomial, Normal
-    from jaxstanv5.math import exp
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     @model
     class HierarchicalNegativeBinomialStanReferenceModel:
@@ -613,11 +568,14 @@ def _hierarchical_negative_binomial_log_density(
     group_idx = jnp.array(_int_sequence(data["group_idx"], name="group_idx"), dtype=jnp.int32) - 1
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32)
-    bound = cast(BindableModel, HierarchicalNegativeBinomialStanReferenceModel).bind(
-        n_groups=n_groups,
-        group_idx=group_idx,
-        x=x,
-        y=y,
+    bound = bind_model(
+        HierarchicalNegativeBinomialStanReferenceModel,
+        dict(
+            n_groups=n_groups,
+            group_idx=group_idx,
+            x=x,
+            y=y,
+        ),
     )
     return compile_log_density(bound)
 
@@ -625,18 +583,12 @@ def _hierarchical_negative_binomial_log_density(
 def _ordinal_logistic_regression_log_density(
     data: Mapping[str, object],
 ) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.constraints import Ordered
+    from bayeswire.distributions import Normal, OrderedLogistic
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.constraints import Ordered
-    from jaxstanv5.distributions import Normal, OrderedLogistic
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     @model
     class OrdinalLogisticStanReferenceModel:
@@ -654,26 +606,23 @@ def _ordinal_logistic_regression_log_density(
     n_cutpoints = _as_int(data["K"], name="K")
     x = jnp.array(_float_sequence(data["x"], name="x"), dtype=jnp.float64)
     y = jnp.array(_int_sequence(data["y"], name="y"), dtype=jnp.int32) - 1
-    bound = cast(BindableModel, OrdinalLogisticStanReferenceModel).bind(
-        n_cutpoints=n_cutpoints,
-        x=x,
-        y=y,
+    bound = bind_model(
+        OrdinalLogisticStanReferenceModel,
+        dict(
+            n_cutpoints=n_cutpoints,
+            x=x,
+            y=y,
+        ),
     )
     return compile_log_density(bound)
 
 
 def _fixed_kernel_gp_log_density(data: Mapping[str, object]) -> Callable[[jax.Array], jax.Array]:
-    from jaxstanv5 import Data, Observed, Param, model
+    from bayeswire import Data, Observed, Param, model
+    from bayeswire.distributions import MultivariateNormal, Normal
+
     from jaxstanv5.compiler.core import compile_log_density
-    from jaxstanv5.distributions import MultivariateNormal, Normal
-    from jaxstanv5.model.bound import BoundModel
-
-    class BindableModel(Protocol):
-        """Runtime model class with decorator-attached bind method."""
-
-        def bind(self, **values: object) -> BoundModel:
-            """Bind concrete model data."""
-            ...
+    from jaxstanv5.model import bind_model
 
     @model
     class FixedKernelGpStanReferenceModel:
@@ -689,8 +638,8 @@ def _fixed_kernel_gp_log_density(data: Mapping[str, object]) -> Callable[[jax.Ar
     y = jnp.array(_float_sequence(data["y"], name="y"), dtype=jnp.float64)
     chol = jnp.array(_float_matrix(data["chol"], name="chol"), dtype=jnp.float64)
     obs_sd = _as_float(data["obs_sd"], name="obs_sd")
-    bound = cast(BindableModel, FixedKernelGpStanReferenceModel).bind(
-        n=y.shape[0], chol=chol, obs_sd=obs_sd, y=y
+    bound = bind_model(
+        FixedKernelGpStanReferenceModel, dict(n=y.shape[0], chol=chol, obs_sd=obs_sd, y=y)
     )
     return compile_log_density(bound)
 

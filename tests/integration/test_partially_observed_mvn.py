@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 from _reference_models import partially_observed_mvn_fixture
+from bayeswire.distributions import MultivariateNormal
 
 from jaxstanv5._backends.jax.distributions import log_prob as distribution_log_prob
 from jaxstanv5.compiler.core import compile_log_density
-from jaxstanv5.distributions import MultivariateNormal
 from jaxstanv5.inference import sample
 
 
