@@ -448,11 +448,10 @@ everywhere, rollback stops being meaningful — fix forward.
 ## Definition of done
 
 - [x] bayeswire bootstrapped; produce-conformance green; no-JAX walk green.
-      *Deviation:* consumers pin bayeswire by **exact commit SHA** rather
-      than a release tag — the migration landed on review branches, and
-      tags should be cut from `main` at merge time. Cutting `v0.1.0` and
-      re-pointing the three pins (jaxstanv5 and bayescycle `pyproject.toml`,
-      bayesite `BAYESWIRE_TAG`) is the one follow-up step.
+      *Resolved after merge:* `bayeswire v0.1.0` was tagged on `main` and
+      all consumer pins re-pointed to it (jaxstanv5 and bayescycle
+      `pyproject.toml`, bayesite `BAYESWIRE_TAG` via the vendor script,
+      bayesite-viz's dev pin).
 - [x] jaxstanv5 depends on pinned bayeswire; old import paths, `.bind`, and
       `_make_bind` deleted — no shims ever existed
 - [x] bayescycle default path installs no JAX; no-JAX CI job added and the
