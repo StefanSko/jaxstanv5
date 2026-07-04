@@ -17,8 +17,8 @@ wheels = [
 
 [[package]]
 name = "bayeswire"
-version = "0.1.0"
-source = { git = "https://github.com/StefanSko/bayeswire.git?rev=v0.1.0#278d1331467e378f251d5aae8b40b146c9a249af" }
+version = "0.2.0"
+source = { git = "https://github.com/StefanSko/bayeswire.git?rev=v0.2.0#04b8cd71898c3356df1e9f41d5487f390315efd5" }
 
 [[package]]
 name = "blackjax"
@@ -120,7 +120,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bayeswire", git = "https://github.com/StefanSko/bayeswire.git?rev=v0.1.0" },
+    { name = "bayeswire", git = "https://github.com/StefanSko/bayeswire.git?rev=v0.2.0" },
     { name = "blackjax", specifier = ">=1.2.0" },
     { name = "jax", specifier = ">=0.6.0" },
 ]
