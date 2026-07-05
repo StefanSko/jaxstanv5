@@ -8,6 +8,18 @@ Core invariants that should remain true as the codebase changes.
 - NUTS is the only inference algorithm.
 - BlackJAX is internal.
 
+## Determinism and reproducibility
+
+- Runtime randomness is seed-driven. Sampling and prior-predictive simulation derive
+  pseudo-random keys from explicit user inputs (`seed` or caller-provided JAX PRNG
+  keys) and do not consume OS entropy.
+- Re-running the same model with the same data, sampler/simulation settings, seed,
+  pinned JAX and BlackJAX versions, and platform is expected to reproduce identical
+  draws and diagnostics.
+- Bit-level stability across JAX versions, BlackJAX versions, XLA backends, or
+  hardware is not guaranteed. Cross-engine agreement should rely on statistical
+  agreement, not accidental bit-for-bit reproducibility.
+
 ## Declaration language
 
 - `Param`, `Data`, and `Observed` are declarations.
