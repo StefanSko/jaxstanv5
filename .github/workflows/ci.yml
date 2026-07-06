@@ -11,20 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      # The bayes* repos are private; the default GITHUB_TOKEN is scoped to
-      # this repo only. BAYES_REPOS_TOKEN is a fine-grained PAT with
-      # contents:read on the same-owner dependencies (bayeswire).
-      - name: Grant git read access to pinned same-owner dependencies
-        env:
-          BAYES_REPOS_TOKEN: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${BAYES_REPOS_TOKEN}@github.com/StefanSko/".insteadOf "https://github.com/StefanSko/"
-      - name: Preflight the bayeswire dependency
-        run: |
-          if ! git ls-remote https://github.com/StefanSko/bayeswire.git HEAD >/dev/null 2>&1; then
-            echo "::error::Cannot read StefanSko/bayeswire. The bayes* repos are private: add a fine-grained PAT with contents:read on them as the BAYES_REPOS_TOKEN Actions secret of this repo."
-            exit 1
-          fi
+        with:
+          enable-cache: true
       - name: Sync (installs the pinned bayeswire)
         run: uv sync
       - name: Format
