@@ -1,5 +1,13 @@
 # jaxstanv5
 
+> **⚠️ This repository is archived, and the package was renamed.**
+> jaxstanv5 is now **bayesjax**, living in the
+> [bayescycle monorepo](https://github.com/StefanSko/bayescycle) at
+> [`packages/bayesjax`](https://github.com/StefanSko/bayescycle/tree/main/packages/bayesjax)
+> and published to PyPI as
+> [`bayesjax`](https://pypi.org/project/bayesjax/). History here remains
+> readable for old pins. Issues have been transferred to the monorepo.
+
 `jaxstanv5` is the JAX/BlackJAX sampling backend for
 [bayeswire](https://github.com/StefanSko/bayeswire) models.
 
